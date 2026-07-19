@@ -12,6 +12,8 @@ from schemas import Intent
     ("bây giờ là mấy giờ", Intent.DATETIME),
     ("gọi cho mẹ", Intent.CALL),
     ("nhắn tin cho bố", Intent.MESSAGE),
+    ("tìm chỗ chữa bệnh ở đâu", Intent.FIND),
+    ("bây giờ tôi cần tìm chìa khóa ở đâu", Intent.FIND),
 ])
 def test_detect_keywords(text, expected):
     assert intent.detect(text) == expected
