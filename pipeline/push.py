@@ -15,5 +15,5 @@ def send(device_id: str, action: dict) -> bool:
         log.warning("push: chưa có token cho device_id=%s", device_id)
         return False
     # TODO: gọi FCM/APNs thật (firebase-admin) với token + action.
-    log.info("PUSH -> device=%s token=%s action=%s", device_id, token, action)
+    log.info("PUSH -> device=%s action=%s", device_id, action)
     return True
