@@ -5,11 +5,8 @@ from schemas import Intent
 # Thứ tự quan trọng: kiểm tra cụm đặc trưng trước cụm chung.
 # (dict giữ thứ tự chèn từ Python 3.7+)
 _RULES = {
-    Intent.MESSAGE: ["nhắn tin", "nhắn"],
-    Intent.CALL: ["gọi cho", "gọi điện", "gọi"],
-    Intent.DATETIME: ["mấy giờ", "ngày mấy", "thứ mấy", "ngày bao nhiêu", "hôm nay là ngày"],
     Intent.TRANSLATE: ["dịch"],
-    Intent.MONEY: ["mệnh giá", "tờ tiền", "tiền"],
+    Intent.MONEY: ["mệnh giá", "tiền"],
     Intent.OCR: ["đọc", "chữ"],
     Intent.FIND: ["tìm", "ở đâu", "đâu"],
 }
