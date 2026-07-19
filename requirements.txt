@@ -1,0 +1,8 @@
+# runtime
+fastapi
+uvicorn[standard]
+python-multipart
+# dev / test
+pytest
+httpx
+# TODO (khi làm FCM thật): firebase-admin
