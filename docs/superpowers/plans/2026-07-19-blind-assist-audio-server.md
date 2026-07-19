@@ -2,53 +2,46 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** FastAPI server nhận ảnh + audio (WAV) + device_id từ MCU, STT → intent (8 chức năng) → handler → TTS, trả audio/wav; lệnh điện thoại đẩy FCM push tới mobile app React Native (Android) để gọi/nhắn.
+**Goal:** FastAPI server nhận ảnh + audio (WAV) từ vi điều khiển, STT → intent (5 chức năng AI) → handler → TTS, trả về audio/wav tiếng Việt.
 
-**Architecture:** Server pipeline dạng module rời (stt, intent, tts, push, devices, router) + 8 handler cùng chữ ký `handle(image, command_text) -> Result`. Mọi bước AI **stub** (interface cố định, lắp model/API sau); `datetime` làm thật; `push` stub log. Mobile app Android nhận FCM push → tra danh bạ → tự gọi/nhắn bằng native lib.
+**Architecture:** Server pipeline dạng module rời (stt, intent, tts, router) + 5 handler cùng chữ ký `handle(image, command_text) -> Result`. Mọi bước AI **stub** với interface cố định, để lắp model/API thật sau mà không phải sửa router hay endpoint.
 
-**Tech Stack:** Python 3.10+, FastAPI, Uvicorn, pytest, httpx (TestClient). Mobile: React Native (Android), @react-native-firebase/messaging, react-native-contacts, react-native-immediate-phone-call, react-native-send-direct-sms, Jest.
+**Tech Stack:** Python 3.10+, FastAPI, Uvicorn, pytest, httpx (TestClient).
+
+> **Ghi chú phạm vi (cập nhật 2026-07-19):** Bản plan đầu có thêm nhóm tiện ích
+> điện thoại (gọi, nhắn tin, FCM push, device store) và hỏi ngày giờ, cùng một
+> module mobile app React Native. Phạm vi đã thu hẹp còn **5 chức năng AI**.
+> Task 1–6 dưới đây giữ nguyên văn bản gốc để khớp lịch sử commit; **Task 7 gỡ
+> sạch** phần ngoài phạm vi, Task 8–10 là bản đã thu hẹp.
 
 ## Global Constraints
 
-- Python **3.10+** (dùng cú pháp `dict | None`).
+- Python **3.10+**.
 - Audio WAV **mono, 16000 Hz, 16-bit** cả 2 chiều.
 - Ngôn ngữ nội dung: **tiếng Việt** (speech + câu lỗi).
 - Endpoint `/process` **luôn** trả `audio/wav`, HTTP 200 — kể cả lỗi/thiếu field (không JSON lỗi trần).
-- Lỗi hoặc thiếu field → **không** gọi `push.send`.
-- 8 intent (verbatim): `ocr`, `translate`, `find`, `money`, `space`, `datetime`, `call`, `message`.
+- 5 intent (verbatim): `ocr`, `translate`, `find`, `money`, `space`.
+- `space` vừa là một intent, vừa là fallback khi không khớp từ khóa nào.
 - Handler cùng chữ ký: `def handle(image: bytes, command_text: str) -> Result`.
-- Mobile: **chỉ Android** giai đoạn này (iOS hoãn — Apple cấm auto call/SMS).
+- `Result` chỉ có một trường: `speech: str`.
 - Import server dạng package tương đối từ gốc `Sever_test/` (chạy `uvicorn app:app`, pytest từ gốc).
 
 ---
 
-## File Structure
+## File Structure (sau khi thu hẹp phạm vi)
 
-**Server:**
 - `requirements.txt` — deps runtime + dev
 - `config.py` — đọc env, mặc định an toàn
-- `schemas.py` — `Intent`, `Result`
+- `schemas.py` — `Intent` (5 hằng), `Result(speech)`
 - `pipeline/stt.py` — `transcribe(audio) -> str` [stub]
 - `pipeline/intent.py` — `detect(text) -> str`
-- `pipeline/tts.py` — `synthesize(text) -> bytes` (wav)
-- `pipeline/devices.py` — store `register`, `get_token`
-- `pipeline/push.py` — `send(device_id, action) -> bool` [stub log]
-- `pipeline/router.py` — `process(image, audio, device_id) -> bytes` (orchestrate)
-- `handlers/{ocr,translate,find_object,read_money,describe_space,datetime_util,call_phone,send_message}.py`
-- `app.py` — FastAPI: `/health`, `/register-device`, `/process`
+- `pipeline/tts.py` — `synthesize(text) -> bytes` (wav) [stub]
+- `pipeline/router.py` — `process(image, audio) -> bytes` (orchestrate)
+- `handlers/text_utils.py` — `has_vietnamese(text) -> bool`
+- `handlers/{ocr,translate,find_object,read_money,describe_space}.py`
+- `app.py` — FastAPI: `/health`, `/process`
 - `models/ocr/.gitkeep`, `models/translate/.gitkeep`, `storage/.gitkeep`
 - `tests/` — pytest cho từng module + integration
-
-**Mobile (`mobile/`, Android):**
-- `package.json` — deps RN
-- `src/config.js` — `SERVER_URL`, `DEVICE_ID`
-- `src/api.js` — `registerDevice()`
-- `src/push.js` — `init()`, `onMessage(cb)`
-- `src/contacts.js` — `findNumber(name)`
-- `src/actions.js` — `execute(action)`
-- `src/index.js` — `start()`
-- `__tests__/` — Jest (mock native)
-- `README-flow.md` — mô tả luồng + cách test trên máy Android
 
 ---
 
@@ -612,253 +605,167 @@ git commit -m "feat: add real datetime handler"
 ```
 
 ---
+## Task 7: Descope — gỡ toàn bộ phần điện thoại + datetime
 
-## Task 7: Phone handlers (call, message) — trả action
+> **Bối cảnh:** Phạm vi dự án thu hẹp còn **5 chức năng AI thuần**. Bỏ gọi điện,
+> nhắn tin, push tới điện thoại, device store, và hỏi ngày giờ. Code các phần đó
+> đã build ở bản plan trước — task này gỡ sạch khỏi cây code (vẫn còn trong lịch
+> sử git nếu sau cần lấy lại).
 
 **Files:**
-- Create: `handlers/call_phone.py`, `handlers/send_message.py`
-- Test: `tests/test_handlers_phone.py`
+- Delete: `handlers/call_phone.py`, `handlers/send_message.py`, `handlers/datetime_util.py`
+- Delete: `pipeline/devices.py`, `pipeline/push.py`
+- Delete: `tests/test_handlers_phone.py`, `tests/test_datetime_util.py`, `tests/test_devices.py`, `tests/test_push.py`
+- Modify: `schemas.py` (rút `Intent` còn 5 hằng; bỏ trường `action` khỏi `Result`)
+- Modify: `pipeline/intent.py` (bỏ rule DATETIME / CALL / MESSAGE)
+- Modify: `handlers/text_utils.py` (bỏ `extract_name` — chỉ phone handler dùng)
+- Modify: `tests/test_schemas.py`, `tests/test_intent.py`, `tests/test_handlers_ai.py`
 
 **Interfaces:**
-- Consumes: `schemas.Result`.
-- Produces:
-  - `call_phone.handle(image, command_text) -> Result` với `action = {"type": "call", "name": <str>}`.
-  - `send_message.handle(image, command_text) -> Result` với `action = {"type": "message", "name": <str>, "text": <str>}`.
+- Consumes: không.
+- Produces (sau descope):
+  - `Intent` chỉ còn: `OCR="ocr"`, `TRANSLATE="translate"`, `FIND="find"`, `MONEY="money"`, `SPACE="space"`.
+  - `Result(speech: str)` — **không còn** trường `action`.
+  - `text_utils.has_vietnamese(text: str) -> bool` (giữ nguyên).
+  - `intent.detect(text: str) -> str` (giữ nguyên chữ ký, chỉ còn 5 giá trị trả về).
 
-- [ ] **Step 1: Viết failing test `tests/test_handlers_phone.py`**
-
-```python
-from handlers import call_phone, send_message
-
-
-def test_call_extracts_name_and_action():
-    r = call_phone.handle(b"", "gọi cho mẹ")
-    assert r.action == {"type": "call", "name": "mẹ"}
-    assert "mẹ" in r.speech.lower()
-    assert "gọi" in r.speech.lower()
-
-
-def test_call_without_cho():
-    r = call_phone.handle(b"", "gọi bố")
-    assert r.action["name"] == "bố"
-
-
-def test_message_action_shape():
-    r = send_message.handle(b"", "nhắn tin cho chị")
-    assert r.action["type"] == "message"
-    assert r.action["name"] == "chị"
-    assert "text" in r.action
-    assert "nhắn" in r.speech.lower()
-```
-
-- [ ] **Step 2: Chạy test — FAIL**
-
-Run: `python -m pytest tests/test_handlers_phone.py -v`
-Expected: FAIL — import error.
-
-- [ ] **Step 3: Viết `handlers/call_phone.py`**
-
-```python
-from schemas import Result
-
-_CALL_PREFIXES = ["gọi điện cho", "gọi cho", "gọi điện", "gọi"]
-
-
-def _extract_name(command_text: str) -> str:
-    t = command_text.strip().lower()
-    for prefix in _CALL_PREFIXES:  # dài trước, ngắn sau
-        if t.startswith(prefix):
-            return t[len(prefix):].strip()
-    return t
-
-
-def handle(image: bytes, command_text: str) -> Result:
-    name = _extract_name(command_text)
-    return Result(speech=f"Đang gọi {name}",
-                  action={"type": "call", "name": name})
-```
-
-- [ ] **Step 4: Viết `handlers/send_message.py`**
-
-```python
-from schemas import Result
-
-_MSG_PREFIXES = ["nhắn tin cho", "nhắn cho", "nhắn tin", "nhắn"]
-
-
-def _extract_name(command_text: str) -> str:
-    t = command_text.strip().lower()
-    for prefix in _MSG_PREFIXES:
-        if t.startswith(prefix):
-            return t[len(prefix):].strip()
-    return t
-
-
-def handle(image: bytes, command_text: str) -> Result:
-    name = _extract_name(command_text)
-    # TODO: tách nội dung tin nhắn từ lệnh; giờ để rỗng.
-    return Result(speech=f"Đã nhắn {name}",
-                  action={"type": "message", "name": name, "text": ""})
-```
-
-- [ ] **Step 5: Chạy test — PASS**
-
-Run: `python -m pytest tests/test_handlers_phone.py -v`
-Expected: PASS (3 passed).
-
-- [ ] **Step 6: Commit**
+- [ ] **Step 1: Xóa file phần điện thoại + datetime**
 
 ```bash
-git add handlers/call_phone.py handlers/send_message.py tests/test_handlers_phone.py
-git commit -m "feat: add phone handlers (call, message) returning action"
+git rm handlers/call_phone.py handlers/send_message.py handlers/datetime_util.py \
+  pipeline/devices.py pipeline/push.py \
+  tests/test_handlers_phone.py tests/test_datetime_util.py \
+  tests/test_devices.py tests/test_push.py
+```
+
+- [ ] **Step 2: Rút gọn `schemas.py`**
+
+Thay toàn bộ nội dung bằng:
+
+```python
+from dataclasses import dataclass
+
+
+class Intent:
+    OCR = "ocr"
+    TRANSLATE = "translate"
+    FIND = "find"
+    MONEY = "money"
+    SPACE = "space"
+
+
+@dataclass
+class Result:
+    speech: str    # câu tiếng Việt -> TTS
+```
+
+- [ ] **Step 3: Cập nhật `tests/test_schemas.py`**
+
+Thay toàn bộ nội dung bằng:
+
+```python
+from schemas import Intent, Result
+
+
+def test_intent_has_five_values():
+    vals = {Intent.OCR, Intent.TRANSLATE, Intent.FIND, Intent.MONEY, Intent.SPACE}
+    assert vals == {"ocr", "translate", "find", "money", "space"}
+
+
+def test_result_holds_speech():
+    r = Result(speech="xin chào")
+    assert r.speech == "xin chào"
+
+
+def test_result_has_no_action_field():
+    # Phạm vi chỉ còn chức năng AI -> không còn action đẩy sang điện thoại.
+    assert not hasattr(Result(speech="x"), "action")
+```
+
+- [ ] **Step 4: Rút gọn `pipeline/intent.py`**
+
+Giữ nguyên cơ chế khớp theo biên từ (pad space + bỏ dấu câu) đã có. Chỉ đổi
+`_RULES` còn 4 rule (SPACE vẫn là fallback, không nằm trong dict):
+
+```python
+_RULES = {
+    Intent.TRANSLATE: ["dịch"],
+    Intent.MONEY: ["mệnh giá", "tiền"],
+    Intent.OCR: ["đọc", "chữ"],
+    Intent.FIND: ["tìm", "ở đâu", "đâu"],
+}
+```
+
+Không đổi thân hàm `detect`, không đổi bảng bỏ dấu câu.
+
+- [ ] **Step 5: Cập nhật `tests/test_intent.py`**
+
+Bỏ các case `datetime` / `call` / `message`. Giữ lại đúng các case sau (kèm 2 case
+chống hồi quy đã thêm trước đó):
+
+```python
+import pytest
+from pipeline import intent
+from schemas import Intent
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("đọc chữ giúp tôi", Intent.OCR),
+    ("dịch câu này sang tiếng anh", Intent.TRANSLATE),
+    ("tìm cái điều khiển ở đâu", Intent.FIND),
+    ("đây là tờ tiền mệnh giá bao nhiêu", Intent.MONEY),
+    ("miêu tả xung quanh tôi", Intent.SPACE),
+    ("tìm chỗ chữa bệnh ở đâu", Intent.FIND),
+    ("bây giờ tôi cần tìm chìa khóa ở đâu", Intent.FIND),
+])
+def test_detect_keywords(text, expected):
+    assert intent.detect(text) == expected
+
+
+def test_detect_default_is_space():
+    assert intent.detect("xyz không khớp gì cả") == Intent.SPACE
+```
+
+- [ ] **Step 6: Bỏ `extract_name` khỏi `handlers/text_utils.py`**
+
+Xóa hàm `extract_name` và mọi hằng chỉ phục vụ nó. Giữ nguyên `has_vietnamese`
+và `_VI_CHARS`.
+
+- [ ] **Step 7: Bỏ assertion `action` trong `tests/test_handlers_ai.py`**
+
+Trong mọi test, xóa phần `and r.action is None` / `assert r.action is None`,
+giữ nguyên `assert isinstance(r, Result)` và các assertion về nội dung `speech`.
+
+- [ ] **Step 8: Chạy toàn bộ test**
+
+Run: `python -m pytest -v`
+Expected: tất cả PASS. Không còn test nào của phone/datetime/devices/push.
+
+- [ ] **Step 9: Kiểm tra không còn tham chiếu mồ côi**
+
+Run: `grep -rn "call_phone\|send_message\|datetime_util\|devices\|push\|action\|extract_name" --include=*.py .`
+Expected: không có kết quả nào trong `handlers/`, `pipeline/`, `tests/`, `schemas.py`.
+(Kết quả trong `.superpowers/` hoặc `docs/` là bình thường — bỏ qua.)
+
+- [ ] **Step 10: Commit**
+
+```bash
+git add -A
+git commit -m "refactor: descope to 5 AI functions, drop phone/datetime features"
 ```
 
 ---
 
-## Task 8: Device store
-
-**Files:**
-- Create: `pipeline/devices.py`
-- Test: `tests/test_devices.py`
-
-**Interfaces:**
-- Produces:
-  - `devices.register(device_id: str, fcm_token: str, platform: str = "") -> None`
-  - `devices.get_token(device_id: str) -> str | None`
-
-- [ ] **Step 1: Viết failing test `tests/test_devices.py`**
-
-```python
-from pipeline import devices
-
-
-def test_register_and_get_token():
-    devices.register("dev-1", "tok-abc", "android")
-    assert devices.get_token("dev-1") == "tok-abc"
-
-
-def test_get_unknown_returns_none():
-    assert devices.get_token("khong-ton-tai") is None
-
-
-def test_register_overwrites():
-    devices.register("dev-2", "old")
-    devices.register("dev-2", "new")
-    assert devices.get_token("dev-2") == "new"
-```
-
-- [ ] **Step 2: Chạy test — FAIL**
-
-Run: `python -m pytest tests/test_devices.py -v`
-Expected: FAIL — import error.
-
-- [ ] **Step 3: Viết `pipeline/devices.py`**
-
-```python
-# Map device_id -> fcm_token. In-memory cho prototype.
-# TODO: thay bằng DB/Redis khi cần bền + nhiều thiết bị.
-_store: dict[str, str] = {}
-
-
-def register(device_id: str, fcm_token: str, platform: str = "") -> None:
-    _store[device_id] = fcm_token
-
-
-def get_token(device_id: str) -> str | None:
-    return _store.get(device_id)
-```
-
-- [ ] **Step 4: Chạy test — PASS**
-
-Run: `python -m pytest tests/test_devices.py -v`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add pipeline/devices.py tests/test_devices.py
-git commit -m "feat: add in-memory device token store"
-```
-
----
-
-## Task 9: Push stub
-
-**Files:**
-- Create: `pipeline/push.py`
-- Test: `tests/test_push.py`
-
-**Interfaces:**
-- Consumes: `devices.get_token`.
-- Produces: `push.send(device_id: str, action: dict) -> bool` (True nếu có token, False nếu không).
-
-- [ ] **Step 1: Viết failing test `tests/test_push.py`**
-
-```python
-from pipeline import push, devices
-
-
-def test_send_returns_true_when_token_registered():
-    devices.register("push-dev", "tok-1", "android")
-    assert push.send("push-dev", {"type": "call", "name": "mẹ"}) is True
-
-
-def test_send_returns_false_when_no_token():
-    assert push.send("no-such-device", {"type": "call", "name": "x"}) is False
-```
-
-- [ ] **Step 2: Chạy test — FAIL**
-
-Run: `python -m pytest tests/test_push.py -v`
-Expected: FAIL — import error.
-
-- [ ] **Step 3: Viết `pipeline/push.py`**
-
-```python
-import logging
-
-from pipeline import devices
-
-log = logging.getLogger("push")
-
-
-def send(device_id: str, action: dict) -> bool:
-    """Đẩy action tới mobile app qua FCM.
-
-    Giai đoạn stub: chỉ log payload. Không có token -> trả False.
-    """
-    token = devices.get_token(device_id)
-    if not token:
-        log.warning("push: chưa có token cho device_id=%s", device_id)
-        return False
-    # TODO: gọi FCM/APNs thật (firebase-admin) với token + action.
-    log.info("PUSH -> device=%s token=%s action=%s", device_id, token, action)
-    return True
-```
-
-- [ ] **Step 4: Chạy test — PASS**
-
-Run: `python -m pytest tests/test_push.py -v`
-Expected: PASS.
-
-- [ ] **Step 5: Commit**
-
-```bash
-git add pipeline/push.py tests/test_push.py
-git commit -m "feat: add push stub (logs payload, looks up token)"
-```
-
----
-
-## Task 10: Router (orchestrate pipeline)
+## Task 8: Router (orchestrate pipeline)
 
 **Files:**
 - Create: `pipeline/router.py`
 - Test: `tests/test_router.py`
 
 **Interfaces:**
-- Consumes: `stt.transcribe`, `intent.detect`, tất cả handler `handle`, `push.send`, `tts.synthesize`.
-- Produces: `router.process(image: bytes, audio: bytes, device_id: str) -> bytes` (WAV). Gọi `push.send` **chỉ khi** handler trả `action is not None`.
+- Consumes: `stt.transcribe`, `intent.detect`, 5 handler `handle`, `tts.synthesize`.
+- Produces: `router.process(image: bytes, audio: bytes) -> bytes` (WAV).
+  **Không** có tham số `device_id`, **không** đẩy push.
 
 - [ ] **Step 1: Viết failing test `tests/test_router.py`**
 
@@ -868,7 +775,6 @@ import wave
 from unittest.mock import patch
 
 from pipeline import router
-from schemas import Result
 
 
 def _is_wav(data: bytes) -> bool:
@@ -877,41 +783,51 @@ def _is_wav(data: bytes) -> bool:
 
 
 def test_process_returns_wav():
-    out = router.process(b"img", b"aud", "dev-1")
+    out = router.process(b"img", b"aud")
     assert isinstance(out, bytes)
     assert _is_wav(out)
 
 
-def test_process_calls_push_when_action_present():
-    # intent 'call' -> handler trả action -> push.send được gọi
-    with patch("pipeline.intent.detect", return_value="call"), \
-         patch("pipeline.push.send") as mock_send:
-        router.process(b"img", b"aud", "dev-9")
-        mock_send.assert_called_once()
-        args = mock_send.call_args.args
-        assert args[0] == "dev-9"
-        assert args[1]["type"] == "call"
+def test_process_routes_to_detected_handler():
+    with patch("pipeline.intent.detect", return_value="money") as mock_detect, \
+         patch("handlers.read_money.handle") as mock_handler:
+        from schemas import Result
+        mock_handler.return_value = Result(speech="mệnh giá giả")
+        router.process(b"img", b"aud")
+        mock_detect.assert_called_once()
+        mock_handler.assert_called_once()
 
 
-def test_process_no_push_when_no_action():
+def test_process_speaks_handler_result():
+    from schemas import Result
     with patch("pipeline.intent.detect", return_value="ocr"), \
-         patch("pipeline.push.send") as mock_send:
-        router.process(b"img", b"aud", "dev-9")
-        mock_send.assert_not_called()
+         patch("handlers.ocr.handle", return_value=Result(speech="nội dung đọc")), \
+         patch("pipeline.tts.synthesize", return_value=b"WAVDATA") as mock_tts:
+        out = router.process(b"img", b"aud")
+        mock_tts.assert_called_once_with("nội dung đọc")
+        assert out == b"WAVDATA"
+
+
+def test_process_unknown_intent_falls_back_to_space():
+    with patch("pipeline.intent.detect", return_value="khong-ton-tai"), \
+         patch("handlers.describe_space.handle") as mock_space:
+        from schemas import Result
+        mock_space.return_value = Result(speech="miêu tả giả")
+        router.process(b"img", b"aud")
+        mock_space.assert_called_once()
 ```
 
 - [ ] **Step 2: Chạy test — FAIL**
 
 Run: `python -m pytest tests/test_router.py -v`
-Expected: FAIL — import error.
+Expected: FAIL — `cannot import name 'router'`.
 
 - [ ] **Step 3: Viết `pipeline/router.py`**
 
 ```python
 from schemas import Intent
-from pipeline import stt, intent as intent_mod, tts, push
-from handlers import (ocr, translate, find_object, read_money,
-                      describe_space, datetime_util, call_phone, send_message)
+from pipeline import stt, intent as intent_mod, tts
+from handlers import ocr, translate, find_object, read_money, describe_space
 
 _HANDLERS = {
     Intent.OCR: ocr,
@@ -919,56 +835,51 @@ _HANDLERS = {
     Intent.FIND: find_object,
     Intent.MONEY: read_money,
     Intent.SPACE: describe_space,
-    Intent.DATETIME: datetime_util,
-    Intent.CALL: call_phone,
-    Intent.MESSAGE: send_message,
 }
 
 
-def process(image: bytes, audio: bytes, device_id: str) -> bytes:
-    """Pipeline đầy-cuối: audio -> STT -> intent -> handler -> (push) -> TTS."""
+def process(image: bytes, audio: bytes) -> bytes:
+    """Pipeline đầu-cuối: audio -> STT -> intent -> handler -> TTS."""
     command_text = stt.transcribe(audio)
     intent_name = intent_mod.detect(command_text)
     handler = _HANDLERS.get(intent_name, describe_space)
     result = handler.handle(image, command_text)
-    if result.action is not None:
-        push.send(device_id, result.action)
     return tts.synthesize(result.speech)
 ```
 
 - [ ] **Step 4: Chạy test — PASS**
 
 Run: `python -m pytest tests/test_router.py -v`
-Expected: PASS (3 passed).
+Expected: PASS (4 passed).
 
 - [ ] **Step 5: Commit**
 
 ```bash
 git add pipeline/router.py tests/test_router.py
-git commit -m "feat: add router orchestrating full pipeline"
+git commit -m "feat: add router orchestrating AI pipeline"
 ```
 
 ---
 
-## Task 11: FastAPI app (endpoints + integration)
+## Task 9: FastAPI app (endpoints + integration)
 
 **Files:**
-- Modify: `app.py` (thay nội dung hiện tại — chỉ có `/health`)
+- Modify: `app.py` (thay toàn bộ nội dung hiện tại — chỉ có `/health`)
 - Test: `tests/test_app.py`
 
 **Interfaces:**
-- Consumes: `router.process`, `devices.register`, `tts.synthesize`.
-- Produces: 3 route:
+- Consumes: `router.process`, `tts.synthesize`.
+- Produces 2 route:
   - `GET /health -> {"status": "ok"}`
-  - `POST /register-device` (Form: `device_id`, `fcm_token`, `platform`) `-> {"status": "registered"}`
-  - `POST /process` (Form/File: `image`, `audio`, `device_id`) `-> Response audio/wav`
+  - `POST /process` (File: `image`, `audio`) `-> Response audio/wav`
+
+  **Không** có `/register-device`, **không** nhận `device_id`.
 
 - [ ] **Step 1: Viết failing test `tests/test_app.py`**
 
 ```python
 import io
 import wave
-from unittest.mock import patch
 
 from fastapi.testclient import TestClient
 
@@ -987,57 +898,59 @@ def _wav_bytes() -> bytes:
     return buf.getvalue()
 
 
+def _files():
+    return {"image": ("i.jpg", b"fake img", "image/jpeg"),
+            "audio": ("a.wav", _wav_bytes(), "audio/wav")}
+
+
 def test_health():
     r = client.get("/health")
     assert r.status_code == 200
     assert r.json() == {"status": "ok"}
 
 
-def test_register_device():
-    r = client.post("/register-device", data={
-        "device_id": "dev-app-1", "fcm_token": "tok-1", "platform": "android"})
-    assert r.status_code == 200
-    assert r.json()["status"] == "registered"
-
-
 def test_process_returns_wav():
-    files = {"image": ("i.jpg", b"fake img", "image/jpeg"),
-             "audio": ("a.wav", _wav_bytes(), "audio/wav")}
-    r = client.post("/process", files=files, data={"device_id": "dev-app-1"})
+    r = client.post("/process", files=_files())
     assert r.status_code == 200
     assert r.headers["content-type"] == "audio/wav"
     assert len(r.content) > 44
 
 
-def test_process_missing_fields_still_returns_wav():
-    r = client.post("/process", data={"device_id": "dev-app-1"})
+def test_process_missing_image_still_returns_wav():
+    files = {"audio": ("a.wav", _wav_bytes(), "audio/wav")}
+    r = client.post("/process", files=files)
     assert r.status_code == 200
     assert r.headers["content-type"] == "audio/wav"
 
 
-def test_process_call_intent_triggers_push():
-    # STT trả câu chứa 'gọi' -> intent call -> push.send được gọi
-    with patch("pipeline.stt.transcribe", return_value="gọi cho mẹ"), \
-         patch("pipeline.push.send") as mock_send:
-        files = {"image": ("i.jpg", b"x", "image/jpeg"),
-                 "audio": ("a.wav", _wav_bytes(), "audio/wav")}
-        r = client.post("/process", files=files, data={"device_id": "dev-app-1"})
-        assert r.status_code == 200
-        mock_send.assert_called_once()
+def test_process_missing_audio_still_returns_wav():
+    files = {"image": ("i.jpg", b"fake img", "image/jpeg")}
+    r = client.post("/process", files=files)
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "audio/wav"
+
+
+def test_process_pipeline_error_still_returns_wav():
+    from unittest.mock import patch
+    with patch("pipeline.router.process", side_effect=RuntimeError("boom")):
+        r = client.post("/process", files=_files())
+    assert r.status_code == 200
+    assert r.headers["content-type"] == "audio/wav"
+    assert len(r.content) > 44
 ```
 
 - [ ] **Step 2: Chạy test — FAIL**
 
 Run: `python -m pytest tests/test_app.py -v`
-Expected: FAIL — `/register-device` 404 / `/process` 404 (app.py chỉ có /health).
+Expected: FAIL — `/process` trả 404 (app.py hiện chỉ có `/health`).
 
 - [ ] **Step 3: Viết lại `app.py`**
 
 ```python
-from fastapi import FastAPI, UploadFile, File, Form
+from fastapi import FastAPI, UploadFile, File
 from fastapi.responses import Response
 
-from pipeline import router, devices, tts
+from pipeline import router, tts
 
 app = FastAPI(title="Blind-Assist Audio Server")
 
@@ -1047,27 +960,18 @@ def health():
     return {"status": "ok"}
 
 
-@app.post("/register-device")
-def register_device(device_id: str = Form(...),
-                    fcm_token: str = Form(...),
-                    platform: str = Form("")):
-    devices.register(device_id, fcm_token, platform)
-    return {"status": "registered"}
-
-
 @app.post("/process")
 async def process(image: UploadFile | None = File(None),
-                  audio: UploadFile | None = File(None),
-                  device_id: str = Form("")):
-    # Thiếu field -> audio báo lỗi, KHÔNG push.
-    if image is None or audio is None or not device_id:
-        return Response(content=tts.synthesize("Thiếu dữ liệu"),
+                  audio: UploadFile | None = File(None)):
+    # Thiếu field -> vẫn trả audio để người khiếm thị nghe được lý do.
+    if image is None or audio is None:
+        return Response(content=tts.synthesize("Thiếu ảnh hoặc âm thanh"),
                         media_type="audio/wav")
     try:
         img = await image.read()
         aud = await audio.read()
-        wav = router.process(img, aud, device_id)
-    except Exception:  # noqa: BLE001 - luôn trả audio cho người khiếm thị
+        wav = router.process(img, aud)
+    except Exception:  # noqa: BLE001 - luôn trả audio, không trả JSON lỗi trần
         wav = tts.synthesize("Có lỗi xảy ra, vui lòng thử lại")
     return Response(content=wav, media_type="audio/wav")
 ```
@@ -1077,7 +981,7 @@ async def process(image: UploadFile | None = File(None),
 Run: `python -m pytest tests/test_app.py -v`
 Expected: PASS (5 passed).
 
-- [ ] **Step 5: Chạy toàn bộ test server**
+- [ ] **Step 5: Chạy toàn bộ test**
 
 Run: `python -m pytest -v`
 Expected: tất cả PASS.
@@ -1085,410 +989,19 @@ Expected: tất cả PASS.
 - [ ] **Step 6: Chạy thử server thật (kiểm tra tay)**
 
 Run: `python -m uvicorn app:app --reload`
-Expected: server chạy ở `http://127.0.0.1:8000`; mở `http://127.0.0.1:8000/docs` thấy 3 endpoint. Ctrl+C thoát.
+Expected: server chạy ở `http://127.0.0.1:8000`; mở `http://127.0.0.1:8000/docs`
+thấy đúng 2 endpoint (`/health`, `/process`). Ctrl+C thoát.
 
 - [ ] **Step 7: Commit**
 
 ```bash
 git add app.py tests/test_app.py
-git commit -m "feat: wire FastAPI endpoints (health, register-device, process)"
+git commit -m "feat: wire FastAPI endpoints (health, process)"
 ```
 
 ---
 
-## Task 12: Mobile scaffold + config + register API
-
-**Files:**
-- Create: `mobile/package.json`, `mobile/src/config.js`, `mobile/src/api.js`
-- Create: `mobile/__tests__/api.test.js`, `mobile/jest.config.js`, `mobile/babel.config.js`
-
-**Interfaces:**
-- Produces: `api.registerDevice(deviceId: string, fcmToken: string, platform: string) -> Promise<boolean>`; `config.SERVER_URL`, `config.DEVICE_ID`.
-
-> Ghi chú deps native: các lib RN cần app RN thật + Android SDK để chạy trên máy.
-> Các Jest test ở dưới **mock** native/fetch nên chạy được không cần thiết bị.
-
-- [ ] **Step 1: Viết `mobile/package.json`**
-
-```json
-{
-  "name": "blind-assist-mobile",
-  "version": "0.1.0",
-  "private": true,
-  "scripts": {
-    "test": "jest",
-    "android": "react-native run-android"
-  },
-  "dependencies": {
-    "react": "18.2.0",
-    "react-native": "0.74.0",
-    "@react-native-firebase/app": "^20.0.0",
-    "@react-native-firebase/messaging": "^20.0.0",
-    "react-native-contacts": "^7.0.8",
-    "react-native-immediate-phone-call": "^2.0.0",
-    "react-native-send-direct-sms": "^1.2.0"
-  },
-  "devDependencies": {
-    "@babel/core": "^7.20.0",
-    "@babel/preset-env": "^7.20.0",
-    "babel-jest": "^29.0.0",
-    "jest": "^29.0.0"
-  }
-}
-```
-
-- [ ] **Step 2: Viết `mobile/babel.config.js` + `mobile/jest.config.js`**
-
-`mobile/babel.config.js`:
-```js
-module.exports = { presets: ["@babel/preset-env"] };
-```
-
-`mobile/jest.config.js`:
-```js
-module.exports = { testEnvironment: "node" };
-```
-
-- [ ] **Step 3: Cài deps test (chỉ babel + jest, đủ chạy unit test)**
-
-Run: `cd mobile && npm install --save-dev @babel/core @babel/preset-env babel-jest jest`
-Expected: cài xong jest + babel (không cần cài lib native để chạy unit test mock).
-
-- [ ] **Step 4: Viết `mobile/src/config.js`**
-
-```js
-// 10.0.2.2 = host máy tính nhìn từ Android emulator.
-// Đổi sang IP LAN của server khi chạy máy thật.
-export const SERVER_URL = "http://10.0.2.2:8000";
-export const DEVICE_ID = "device-001"; // phải trùng device_id MCU gửi lên
-```
-
-- [ ] **Step 5: Viết failing test `mobile/__tests__/api.test.js`**
-
-```js
-import { registerDevice } from "../src/api";
-
-describe("registerDevice", () => {
-  afterEach(() => { global.fetch = undefined; });
-
-  test("POST /register-device và trả true khi ok", async () => {
-    const calls = [];
-    global.fetch = (url, opts) => {
-      calls.push({ url, opts });
-      return Promise.resolve({ ok: true });
-    };
-    const ok = await registerDevice("dev-1", "tok-1", "android");
-    expect(ok).toBe(true);
-    expect(calls[0].url).toContain("/register-device");
-    expect(calls[0].opts.method).toBe("POST");
-  });
-
-  test("trả false khi server lỗi", async () => {
-    global.fetch = () => Promise.resolve({ ok: false });
-    const ok = await registerDevice("dev-1", "tok-1", "android");
-    expect(ok).toBe(false);
-  });
-});
-```
-
-- [ ] **Step 6: Chạy test — FAIL**
-
-Run: `cd mobile && npx jest api.test.js`
-Expected: FAIL — không tìm thấy `../src/api`.
-
-- [ ] **Step 7: Viết `mobile/src/api.js`**
-
-```js
-import { SERVER_URL } from "./config";
-
-export async function registerDevice(deviceId, fcmToken, platform) {
-  const body = new FormData();
-  body.append("device_id", deviceId);
-  body.append("fcm_token", fcmToken);
-  body.append("platform", platform);
-  const res = await fetch(`${SERVER_URL}/register-device`, {
-    method: "POST",
-    body,
-  });
-  return res.ok;
-}
-```
-
-- [ ] **Step 8: Chạy test — PASS**
-
-Run: `cd mobile && npx jest api.test.js`
-Expected: PASS (2 passed).
-
-- [ ] **Step 9: Commit**
-
-```bash
-git add mobile/package.json mobile/babel.config.js mobile/jest.config.js \
-  mobile/src/config.js mobile/src/api.js mobile/__tests__/api.test.js
-git commit -m "feat(mobile): scaffold RN module, config, registerDevice"
-```
-
----
-
-## Task 13: Mobile contacts + actions (native, Android)
-
-**Files:**
-- Create: `mobile/src/contacts.js`, `mobile/src/actions.js`
-- Create: `mobile/__tests__/actions.test.js`
-
-**Interfaces:**
-- Produces:
-  - `contacts.findNumber(name: string) -> Promise<string | null>`
-  - `actions.execute(action: {type, name, text?}) -> Promise<boolean>` (gọi/nhắn qua native; false nếu không tra được số hoặc type lạ).
-
-- [ ] **Step 1: Viết `mobile/src/contacts.js`**
-
-```js
-import Contacts from "react-native-contacts";
-
-// Tra tên -> số điện thoại đầu tiên khớp trong danh bạ máy.
-export async function findNumber(name) {
-  const matches = await Contacts.getContactsMatchingString(name);
-  if (!matches || matches.length === 0) return null;
-  const phones = matches[0].phoneNumbers;
-  if (!phones || phones.length === 0) return null;
-  return phones[0].number;
-}
-```
-
-- [ ] **Step 2: Viết failing test `mobile/__tests__/actions.test.js`**
-
-```js
-// Mock native modules trước khi import actions.
-jest.mock("react-native-immediate-phone-call", () => ({
-  immediatePhoneCall: jest.fn(),
-}), { virtual: true });
-jest.mock("react-native-send-direct-sms", () => jest.fn(), { virtual: true });
-jest.mock("../src/contacts", () => ({ findNumber: jest.fn() }));
-
-import ImmediatePhoneCall from "react-native-immediate-phone-call";
-import SendDirectSms from "react-native-send-direct-sms";
-import { findNumber } from "../src/contacts";
-import { execute } from "../src/actions";
-
-describe("actions.execute", () => {
-  beforeEach(() => jest.clearAllMocks());
-
-  test("call: tra số rồi quay số", async () => {
-    findNumber.mockResolvedValue("0912345678");
-    const ok = await execute({ type: "call", name: "mẹ" });
-    expect(ok).toBe(true);
-    expect(ImmediatePhoneCall.immediatePhoneCall).toHaveBeenCalledWith("0912345678");
-  });
-
-  test("message: tra số rồi gửi SMS", async () => {
-    findNumber.mockResolvedValue("0912345678");
-    const ok = await execute({ type: "message", name: "bố", text: "xin chào" });
-    expect(ok).toBe(true);
-    expect(SendDirectSms).toHaveBeenCalledWith("0912345678", "xin chào");
-  });
-
-  test("không tìm thấy tên -> false, không gọi native", async () => {
-    findNumber.mockResolvedValue(null);
-    const ok = await execute({ type: "call", name: "người lạ" });
-    expect(ok).toBe(false);
-    expect(ImmediatePhoneCall.immediatePhoneCall).not.toHaveBeenCalled();
-  });
-
-  test("type lạ -> false", async () => {
-    findNumber.mockResolvedValue("0912345678");
-    const ok = await execute({ type: "email", name: "mẹ" });
-    expect(ok).toBe(false);
-  });
-});
-```
-
-- [ ] **Step 3: Chạy test — FAIL**
-
-Run: `cd mobile && npx jest actions.test.js`
-Expected: FAIL — không tìm thấy `../src/actions`.
-
-- [ ] **Step 4: Viết `mobile/src/actions.js`**
-
-```js
-import ImmediatePhoneCall from "react-native-immediate-phone-call";
-import SendDirectSms from "react-native-send-direct-sms";
-import { findNumber } from "./contacts";
-
-// Thực thi action nhận từ FCM push. Chỉ Android (auto call/SMS ngầm).
-export async function execute(action) {
-  const number = await findNumber(action.name);
-  if (!number) {
-    console.warn(`Không tìm thấy "${action.name}" trong danh bạ`);
-    return false;
-  }
-  if (action.type === "call") {
-    ImmediatePhoneCall.immediatePhoneCall(number);
-    return true;
-  }
-  if (action.type === "message") {
-    SendDirectSms(number, action.text || "");
-    return true;
-  }
-  console.warn(`Action type không hỗ trợ: ${action.type}`);
-  return false;
-}
-```
-
-- [ ] **Step 5: Chạy test — PASS**
-
-Run: `cd mobile && npx jest actions.test.js`
-Expected: PASS (4 passed).
-
-- [ ] **Step 6: Commit**
-
-```bash
-git add mobile/src/contacts.js mobile/src/actions.js mobile/__tests__/actions.test.js
-git commit -m "feat(mobile): contacts lookup + execute call/message (Android native)"
-```
-
----
-
-## Task 14: Mobile push + start wiring + README
-
-**Files:**
-- Create: `mobile/src/push.js`, `mobile/src/index.js`, `mobile/README-flow.md`
-- Create: `mobile/__tests__/index.test.js`
-
-**Interfaces:**
-- Consumes: `push.init`, `push.onMessage`, `api.registerDevice`, `actions.execute`, `config.DEVICE_ID`.
-- Produces:
-  - `push.init() -> Promise<string>` (FCM token)
-  - `push.onMessage(cb: (data) => void) -> void`
-  - `index.start() -> Promise<void>` (đăng ký token + gắn listener chạy `actions.execute`)
-
-- [ ] **Step 1: Viết `mobile/src/push.js`**
-
-```js
-import messaging from "@react-native-firebase/messaging";
-
-// Xin quyền + lấy FCM token.
-export async function init() {
-  await messaging().requestPermission();
-  return messaging().getToken();
-}
-
-// Nghe push cả foreground lẫn background. cb nhận payload data (action).
-export function onMessage(cb) {
-  messaging().onMessage(async (msg) => cb(msg.data));
-  messaging().setBackgroundMessageHandler(async (msg) => cb(msg.data));
-}
-```
-
-- [ ] **Step 2: Viết failing test `mobile/__tests__/index.test.js`**
-
-```js
-jest.mock("../src/push", () => ({
-  init: jest.fn(),
-  onMessage: jest.fn(),
-}));
-jest.mock("../src/api", () => ({ registerDevice: jest.fn() }));
-jest.mock("../src/actions", () => ({ execute: jest.fn() }));
-jest.mock("react-native", () => ({ Platform: { OS: "android" } }), { virtual: true });
-
-import { init, onMessage } from "../src/push";
-import { registerDevice } from "../src/api";
-import { execute } from "../src/actions";
-import { start } from "../src/index";
-
-describe("start", () => {
-  beforeEach(() => jest.clearAllMocks());
-
-  test("lấy token, đăng ký device, gắn listener execute", async () => {
-    init.mockResolvedValue("fcm-tok-123");
-    await start();
-    expect(registerDevice).toHaveBeenCalledWith("device-001", "fcm-tok-123", "android");
-    expect(onMessage).toHaveBeenCalledWith(execute);
-  });
-});
-```
-
-- [ ] **Step 3: Chạy test — FAIL**
-
-Run: `cd mobile && npx jest index.test.js`
-Expected: FAIL — không tìm thấy `../src/index`.
-
-- [ ] **Step 4: Viết `mobile/src/index.js`**
-
-```js
-import { Platform } from "react-native";
-import { init, onMessage } from "./push";
-import { registerDevice } from "./api";
-import { execute } from "./actions";
-import { DEVICE_ID } from "./config";
-
-// Gọi 1 lần khi app khởi động.
-export async function start() {
-  const token = await init();
-  await registerDevice(DEVICE_ID, token, Platform.OS);
-  onMessage(execute);
-}
-```
-
-- [ ] **Step 5: Chạy test — PASS**
-
-Run: `cd mobile && npx jest index.test.js`
-Expected: PASS.
-
-- [ ] **Step 6: Chạy toàn bộ Jest**
-
-Run: `cd mobile && npx jest`
-Expected: tất cả PASS (api + actions + index).
-
-- [ ] **Step 7: Viết `mobile/README-flow.md`**
-
-```markdown
-# Mobile app (React Native, Android) — luồng chạy
-
-## Vai trò
-Nhận FCM push từ server, tra danh bạ, tự gọi điện / nhắn tin (Android).
-
-## Luồng
-1. App khởi động -> `start()` (src/index.js)
-2. `push.init()` xin quyền thông báo + lấy FCM token
-3. `api.registerDevice(DEVICE_ID, token, "android")` -> POST /register-device
-   (DEVICE_ID phải trùng device_id MCU gửi khi POST /process)
-4. `push.onMessage(execute)` gắn listener
-5. Server (khi có lệnh gọi/nhắn) đẩy FCM data = {type, name, text?}
-6. `actions.execute(payload)`:
-   - `contacts.findNumber(name)` tra số trong danh bạ máy
-   - type "call"    -> react-native-immediate-phone-call (quay số ngầm)
-   - type "message" -> react-native-send-direct-sms (gửi SMS ngầm)
-
-## Quyền Android cần khai trong AndroidManifest.xml
-- READ_CONTACTS   (tra danh bạ)
-- CALL_PHONE      (immediate phone call)
-- SEND_SMS        (send direct sms)
-- POST_NOTIFICATIONS (Android 13+, nhận push)
-
-## Cách test trên máy Android thật
-1. Cài deps: `cd mobile && npm install`
-2. Firebase: thêm google-services.json (Android) vào project RN.
-3. Cấp quyền runtime (Contacts/Phone/SMS) khi app hỏi.
-4. Chạy: `npm run android`
-5. Gửi thử FCM data message qua Firebase Console (hoặc server thật) với
-   payload {type:"call", name:"<tên có trong danh bạ>"} -> máy tự quay số.
-
-## Giới hạn
-- Chỉ Android. iOS bị Apple chặn auto call + SMS ngầm (hoãn).
-- Push thật cần server nối firebase-admin (hiện server đang stub log).
-```
-
-- [ ] **Step 8: Commit**
-
-```bash
-git add mobile/src/push.js mobile/src/index.js mobile/README-flow.md \
-  mobile/__tests__/index.test.js
-git commit -m "feat(mobile): FCM push init + start wiring + flow README"
-```
-
----
-
-## Task 15: Root README (chạy + test cả hệ thống)
+## Task 10: Root README
 
 **Files:**
 - Create: `README.md`
@@ -1500,43 +1013,56 @@ git commit -m "feat(mobile): FCM push init + start wiring + flow README"
 ```markdown
 # Blind-Assist Audio Server
 
-Server hỗ trợ người khiếm thị: MCU gửi ảnh + audio (WAV) + device_id,
-server STT -> intent -> handler -> TTS, trả audio/wav. Lệnh gọi/nhắn đẩy
-FCM push tới mobile app Android.
+Server hỗ trợ người khiếm thị: vi điều khiển gửi **ảnh + audio (WAV)**,
+server chạy STT -> nhận diện ý định -> handler -> TTS, trả về **audio/wav**
+tiếng Việt để thiết bị phát cho người dùng.
 
-## Server
-### Cài
+## Cài
     python -m pip install -r requirements.txt
-### Chạy
+
+## Chạy
     python -m uvicorn app:app --reload
 Docs: http://127.0.0.1:8000/docs
-### Test
+
+## Test
     python -m pytest -v
 
 ## Endpoint
-- GET  /health
-- POST /register-device  (Form: device_id, fcm_token, platform)
-- POST /process          (File: image, audio; Form: device_id) -> audio/wav
+- `GET  /health` -> `{"status": "ok"}`
+- `POST /process` (multipart: `image`, `audio`) -> `audio/wav`
 
-## 8 chức năng (auto-detect từ giọng nói)
-ocr, translate, find, money, space, datetime (thật), call, message.
-AI dùng stub — lắp model/API sau (interface cố định trong pipeline/ và handlers/).
+`/process` luôn trả `audio/wav` với HTTP 200 — kể cả khi thiếu field hoặc lỗi
+xử lý, câu báo lỗi được đọc thành tiếng để người khiếm thị nghe được.
 
-## Mobile
-Xem mobile/README-flow.md (React Native, Android).
+## 5 chức năng (tự nhận diện từ giọng nói)
+| Intent | Chức năng |
+|--------|-----------|
+| `ocr` | Đọc chữ trong ảnh; mặc định dịch sang tiếng Việt, nói "nguyên văn"/"chuyên ngành" thì đọc thô |
+| `translate` | Dịch câu người nói, VI->EN hoặc EN->VI (tự đoán hướng) |
+| `find` | Tìm đồ vật, chỉ hướng |
+| `money` | Đọc mệnh giá tiền |
+| `space` | Miêu tả không gian trước mặt (cũng là mặc định khi không khớp) |
 
 ## Trạng thái
-- STT / TTS / OCR / translate / find / money / space: STUB.
-- datetime: thật. push: stub log (TODO firebase-admin).
+Toàn bộ bước AI hiện là **stub** — trả chuỗi giả, interface đã cố định để lắp
+model/API thật mà không phải sửa router hay endpoint:
+
+- `pipeline/stt.py` — TODO: model STT tiếng Việt
+- `pipeline/tts.py` — TODO: TTS tiếng Việt (hiện sinh WAV im lặng hợp lệ)
+- `pipeline/intent.py` — khớp từ khóa; có thể thay bằng classifier sau
+- `handlers/ocr.py`, `handlers/translate.py` — TODO: model
+- `handlers/find_object.py`, `handlers/read_money.py`, `handlers/describe_space.py` — TODO: API vision
+
+Thư mục `models/ocr/`, `models/translate/` để trống, chờ file model.
+
+## Ngoài phạm vi
+Chức năng liên quan điện thoại (gọi, nhắn tin, push tới app di động) và hỏi
+ngày giờ đã được gỡ khỏi phạm vi. Code cũ còn trong lịch sử git.
 ```
 
-- [ ] **Step 2: Chạy lại toàn bộ test (server + mobile)**
+- [ ] **Step 2: Chạy lại toàn bộ test**
 
-Run:
-```bash
-python -m pytest -v
-cd mobile && npx jest
-```
+Run: `python -m pytest -v`
 Expected: tất cả PASS.
 
 - [ ] **Step 3: Commit**
@@ -1548,20 +1074,20 @@ git commit -m "docs: add root README (run + test instructions)"
 
 ---
 
-## Self-Review
+## Self-Review (bản thu hẹp phạm vi)
 
 **Spec coverage:**
-- 5 AI chức năng → Task 5. datetime/call/message → Task 6, 7. ✅
-- OCR dịch có điều kiện → Task 5 (test nguyên văn/chuyên ngành). ✅
-- Translate hướng VI↔EN → Task 5. ✅
-- STT/intent/TTS → Task 2, 3, 4. ✅
-- device_id + /register-device + devices store → Task 8, 11. ✅
-- FCM push server (stub) + không-push-khi-lỗi → Task 9, 10, 11. ✅
-- Mobile RN Android: register, push, contacts, call/SMS native → Task 12–14. ✅
-- Requirement lib test gọi/nhắn thật (immediate-phone-call, send-direct-sms, contacts) → Task 12–13 + README quyền + cách test máy thật. ✅
-- Server requirements → Task 1 requirements.txt. ✅
-- Xử lý lỗi luôn trả audio/wav → Task 11 (test thiếu field). ✅
+- 5 chức năng AI (ocr, translate, find, money, space) → Task 5 (đã xong) + Task 8 router. ✅
+- OCR dịch có điều kiện; translate hướng VI↔EN → Task 5. ✅
+- STT / intent / TTS → Task 2, 3, 4 (đã xong). ✅
+- Gỡ sạch phone/datetime/push/device store → Task 7. ✅
+- `/process` luôn trả audio/wav kể cả thiếu field và lỗi pipeline → Task 9 (5 test). ✅
+- Server requirements → Task 1 `requirements.txt` (đã xong). ✅
 
-**Placeholder scan:** Mọi bước có code/lệnh thật. `# TODO` là điểm cắm model/API tương lai (đúng thiết kế stub), không phải placeholder plan. ✅
+**Placeholder scan:** Mọi bước có code/lệnh thật. `# TODO` là điểm cắm model/API
+tương lai (đúng thiết kế stub), không phải placeholder plan. ✅
 
-**Type consistency:** `handle(image, command_text) -> Result` đồng nhất mọi handler; `Result(speech, action)`; `push.send(device_id, action) -> bool`; `router.process(image, audio, device_id) -> bytes`; mobile `execute(action) -> Promise<bool>`, `findNumber(name) -> Promise<str|null>`, `registerDevice(...) -> Promise<bool>`. Khớp giữa các task. ✅
+**Type consistency:** `handle(image: bytes, command_text: str) -> Result` đồng nhất
+5 handler; `Result(speech: str)` không còn `action`; `intent.detect(text) -> str`
+trả 1 trong 5 giá trị; `router.process(image, audio) -> bytes` (bỏ `device_id`);
+`tts.synthesize(text) -> bytes`; `stt.transcribe(audio) -> str`. Khớp giữa các task. ✅
