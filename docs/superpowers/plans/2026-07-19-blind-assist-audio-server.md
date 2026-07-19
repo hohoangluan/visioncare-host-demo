@@ -63,13 +63,10 @@
 **Interfaces:**
 - Produces: `schemas.Intent` (8 hằng str), `schemas.Result(speech: str, action: dict | None = None)`; `config.get(name, default)`.
 
-- [ ] **Step 1: Khởi tạo git (để commit từng task)**
+- [x] **Step 1: Khởi tạo git — ĐÃ LÀM SẴN, BỎ QUA**
 
-```bash
-cd "d:/Study/innostar/Sever_test"
-git init
-printf "__pycache__/\n*.pyc\n.venv/\nstorage/*\n!storage/.gitkeep\nnode_modules/\n" > .gitignore
-```
+Repo đã `git init`, đã có `.gitignore`, đã commit baseline, đang ở branch
+`feat/blind-assist-flow`. Không chạy lại `git init`, không tạo lại `.gitignore`.
 
 - [ ] **Step 2: Viết requirements.txt**
 
@@ -180,7 +177,7 @@ Expected: PASS (3 passed).
 - [ ] **Step 10: Commit**
 
 ```bash
-git add .gitignore requirements.txt config.py schemas.py tests/test_schemas.py \
+git add requirements.txt config.py schemas.py tests/test_schemas.py \
   pipeline/__init__.py handlers/__init__.py tests/__init__.py \
   models storage
 git commit -m "feat: scaffold project, config, schemas (Intent, Result)"
@@ -395,20 +392,29 @@ git commit -m "feat: add TTS stub (valid silent WAV)"
 ## Task 5: AI handlers (ocr, translate, find, money, space)
 
 **Files:**
-- Create: `handlers/ocr.py`, `handlers/translate.py`, `handlers/find_object.py`, `handlers/read_money.py`, `handlers/describe_space.py`
+- Create: `handlers/text_utils.py`, `handlers/ocr.py`, `handlers/translate.py`, `handlers/find_object.py`, `handlers/read_money.py`, `handlers/describe_space.py`
 - Test: `tests/test_handlers_ai.py`
 
 **Interfaces:**
 - Consumes: `schemas.Result`.
-- Produces: mỗi module có `handle(image: bytes, command_text: str) -> Result` với `action is None`.
+- Produces: `text_utils.has_vietnamese(text: str) -> bool` (dùng chung bởi ocr + translate); mỗi handler module có `handle(image: bytes, command_text: str) -> Result` với `action is None`.
 
 - [ ] **Step 1: Viết failing test `tests/test_handlers_ai.py`**
 
 ```python
 from handlers import ocr, translate, find_object, read_money, describe_space
+from handlers.text_utils import has_vietnamese
 from schemas import Result
 
 IMG = b"fake image"
+
+
+def test_has_vietnamese_true_for_vi_text():
+    assert has_vietnamese("chào buổi sáng") is True
+
+
+def test_has_vietnamese_false_for_plain_ascii():
+    assert has_vietnamese("good morning") is False
 
 
 def test_ocr_translate_mode_default():
@@ -450,18 +456,22 @@ def test_find_money_space_return_result_no_action():
 Run: `python -m pytest tests/test_handlers_ai.py -v`
 Expected: FAIL — import error.
 
-- [ ] **Step 3: Viết `handlers/ocr.py`**
+- [ ] **Step 3a: Viết `handlers/text_utils.py`** (util dùng chung cho ocr + translate)
 
 ```python
-from schemas import Result
-
-# Dấu tiếng Việt để đoán chữ đã là tiếng Việt (dùng lại ở translate).
+# Dấu tiếng Việt, dùng để đoán một chuỗi có phải tiếng Việt không.
 _VI_CHARS = "ăâđêôơưàáảãạằắẳẵặầấẩẫậèéẻẽẹềếểễệìíỉĩịòóỏõọồốổỗộ" \
             "ờớởỡợùúủũụừứửữựỳýỷỹỵ"
 
 
-def _has_vietnamese(text: str) -> bool:
+def has_vietnamese(text: str) -> bool:
     return any(c in _VI_CHARS for c in text.lower())
+```
+
+- [ ] **Step 3b: Viết `handlers/ocr.py`**
+
+```python
+from schemas import Result
 
 
 def handle(image: bytes, command_text: str) -> Result:
@@ -481,13 +491,13 @@ def handle(image: bytes, command_text: str) -> Result:
 
 ```python
 from schemas import Result
-from handlers.ocr import _has_vietnamese
+from handlers.text_utils import has_vietnamese
 
 
 def handle(image: bytes, command_text: str) -> Result:
     """Dịch câu người nói. Có ký tự tiếng Việt -> VI->EN, ngược lại EN->VI."""
     # TODO: nối model dịch; áp dụng đúng hướng lên nội dung thật.
-    direction = "VI->EN" if _has_vietnamese(command_text) else "EN->VI"
+    direction = "VI->EN" if has_vietnamese(command_text) else "EN->VI"
     return Result(speech=f"[TRANSLATE] chưa cài model — hướng {direction} (kết quả giả)")
 ```
 
@@ -526,13 +536,14 @@ def handle(image: bytes, command_text: str) -> Result:
 - [ ] **Step 6: Chạy test — PASS**
 
 Run: `python -m pytest tests/test_handlers_ai.py -v`
-Expected: PASS (7 passed).
+Expected: PASS (9 passed).
 
 - [ ] **Step 7: Commit**
 
 ```bash
-git add handlers/ocr.py handlers/translate.py handlers/find_object.py \
-  handlers/read_money.py handlers/describe_space.py tests/test_handlers_ai.py
+git add handlers/text_utils.py handlers/ocr.py handlers/translate.py \
+  handlers/find_object.py handlers/read_money.py handlers/describe_space.py \
+  tests/test_handlers_ai.py
 git commit -m "feat: add AI handlers (ocr conditional, translate direction, find/money/space stubs)"
 ```
 
