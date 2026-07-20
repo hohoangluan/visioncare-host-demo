@@ -8,7 +8,11 @@ _RULES = {
     Intent.TRANSLATE: ["dịch"],
     Intent.MONEY: ["mệnh giá", "tiền"],
     Intent.OCR: ["đọc", "chữ"],
-    Intent.FIND: ["tìm", "ở đâu", "đâu"],
+    Intent.FIND: [
+        "tìm", "ở đâu", "đâu",
+        "đi đến", "đi tới", "làm sao đến", "làm sao tới",
+        "làm thế nào đến", "đường đến", "đường tới",
+    ],
 }
 
 _PUNCTUATION_TABLE = str.maketrans("", "", string.punctuation)
