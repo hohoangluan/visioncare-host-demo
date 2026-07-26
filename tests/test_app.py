@@ -33,6 +33,27 @@ def test_health():
     assert response.json() == {"status": "ok"}
 
 
+def test_startup_preloads_models():
+    with patch("pipeline.stt._load_asr") as mock_load_asr, patch(
+        "pipeline.stt.transcribe"
+    ) as mock_transcribe, patch("pipeline.tts._load_tts") as mock_load_tts, patch(
+        "pipeline.tts.synthesize"
+    ) as mock_synthesize, patch(
+        "models.ocr.engine._get_ocr"
+    ) as mock_get_ocr, patch(
+        "models.ocr.engine.extract_text"
+    ) as mock_extract_text:
+        with TestClient(app):
+            pass
+
+    mock_load_asr.assert_called_once()
+    mock_transcribe.assert_called_once()
+    mock_load_tts.assert_called_once()
+    mock_synthesize.assert_called_once()
+    mock_get_ocr.assert_called_once()
+    mock_extract_text.assert_called_once()
+
+
 def test_process_returns_wav():
     response = client.post("/process", files=_files())
     assert response.status_code == 200

@@ -3,10 +3,10 @@ from dataclasses import dataclass
 
 class Intent:
     OCR = "ocr"
-    TRANSLATE = "translate"
     FIND = "find"
     MONEY = "money"
     SPACE = "space"
+    UNKNOWN = "unknown"  # không khớp luật nào -> hỏi lại thay vì đoán
 
 
 @dataclass

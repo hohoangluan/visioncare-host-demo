@@ -1,9 +1,9 @@
 from schemas import Intent, Result
 
 
-def test_intent_has_five_values():
-    vals = {Intent.OCR, Intent.TRANSLATE, Intent.FIND, Intent.MONEY, Intent.SPACE}
-    assert vals == {"ocr", "translate", "find", "money", "space"}
+def test_intent_has_four_values():
+    vals = {Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE}
+    assert vals == {"ocr", "find", "money", "space"}
 
 
 def test_result_holds_speech():

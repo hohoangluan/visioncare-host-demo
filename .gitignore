@@ -5,3 +5,11 @@ storage/*
 !storage/.gitkeep
 node_modules/
 .superpowers/
+models/*
+!models/.gitkeep
+!models/ocr/
+!models/vlm/
+
+# Ảnh thật (chứa mặt người) dùng cho test_bang_am_thanh.py — không commit.
+tests/fixtures/*
+!tests/fixtures/.gitkeep

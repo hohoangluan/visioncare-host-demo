@@ -5,13 +5,16 @@ from schemas import Intent
 # Thứ tự quan trọng: kiểm tra cụm đặc trưng trước cụm chung.
 # (dict giữ thứ tự chèn từ Python 3.7+)
 _RULES = {
-    Intent.TRANSLATE: ["dịch"],
     Intent.MONEY: ["mệnh giá", "tiền"],
     Intent.OCR: ["đọc", "chữ"],
     Intent.FIND: [
         "tìm", "ở đâu", "đâu",
         "đi đến", "đi tới", "làm sao đến", "làm sao tới",
         "làm thế nào đến", "đường đến", "đường tới",
+    ],
+    Intent.SPACE: [
+        "miêu tả", "mô tả", "không gian", "xung quanh",
+        "phía trước", "trước mặt", "trước mắt",
     ],
 }
 
@@ -25,4 +28,5 @@ def detect(text: str) -> str:
     for intent_name, keywords in _RULES.items():
         if any(f" {kw} " in t for kw in keywords):
             return intent_name
-    return Intent.SPACE  # mặc định khi không khớp luật nào: miêu tả không gian
+    # Không khớp luật nào: thà hỏi lại còn hơn đoán bừa qua VLM/OCR sai chỗ.
+    return Intent.UNKNOWN
