@@ -1,0 +1,17 @@
+# runtime
+fastapi
+uvicorn[standard]
+python-multipart
+numpy
+torch
+torchaudio
+transformers
+paddleocr>=3.0,<4
+paddlepaddle
+pillow
+google-genai
+python-dotenv
+vieneu
+# dev / test
+pytest
+httpx
