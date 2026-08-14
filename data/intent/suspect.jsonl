@@ -1,0 +1,15 @@
+{"text": "Dừng lại đi", "label": "nav_stop", "verify": "music_stop", "split": "eval"}
+{"text": "Lên lên xuống xuống", "label": "unknown", "verify": "chat", "split": "eval"}
+{"text": "Cái gì cái gì", "label": "unknown", "verify": "chat", "split": "eval"}
+{"text": "Đọc giúp cái nhãn này", "label": "chat", "verify": "ocr", "split": "eval"}
+{"text": "Đọc tiêu đề báo", "label": "chat", "verify": "ocr", "split": "eval"}
+{"text": "Này này này", "label": "unknown", "verify": "chat", "split": "eval"}
+{"text": "Thôi không đi nữa", "label": "nav_stop", "verify": "ride_confirm", "split": "eval"}
+{"text": "Đang ở khu vực nào", "label": "chat", "verify": "space", "split": "eval"}
+{"text": "Quét xem có gì", "label": "space", "verify": "ocr", "split": "eval"}
+{"text": "Xem phía trước có lối thoát không", "label": "space", "verify": "hazard", "split": "eval"}
+{"text": "Đọc nội dung bài này xem", "label": "chat", "verify": "ocr", "split": "eval"}
+{"text": "Chi chi chành chành", "label": "unknown", "verify": "chat", "split": "eval"}
+{"text": "Tắt ngay", "label": "nav_stop", "verify": "music_stop", "split": "eval"}
+{"text": "La la lá la", "label": "unknown", "verify": "chat", "split": "eval"}
+{"text": "Ba là bà ba", "label": "unknown", "verify": "chat", "split": "eval"}

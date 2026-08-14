@@ -1,5 +1,6 @@
+from collections.abc import Iterator
+
 from models import vlm
-from schemas import Result
 
 _PROMPT = (
     "Bạn đang hỗ trợ người khiếm thị (có thể mù bẩm sinh, chưa từng thấy hình "
@@ -23,6 +24,6 @@ _PROMPT = (
 )
 
 
-def handle(image: bytes, command_text: str) -> Result:
+def handle(image: bytes, command_text: str) -> Iterator[str]:
     prompt = _PROMPT.format(command_text=command_text)
-    return Result(speech=vlm.generate(prompt, image=image))
+    return vlm.generate_stream(prompt, image=image)

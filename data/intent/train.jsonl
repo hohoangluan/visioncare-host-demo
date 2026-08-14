@@ -1,0 +1,713 @@
+{"text": "Hạ âm lượng thấp xuống", "label": "music_volume"}
+{"text": "Gửi tin cấp cứu", "label": "emergency_call"}
+{"text": "Cái này nặng bao nhiêu", "label": "chat"}
+{"text": "Tách tách tách", "label": "unknown"}
+{"text": "Bô bô la la", "label": "unknown"}
+{"text": "Tít tít rè rè", "label": "unknown"}
+{"text": "Dẫn hướng đi công viên thống nhất", "label": "nav_start"}
+{"text": "Gọi ngay đội cấp cứu", "label": "emergency_call"}
+{"text": "Liên lạc với bạn thân", "label": "contact_call"}
+{"text": "Xem giá đi ngã tư hàng xanh", "label": "ride_quote"}
+{"text": "Hạ âm lượng xuống", "label": "music_volume"}
+{"text": "Nhận diện tờ tiền trên tay", "label": "money"}
+{"text": "Đọc nhãn sản phẩm", "label": "ocr"}
+{"text": "Tờ tiền này bao nhiêu đây", "label": "money"}
+{"text": "Đưa ra ngân hàng vietcombank", "label": "nav_start"}
+{"text": "Gọi xe ra trạm xe buýt", "label": "ride_quote"}
+{"text": "Biển báo ghi cái gì", "label": "ocr"}
+{"text": "Gọi số điện thoại tuấn", "label": "contact_call"}
+{"text": "Cần nghe nhạc đỏ", "label": "music_play"}
+{"text": "Chơi bài của minh tuyết", "label": "music_play"}
+{"text": "Tắt cái dẫn đường", "label": "nav_stop"}
+{"text": "Xác nhận chuyến đó đi", "label": "ride_confirm"}
+{"text": "Đọc tờ tiền này với", "label": "money"}
+{"text": "Chỉ đường đi sân bay tân sơn nhất", "label": "nav_start"}
+{"text": "Kết nối với cậu út", "label": "contact_call"}
+{"text": "Phía trước có trống trải không", "label": "hazard"}
+{"text": "Đọc giùm tờ tiền này", "label": "money"}
+{"text": "Liên lạc cứu hộ khẩn", "label": "emergency_call"}
+{"text": "Cần nghe ca sĩ lệ quyên", "label": "music_play"}
+{"text": "Đi đến trạm xe buýt", "label": "nav_start"}
+{"text": "Mô tả không gian trước mặt", "label": "space"}
+{"text": "Gọi điện tới số phương", "label": "contact_call"}
+{"text": "Từ chối chuyến đó", "label": "ride_confirm"}
+{"text": "Tắt mọi âm nhạc", "label": "music_stop"}
+{"text": "Nhạc này nghe chán đổi bài xem", "label": "music_play"}
+{"text": "Gọi cho vợ yêu", "label": "contact_call"}
+{"text": "Tắt định vị", "label": "nav_stop"}
+{"text": "Chốt chuyến đi", "label": "ride_confirm"}
+{"text": "Ừ thì ừ thì", "label": "unknown"}
+{"text": "A á ơ ừ", "label": "unknown"}
+{"text": "Ngừng lộ trình", "label": "nav_stop"}
+{"text": "Hướng tới cái túi xách", "label": "find"}
+{"text": "Gọi xe đến khách sạn rex", "label": "ride_quote"}
+{"text": "Rè rè rè rè", "label": "unknown"}
+{"text": "Làm cho nhạc nhỏ lại", "label": "music_volume"}
+{"text": "Định vị cái điện thoại", "label": "find"}
+{"text": "Cái gì cái gì gì", "label": "unknown"}
+{"text": "Tới địa chỉ 200 kim mã", "label": "nav_start"}
+{"text": "Điện thoại đang ở đâu", "label": "find"}
+{"text": "Không đi xe này nữa", "label": "ride_confirm"}
+{"text": "Thực hiện gọi cho người tên linh", "label": "contact_call"}
+{"text": "Cái balo đặt ở đâu vậy", "label": "find"}
+{"text": "Dẫn đường tới rạp chiếu phim", "label": "nav_start"}
+{"text": "Tìm xe chở đến trung tâm thương mại", "label": "ride_quote"}
+{"text": "Vặn nhỏ âm thanh", "label": "music_volume"}
+{"text": "Ngừng ngay nhạc lại", "label": "music_stop"}
+{"text": "Ngắt ngay bài nhạc này", "label": "music_stop"}
+{"text": "Tới trụ sở công an phường", "label": "nav_start"}
+{"text": "Quanh đây có ai không", "label": "space"}
+{"text": "Hủy chuyến đó đi", "label": "ride_confirm"}
+{"text": "Rì rầm rì rầm", "label": "unknown"}
+{"text": "Phát đại một bài nhạc vàng", "label": "music_play"}
+{"text": "Còn bao nhiêu phần trăm pin", "label": "chat"}
+{"text": "Đọc mấy chữ này coi", "label": "ocr"}
+{"text": "Hủy chỉ đường", "label": "nav_stop"}
+{"text": "Xác nhận đặt xe", "label": "ride_confirm"}
+{"text": "Kích hoạt báo động khẩn", "label": "emergency_call"}
+{"text": "Báo khẩn cấp", "label": "emergency_call"}
+{"text": "Mệt mỏi quá đi", "label": "chat"}
+{"text": "Đọc văn bản", "label": "ocr"}
+{"text": "Xem mệnh giá tờ tiền trên tay", "label": "money"}
+{"text": "Cho âm lượng bé tí", "label": "music_volume"}
+{"text": "Nhấc máy gọi lan", "label": "contact_call"}
+{"text": "Đọc giùm tôi dòng chữ này", "label": "ocr"}
+{"text": "Chỉ đường tới bệnh viện bạch mai", "label": "nav_start"}
+{"text": "Đọc hộ biển hiệu", "label": "ocr"}
+{"text": "Tìm xe ra quảng trường ba đình", "label": "ride_quote"}
+{"text": "Kể cho nghe một câu đố", "label": "chat"}
+{"text": "Tờ này mệnh giá nhiêu", "label": "money"}
+{"text": "Đang cần nghe nhạc tiền chiến", "label": "music_play"}
+{"text": "Nội dung trên tờ giấy là gì", "label": "ocr"}
+{"text": "Chỉ hướng đến cái ghế", "label": "find"}
+{"text": "Yêu cầu gọi cấp cứu", "label": "emergency_call"}
+{"text": "Cảnh vật phía trước thế nào", "label": "space"}
+{"text": "Có vật gì ngăn đường không", "label": "hazard"}
+{"text": "Cho biết đồ vật trước mặt", "label": "space"}
+{"text": "Đưa tôi về nhà", "label": "nav_start"}
+{"text": "Gọi cho khách hàng an", "label": "contact_call"}
+{"text": "Dừng không chỉ nữa", "label": "nav_stop"}
+{"text": "Cho âm thanh bé lại", "label": "music_volume"}
+{"text": "Đi ra bến phà thủ thiêm", "label": "nav_start"}
+{"text": "Gọi gấp cho cường", "label": "contact_call"}
+{"text": "Đặt xe về địa chỉ nhà tôi", "label": "ride_quote"}
+{"text": "Cái gì ở phía trước", "label": "space"}
+{"text": "Nhìn xem không gian này thế nào", "label": "space"}
+{"text": "Thôi không dẫn nữa", "label": "nav_stop"}
+{"text": "Ngừng cho nhạc", "label": "music_stop"}
+{"text": "Gọi xe cứu thương", "label": "emergency_call"}
+{"text": "Đọc thư hộ với", "label": "ocr"}
+{"text": "Cần gọi đội cứu thương", "label": "emergency_call"}
+{"text": "Đây viết gì thế", "label": "ocr"}
+{"text": "Đọc mệnh giá giúp cái", "label": "money"}
+{"text": "Bài nào cũng được", "label": "music_play"}
+{"text": "Đâu là chiếc áo mưa", "label": "find"}
+{"text": "Đặt một chiếc đi nhà thờ tân định", "label": "ride_quote"}
+{"text": "Thanh gậy nằm tại vị trí nào", "label": "find"}
+{"text": "Phía trước có vật gì lạ không", "label": "hazard"}
+{"text": "Kết nối với vợ", "label": "contact_call"}
+{"text": "Xem phía trước có an toàn để bước tiếp không", "label": "hazard"}
+{"text": "Định vị ví tiền của tôi", "label": "find"}
+{"text": "Hỏi giá xe tới bưu điện", "label": "ride_quote"}
+{"text": "Vặn nhỏ lại coi", "label": "music_volume"}
+{"text": "Nhạc quá bé", "label": "music_volume"}
+{"text": "Tăng mức âm thanh", "label": "music_volume"}
+{"text": "Gửi yêu cầu cứu hộ", "label": "emergency_call"}
+{"text": "Chơi nhạc nguyễn văn tí", "label": "music_play"}
+{"text": "Phát thông báo báo động đi", "label": "emergency_call"}
+{"text": "Đặt chuyến này đi", "label": "ride_confirm"}
+{"text": "Định vị đường tới thư viện", "label": "nav_start"}
+{"text": "Bỏ qua nhạc", "label": "music_stop"}
+{"text": "Xác định vị trí cuốn sách", "label": "find"}
+{"text": "Cần xe về nhà thi đấu", "label": "ride_quote"}
+{"text": "Không phát nhạc nữa", "label": "music_stop"}
+{"text": "Thông báo nguy hiểm khẩn", "label": "emergency_call"}
+{"text": "Ái ối á á á", "label": "unknown"}
+{"text": "Hướng về phía cái điện thoại", "label": "find"}
+{"text": "Mô tả toàn bộ phòng này", "label": "space"}
+{"text": "Phát hiện xem có gì cản đường không", "label": "hazard"}
+{"text": "Đọc mệnh giá tờ tiền này", "label": "money"}
+{"text": "Rào rào rào rào", "label": "unknown"}
+{"text": "Vặn nhỏ tiếng nhạc coi", "label": "music_volume"}
+{"text": "Trước mặt có gì thế", "label": "space"}
+{"text": "Đang có những người nào xung quanh", "label": "space"}
+{"text": "Tầm cái bình nước cho tôi", "label": "find"}
+{"text": "Cái nhãn này ghi gì coi", "label": "ocr"}
+{"text": "Hủy dẫn đường", "label": "nav_stop"}
+{"text": "Gọi một cuốc về cầu giấy", "label": "ride_quote"}
+{"text": "Gọi xe về bệnh viện bạch mai", "label": "ride_quote"}
+{"text": "Thực hiện cuộc gọi người quen", "label": "contact_call"}
+{"text": "Gọi cho khánh", "label": "contact_call"}
+{"text": "Tờ này mấy tiền vậy", "label": "money"}
+{"text": "Chán quá làm gì bây giờ", "label": "chat"}
+{"text": "Chỉ đường tới công viên", "label": "nav_start"}
+{"text": "Đang gặp tình huống khẩn", "label": "emergency_call"}
+{"text": "Trong này có chữ gì không", "label": "ocr"}
+{"text": "Tắt nhạc cho im lặng", "label": "music_stop"}
+{"text": "Tìm cái chổi cho tôi", "label": "find"}
+{"text": "Dừng nghe nhạc", "label": "music_stop"}
+{"text": "Hướng tới cái điều khiển", "label": "find"}
+{"text": "Có đồ đạc gì chắn đường không", "label": "space"}
+{"text": "Cần tìm đôi dép mau", "label": "find"}
+{"text": "Hủy yêu cầu vừa rồi", "label": "ride_confirm"}
+{"text": "Cần liên lạc cấp cứu", "label": "emergency_call"}
+{"text": "Cảnh báo vật cản phía trước", "label": "hazard"}
+{"text": "Gọi xe tới nhà con gái tôi", "label": "ride_quote"}
+{"text": "Có gì lạ phía trước", "label": "space"}
+{"text": "Thời tiết bên ngoài sao rồi", "label": "chat"}
+{"text": "Phía trước có cọc hay hố không", "label": "hazard"}
+{"text": "Không đi theo nữa", "label": "nav_stop"}
+{"text": "Mở cho nghe phương thanh", "label": "music_play"}
+{"text": "Phát mấy bài nhạc trẻ", "label": "music_play"}
+{"text": "Im lặng đi", "label": "music_stop"}
+{"text": "Đùng đùng xoẹt xoẹt", "label": "unknown"}
+{"text": "Gửi vị trí cứu trợ", "label": "emergency_call"}
+{"text": "Giá tới nhà văn hóa thiếu nhi", "label": "ride_quote"}
+{"text": "Đây là tờ tiền gì", "label": "money"}
+{"text": "Đọc mệnh giá tiền coi", "label": "money"}
+{"text": "Quay số gọi sang trang", "label": "contact_call"}
+{"text": "Liệt kê đồ đạc trong tầm nhìn", "label": "space"}
+{"text": "Thời gian thực là bao nhiêu", "label": "chat"}
+{"text": "Có vật cản phía trước không", "label": "hazard"}
+{"text": "Gọi tới số của thắng", "label": "contact_call"}
+{"text": "Kiểm tra khung cảnh trước mặt", "label": "space"}
+{"text": "Đóng trình phát nhạc", "label": "music_stop"}
+{"text": "Cho tiếng nhỏ lại", "label": "music_volume"}
+{"text": "Đường có thông không", "label": "hazard"}
+{"text": "Hủy bỏ đặt xe xem", "label": "ride_confirm"}
+{"text": "Đi về hướng bệnh viện phụ sản", "label": "nav_start"}
+{"text": "Gọi cấp cứu gấp cho tôi", "label": "emergency_call"}
+{"text": "Thôi hủy chuyến xe", "label": "ride_confirm"}
+{"text": "Đi chợ đồng xuân", "label": "nav_start"}
+{"text": "Mở bản đồ đi tới trường", "label": "nav_start"}
+{"text": "Thực hiện kết nối với huyền", "label": "contact_call"}
+{"text": "Bật bài người tình mùa đông", "label": "music_play"}
+{"text": "Dẫn tới câu lạc bộ người mù", "label": "nav_start"}
+{"text": "Bật bài tình đơn phương", "label": "music_play"}
+{"text": "Xác nhận chuyến đi", "label": "ride_confirm"}
+{"text": "Quét toàn bộ căn phòng", "label": "space"}
+{"text": "Đọc giá tiền tờ này coi", "label": "money"}
+{"text": "Gọi cứu giúp", "label": "emergency_call"}
+{"text": "Răng rứa răng rứa", "label": "unknown"}
+{"text": "Bỏ chuyến này coi", "label": "ride_confirm"}
+{"text": "Gọi điện thoại cho thảo", "label": "contact_call"}
+{"text": "Dẫn tới nhà sách fahasa", "label": "nav_start"}
+{"text": "Trời có gió không", "label": "chat"}
+{"text": "Vặn nhỏ âm thanh xuống", "label": "music_volume"}
+{"text": "Bỏ chuyến xe vừa gọi", "label": "ride_confirm"}
+{"text": "Giảm tiếng nhạc xuống", "label": "music_volume"}
+{"text": "Nóng quá", "label": "chat"}
+{"text": "Báo giá đi hồ tây", "label": "ride_quote"}
+{"text": "Cái kính đang hoạt động không", "label": "chat"}
+{"text": "Ngừng chỉ dẫn", "label": "nav_stop"}
+{"text": "Giảm bớt âm lượng", "label": "music_volume"}
+{"text": "Thông báo cấp cứu", "label": "emergency_call"}
+{"text": "Đồng ý mức giá này", "label": "ride_confirm"}
+{"text": "Đọc vị tình hình xung quanh", "label": "space"}
+{"text": "Chỉ hướng cái cốc với", "label": "find"}
+{"text": "Bắt đầu dẫn đường tới nhà bạn", "label": "nav_start"}
+{"text": "Đặt xe tới quán cà phê", "label": "ride_quote"}
+{"text": "Để tiếng nhỏ thôi", "label": "music_volume"}
+{"text": "Báo động đỏ", "label": "emergency_call"}
+{"text": "Đừng nói nữa im lặng xem", "label": "chat"}
+{"text": "Đọc giá trị tờ tiền cầm", "label": "money"}
+{"text": "Âm lượng cao quá", "label": "music_volume"}
+{"text": "Mở loa lớn hơn", "label": "music_volume"}
+{"text": "Xe xe xe xe", "label": "unknown"}
+{"text": "Trước mặt có gì cản đường", "label": "hazard"}
+{"text": "Quét không gian", "label": "space"}
+{"text": "Nha nha nha nha", "label": "unknown"}
+{"text": "Đặt cuốc đi rạp chiếu phim", "label": "ride_quote"}
+{"text": "Hủy chuyến đi", "label": "ride_confirm"}
+{"text": "Đọc giúp cái hạn sử dụng", "label": "ocr"}
+{"text": "Đặt một chuyến đến bảo tàng mỹ thuật", "label": "ride_quote"}
+{"text": "Nhìn phía trước coi có gì không", "label": "hazard"}
+{"text": "Tắt việc dẫn đường", "label": "nav_stop"}
+{"text": "Cho biết khung cảnh xung quanh", "label": "space"}
+{"text": "Hãy gọi cho bác sĩ riêng", "label": "contact_call"}
+{"text": "Nhạc này thuộc thể loại gì", "label": "chat"}
+{"text": "Kết thúc chỉ đường", "label": "nav_stop"}
+{"text": "Cho xe tới ngã ba chú ý", "label": "ride_quote"}
+{"text": "Cần xe cứu trợ khẩn cấp", "label": "emergency_call"}
+{"text": "Buồn ngủ quá", "label": "chat"}
+{"text": "Xác định cái túi xách nằm hướng nào", "label": "find"}
+{"text": "Cần cứu trợ khẩn cấp", "label": "emergency_call"}
+{"text": "Tắt cái chỉ đường này", "label": "nav_stop"}
+{"text": "Kích hoạt chế độ khẩn cấp", "label": "emergency_call"}
+{"text": "Gọi ngay cho mai", "label": "contact_call"}
+{"text": "Phía trước có gì không", "label": "hazard"}
+{"text": "Phía trước có an toàn bước tiếp không", "label": "hazard"}
+{"text": "Xem mệnh giá tờ tiền", "label": "money"}
+{"text": "Chốt chuyến đó xem", "label": "ride_confirm"}
+{"text": "Dừng đi", "label": "nav_stop"}
+{"text": "Phòng này thế nào", "label": "space"}
+{"text": "Hừm hừm à ờ", "label": "unknown"}
+{"text": "Không đi nữa", "label": "nav_stop"}
+{"text": "Hôm nay là thứ mấy", "label": "chat"}
+{"text": "Dẫn tôi tới trung tâm thương mại", "label": "nav_start"}
+{"text": "Tính tiền xe về tận nhà", "label": "ride_quote"}
+{"text": "Xem lối đi có gì lạ không", "label": "hazard"}
+{"text": "Kiểm tra đường đi coi", "label": "hazard"}
+{"text": "Tìm giùm cái sạc pin", "label": "find"}
+{"text": "Định vị cái điều khiển đi", "label": "find"}
+{"text": "Cho biết bố cục căn phòng này", "label": "space"}
+{"text": "Xem có lối đi không", "label": "space"}
+{"text": "Lô lô ta ta", "label": "unknown"}
+{"text": "Đang có sự kiện gì không", "label": "chat"}
+{"text": "Kết nối máy với tú", "label": "contact_call"}
+{"text": "Có bao nhiêu người hát bài này", "label": "chat"}
+{"text": "Báo tình huống nguy hiểm", "label": "emergency_call"}
+{"text": "Nhà con gái tôi ở đâu", "label": "nav_start"}
+{"text": "Phía trước có an toàn không", "label": "hazard"}
+{"text": "Đọc mệnh giá tờ này đi", "label": "money"}
+{"text": "Kể một câu chuyện ma", "label": "chat"}
+{"text": "Mê mệ mề mề", "label": "unknown"}
+{"text": "Đâu là chiếc đồng hồ", "label": "find"}
+{"text": "Hư hư ừ ừ", "label": "unknown"}
+{"text": "Ừ từ ừm hừm ừm", "label": "unknown"}
+{"text": "Phát bài hát thịnh hành", "label": "music_play"}
+{"text": "Đặt chuyến đi ra bến phà", "label": "ride_quote"}
+{"text": "Kiểm tra cước phí ra bưu điện phường", "label": "ride_quote"}
+{"text": "Thôi dừng nhạc lại", "label": "music_stop"}
+{"text": "Đọc tin giải trí đi", "label": "chat"}
+{"text": "Thực hiện cuộc gọi cho ngân", "label": "contact_call"}
+{"text": "Tắt thông báo lộ trình", "label": "nav_stop"}
+{"text": "Cần xe cứu thương gấp", "label": "emergency_call"}
+{"text": "Có thứ gì cản trở phía trước không", "label": "hazard"}
+{"text": "Dừng lộ trình đi", "label": "nav_stop"}
+{"text": "Định vị cái khăn giấy", "label": "find"}
+{"text": "Xem hạn sử dụng còn không", "label": "ocr"}
+{"text": "Gọi cho cô sáu", "label": "contact_call"}
+{"text": "Ê a ê a", "label": "unknown"}
+{"text": "Kể chuyện gì vui vẻ coi", "label": "chat"}
+{"text": "Đang cần cấp cứu", "label": "emergency_call"}
+{"text": "Đọc chữ trên hóa đơn", "label": "ocr"}
+{"text": "Đi tới trung tâm y tế", "label": "nav_start"}
+{"text": "Tắt bài hát này", "label": "music_stop"}
+{"text": "Xác nhận chuyến này", "label": "ride_confirm"}
+{"text": "Tôi không đi nữa", "label": "ride_confirm"}
+{"text": "Ngừng nhạc lại coi", "label": "music_stop"}
+{"text": "Thực hiện cuộc gọi cấp cứu", "label": "emergency_call"}
+{"text": "Cho nhỏ tiếng đi", "label": "music_volume"}
+{"text": "Hủy chuyến đi này", "label": "ride_confirm"}
+{"text": "Đẩy âm lượng lên", "label": "music_volume"}
+{"text": "Tìm nghe bài nào sôi động chút", "label": "music_play"}
+{"text": "Tìm cho tôi cái kẹp", "label": "find"}
+{"text": "Phát lệnh cấp cứu đi", "label": "emergency_call"}
+{"text": "Xác nhận chuyến xe", "label": "ride_confirm"}
+{"text": "Kể chuyện cười coi", "label": "chat"}
+{"text": "Có nguy hiểm phía trước không", "label": "hazard"}
+{"text": "Phát nhạc đi xem nào", "label": "music_play"}
+{"text": "Mô tả cảnh vật", "label": "space"}
+{"text": "Đọc hạn sử dụng trên hộp", "label": "ocr"}
+{"text": "Cần xe tới bệnh viện nhiệt đới", "label": "ride_quote"}
+{"text": "Tăng cường âm thanh", "label": "music_volume"}
+{"text": "Tìm món đồ chơi cho tôi", "label": "find"}
+{"text": "Kết nối ngay với hồng", "label": "contact_call"}
+{"text": "Không dẫn nữa", "label": "nav_stop"}
+{"text": "Cứ phát đi", "label": "music_play"}
+{"text": "Đọc chữ trong hình", "label": "ocr"}
+{"text": "Ngay lập tức gọi bảo vệ", "label": "emergency_call"}
+{"text": "Tiếng to lên chút nữa", "label": "music_volume"}
+{"text": "Chơi nhạc của hương lan", "label": "music_play"}
+{"text": "Thôi hủy đi", "label": "ride_confirm"}
+{"text": "Đọc giúp tin nhắn viết tay", "label": "ocr"}
+{"text": "Gọi số của hùng", "label": "contact_call"}
+{"text": "Đọc mệnh giá của tờ tiền này", "label": "money"}
+{"text": "Đọc báo đi", "label": "chat"}
+{"text": "Dẫn lối đi ngã tư hàng xanh", "label": "nav_start"}
+{"text": "Đưa tới tiệm cắt tóc", "label": "nav_start"}
+{"text": "Đọc nội dung tờ giấy này", "label": "ocr"}
+{"text": "Giảm mức nhạc xuống", "label": "music_volume"}
+{"text": "Bao nhiêu tiền đến phố đi bộ nguyễn huệ", "label": "ride_quote"}
+{"text": "Đóng nhạc lại", "label": "music_stop"}
+{"text": "Tắt cái nhạc đi", "label": "music_stop"}
+{"text": "Gọi cho bà ngoại", "label": "contact_call"}
+{"text": "Ngừng ngay lập tức", "label": "nav_stop"}
+{"text": "Cái gương ở hướng nào", "label": "find"}
+{"text": "Giải thích ý nghĩa bài hát này", "label": "chat"}
+{"text": "Cần xe ra quán cà phê đầu ngõ", "label": "ride_quote"}
+{"text": "Dừng phát nhạc", "label": "music_stop"}
+{"text": "Tạm dừng nhạc", "label": "music_stop"}
+{"text": "Xem giá cước về chung cư estella", "label": "ride_quote"}
+{"text": "Tắt hết nhạc đi", "label": "music_stop"}
+{"text": "Thông báo những gì đang hiện diện", "label": "space"}
+{"text": "Cho nhạc lớn lên", "label": "music_volume"}
+{"text": "Liên lạc với chú tư", "label": "contact_call"}
+{"text": "Ừ từ đọc lại đoạn đó", "label": "chat"}
+{"text": "Giảm độ lớn âm thanh", "label": "music_volume"}
+{"text": "Làm làm làm làm", "label": "unknown"}
+{"text": "Phía trước có vật gì bày biện không", "label": "space"}
+{"text": "Ờ à ùm á", "label": "unknown"}
+{"text": "Cái hộp bút nằm chỗ nào", "label": "find"}
+{"text": "Nhạc này phát hành từ bao giờ", "label": "chat"}
+{"text": "Đang có cái gì trước mắt", "label": "space"}
+{"text": "Kể cho nghe chuyện ngắn", "label": "chat"}
+{"text": "Khung cảnh xung quanh ra sao", "label": "space"}
+{"text": "Nghe nhạc trịnh công sơn", "label": "music_play"}
+{"text": "Mấy giờ thì đi ngủ được", "label": "chat"}
+{"text": "Có ai trong phòng này không", "label": "space"}
+{"text": "Ngừng hẳn", "label": "nav_stop"}
+{"text": "Ngừng hẳn đi", "label": "nav_stop"}
+{"text": "Cái đó cái này cái nọ", "label": "unknown"}
+{"text": "Đặt xe đi chợ bến thành", "label": "ride_quote"}
+{"text": "Chìa khóa ở đâu", "label": "find"}
+{"text": "Nhấn gọi cho tuấn", "label": "contact_call"}
+{"text": "Đường này có gì gây vấp ngã", "label": "hazard"}
+{"text": "Bỏ chuyến xe này đi", "label": "ride_confirm"}
+{"text": "Tắt chỉ đường", "label": "nav_stop"}
+{"text": "Trời bên ngoài có mưa không", "label": "chat"}
+{"text": "Tới cổng trường tiểu học", "label": "nav_start"}
+{"text": "Đang muốn nghe bài sơn tùng", "label": "music_play"}
+{"text": "Có người lạ trong phòng không", "label": "space"}
+{"text": "Tính phí đi cửa hàng tiện lợi", "label": "ride_quote"}
+{"text": "Dừng việc dẫn đường", "label": "nav_stop"}
+{"text": "Ngừng phát âm nhạc", "label": "music_stop"}
+{"text": "Tôi đi chuyến đó", "label": "ride_confirm"}
+{"text": "Chỉ đường tìm cái remote", "label": "find"}
+{"text": "Cái khăn tắm để ở đâu", "label": "find"}
+{"text": "Phát ngay bài lạc trôi", "label": "music_play"}
+{"text": "Đi bộ tới quán cà phê", "label": "nav_start"}
+{"text": "Tờ tiền này mệnh giá là bao nhiêu", "label": "money"}
+{"text": "Tăng tiếng lên xem", "label": "music_volume"}
+{"text": "Chỉ hướng ra bến xe miền đông", "label": "nav_start"}
+{"text": "Dừng mọi bài hát", "label": "music_stop"}
+{"text": "Nghe nhạc tiền chiến xem", "label": "music_play"}
+{"text": "Mở một bài của mỹ tâm", "label": "music_play"}
+{"text": "Căn phòng đang trống trải hay đông đúc", "label": "space"}
+{"text": "Chiếc áo đang ở hướng nào", "label": "find"}
+{"text": "Đâu là cái chìa khóa xe", "label": "find"}
+{"text": "Tờ tiền này là bao nhiêu tiền", "label": "money"}
+{"text": "Đặt xe ra nhà hát lớn", "label": "ride_quote"}
+{"text": "Phát báo động khẩn cấp", "label": "emergency_call"}
+{"text": "Xào xạc xào xạc", "label": "unknown"}
+{"text": "Có chướng ngại vật nào cần tránh", "label": "hazard"}
+{"text": "Đọc cho nghe chuyện cổ tích", "label": "chat"}
+{"text": "Nối máy cho mẹ gấp", "label": "contact_call"}
+{"text": "Tắt chỉ đường giúp", "label": "nav_stop"}
+{"text": "Chấp nhận đặt xe", "label": "ride_confirm"}
+{"text": "Hướng dẫn tới cái quạt", "label": "find"}
+{"text": "Tìm số người quen gọi xem", "label": "contact_call"}
+{"text": "Đi tới ga đà nẵng", "label": "nav_start"}
+{"text": "Ki ki ca ca", "label": "unknown"}
+{"text": "Nghe lại nhạc cũ", "label": "music_play"}
+{"text": "Đang là thứ mấy", "label": "chat"}
+{"text": "Thông báo tình trạng khẩn", "label": "emergency_call"}
+{"text": "Nhiệt độ ngoài trời bao nhiêu", "label": "chat"}
+{"text": "Cho nghe nhạc tiếp đi", "label": "chat"}
+{"text": "Cho biết xung quanh có gì mới", "label": "space"}
+{"text": "Xem trong ảnh viết gì", "label": "ocr"}
+{"text": "Ngừng dẫn lối", "label": "nav_stop"}
+{"text": "Đọc giúp cái này", "label": "ocr"}
+{"text": "Cái mũ ở vị trí nào", "label": "find"}
+{"text": "Đường đến trường đại học bách khoa", "label": "nav_start"}
+{"text": "Đọc thông tin trên hộp", "label": "ocr"}
+{"text": "Bấm số cho chú bảy", "label": "contact_call"}
+{"text": "Hôm nay có gì mới", "label": "chat"}
+{"text": "Bật bài để gió cuốn đi", "label": "music_play"}
+{"text": "Liên hệ với người nhà cái", "label": "contact_call"}
+{"text": "Tìm chìa khóa giúp", "label": "find"}
+{"text": "Cho nhạc bé lại", "label": "music_volume"}
+{"text": "Đôi giày ở đâu rồi", "label": "find"}
+{"text": "Tiền này mệnh giá bao nhiêu vậy", "label": "money"}
+{"text": "Tắt chỉ hướng", "label": "nav_stop"}
+{"text": "Vặn âm lượng nhỏ đi", "label": "music_volume"}
+{"text": "Gọi điện cho anh hai", "label": "contact_call"}
+{"text": "Cho nhạc ngưng", "label": "music_stop"}
+{"text": "Mô tê mô tê", "label": "unknown"}
+{"text": "Cho to lên với", "label": "music_volume"}
+{"text": "Liên lạc với con gái", "label": "contact_call"}
+{"text": "Xác nhận chuyến xe này", "label": "ride_confirm"}
+{"text": "Ngưng hướng dẫn", "label": "nav_stop"}
+{"text": "Ta ta ta ta", "label": "unknown"}
+{"text": "Đọc mấy chữ này đi", "label": "ocr"}
+{"text": "Đây là tờ bao nhiêu tiền", "label": "money"}
+{"text": "Cho biết trạng thái trong phòng", "label": "space"}
+{"text": "Trời sáng hay tối rồi", "label": "chat"}
+{"text": "Đến cây xăng gần nhất", "label": "nav_start"}
+{"text": "Tăng thêm tiếng", "label": "music_volume"}
+{"text": "Hỗ trợ y tế khẩn cấp", "label": "emergency_call"}
+{"text": "Báo cho biết có vật cản không", "label": "hazard"}
+{"text": "Hết nhạc", "label": "music_stop"}
+{"text": "Chiếc nhẫn ở vị trí mô", "label": "find"}
+{"text": "Chữ này là gì", "label": "ocr"}
+{"text": "Xem lối đi có trống không", "label": "hazard"}
+{"text": "Mô tả người đang ở đây", "label": "space"}
+{"text": "Cần thấy cây bút trên bàn", "label": "find"}
+{"text": "Âm lượng lớn chút", "label": "music_volume"}
+{"text": "Kêu kêu kêu", "label": "unknown"}
+{"text": "Mở bài phố hoa", "label": "music_play"}
+{"text": "Tâm điểm cái ấm đun nước ở đâu", "label": "find"}
+{"text": "Hạ thấp âm thanh xuống", "label": "music_volume"}
+{"text": "Xem thử tiền này mấy", "label": "money"}
+{"text": "Đi chuyến đó coi", "label": "ride_confirm"}
+{"text": "Cái sổ tay đang ở đâu", "label": "find"}
+{"text": "Kiểm tra mệnh giá tờ tiền", "label": "money"}
+{"text": "Có vật gì phía trước tôi không", "label": "hazard"}
+{"text": "Cho biết nội dung này", "label": "ocr"}
+{"text": "Xem quang cảnh hiện tại", "label": "space"}
+{"text": "Thôi không đi xe nữa", "label": "ride_confirm"}
+{"text": "Bên ngoài ồn ào quá", "label": "chat"}
+{"text": "Tờ này là bao nhiêu", "label": "money"}
+{"text": "Đặt grab về quận một", "label": "ride_quote"}
+{"text": "Tiền này mấy tờ", "label": "money"}
+{"text": "Phát bài của sơn tùng", "label": "music_play"}
+{"text": "Có an toàn để đi tiếp không", "label": "hazard"}
+{"text": "Nghe bài đắp mộ cuộc tình", "label": "music_play"}
+{"text": "Ngắt tiếng nhạc", "label": "music_stop"}
+{"text": "Ờ à ừm đó đó", "label": "unknown"}
+{"text": "Mức âm này lớn quá", "label": "music_volume"}
+{"text": "Ngừng ngay", "label": "nav_stop"}
+{"text": "Xem cái kéo ở đâu", "label": "find"}
+{"text": "Có gì cản trở bước đi của tôi", "label": "hazard"}
+{"text": "Có gì chặn đường không", "label": "hazard"}
+{"text": "Thôi không cần chỉ", "label": "nav_stop"}
+{"text": "Nhìn xem có gì lạ", "label": "space"}
+{"text": "Gọi tên hải", "label": "contact_call"}
+{"text": "Ngừng nhạc xem", "label": "music_stop"}
+{"text": "Mở cho nghe thái thanh", "label": "music_play"}
+{"text": "Chấp nhận giá cước", "label": "ride_confirm"}
+{"text": "Tìm cái ví của tôi", "label": "find"}
+{"text": "Kiểm tra xem ai đang ở đây", "label": "space"}
+{"text": "Nhìn xem có chỗ nào bị chắn ngang", "label": "hazard"}
+{"text": "Đưa tới tiệm thuốc tây", "label": "nav_start"}
+{"text": "Xác định giá trị tờ tiền", "label": "money"}
+{"text": "Nghe nhạc dân ca", "label": "music_play"}
+{"text": "Cái này mấy tiền", "label": "money"}
+{"text": "Đi đến siêu thị coopmart bao nhiêu", "label": "ride_quote"}
+{"text": "Đi tới tiệm sách cũ", "label": "nav_start"}
+{"text": "Đến khách sạn melia", "label": "nav_start"}
+{"text": "Xác nhận cuốc xe này", "label": "ride_confirm"}
+{"text": "Xì xà xì xà", "label": "unknown"}
+{"text": "Đặt grab đi chùa vĩnh nghiêm", "label": "ride_quote"}
+{"text": "Bật bài một cõi đi về", "label": "music_play"}
+{"text": "Cho nhạc dừng", "label": "music_stop"}
+{"text": "Trước mặt có vật gì", "label": "space"}
+{"text": "Đọc cho biết tờ tiền này", "label": "money"}
+{"text": "Phát bất cứ bài nào", "label": "music_play"}
+{"text": "Phía trước có gì đáng ngại không", "label": "hazard"}
+{"text": "Dẫn lối về khách sạn", "label": "nav_start"}
+{"text": "Xem tờ này mấy đồng", "label": "money"}
+{"text": "Thôi đi đường", "label": "nav_stop"}
+{"text": "Kích hoạt cảnh báo sos", "label": "emergency_call"}
+{"text": "Đi tới quán cà phê đầu ngõ", "label": "nav_start"}
+{"text": "Phía trước có người không", "label": "space"}
+{"text": "Gọi tới danh bạ của đức", "label": "contact_call"}
+{"text": "Xem mấy chữ này với", "label": "ocr"}
+{"text": "Cho tiếng to hơn đi", "label": "music_volume"}
+{"text": "Cứ mở đại một bài đi", "label": "music_play"}
+{"text": "Xung quanh có đồ đạc gì", "label": "space"}
+{"text": "Cho im lặng", "label": "music_stop"}
+{"text": "Xem giá chuyến tới nhà sách", "label": "ride_quote"}
+{"text": "Cái lược để mô rồi", "label": "find"}
+{"text": "Muốn thuê xe tới địa chỉ này", "label": "ride_quote"}
+{"text": "Bật chế độ cứu hộ ngay", "label": "emergency_call"}
+{"text": "Đồng ý đặt xe", "label": "ride_confirm"}
+{"text": "Cho nhạc ngừng", "label": "music_stop"}
+{"text": "Kiểm tra xem có gì cản lối không", "label": "hazard"}
+{"text": "Cái này tờ mấy tiền", "label": "money"}
+{"text": "Kể chuyện vui đi", "label": "chat"}
+{"text": "Có chướng ngại gì phía trước không", "label": "hazard"}
+{"text": "Hay đổi sang nhạc vàng", "label": "music_play"}
+{"text": "Liên hệ ngay với dũng", "label": "contact_call"}
+{"text": "Tờ tiền này giá trị mấy", "label": "money"}
+{"text": "Gọi xe đến tòa nhà bitexco", "label": "ride_quote"}
+{"text": "Kết nối tới máy quang", "label": "contact_call"}
+{"text": "Cần trợ giúp y tế", "label": "emergency_call"}
+{"text": "Bật ca sĩ quang lê", "label": "music_play"}
+{"text": "Xì xào xì xào", "label": "unknown"}
+{"text": "Phát hiện nguy hiểm trên mặt sàn", "label": "hazard"}
+{"text": "Gọi trợ giúp y tế khẩn", "label": "emergency_call"}
+{"text": "Quét đường đi", "label": "hazard"}
+{"text": "Đường phía trước có vật cản không", "label": "hazard"}
+{"text": "Dừng phát nhạc đi", "label": "music_stop"}
+{"text": "Quét phòng coi", "label": "space"}
+{"text": "Cho biết mệnh giá tiền", "label": "money"}
+{"text": "Có ai đứng đó không", "label": "space"}
+{"text": "Liên lạc với phong", "label": "contact_call"}
+{"text": "Âm thanh to quá", "label": "music_volume"}
+{"text": "Ờ à ừm", "label": "unknown"}
+{"text": "Tìm đường tới khách sạn đệ nhất", "label": "nav_start"}
+{"text": "Xem giấy tờ này viết gì", "label": "ocr"}
+{"text": "Âm thanh to quá mức", "label": "music_volume"}
+{"text": "Bây giờ là buổi gì", "label": "chat"}
+{"text": "Mô tả căn phòng", "label": "space"}
+{"text": "Vặn to lên xem", "label": "music_volume"}
+{"text": "Đói bụng ghê", "label": "chat"}
+{"text": "Bao nhiêu tiền tới cầu sài gòn", "label": "ride_quote"}
+{"text": "Tờ này mệnh giá là gì", "label": "money"}
+{"text": "Cái cái là là", "label": "unknown"}
+{"text": "Định hướng lấy cái bát", "label": "find"}
+{"text": "Cái này viết gì đấy", "label": "ocr"}
+{"text": "Chốt chuyến đi ngay", "label": "ride_confirm"}
+{"text": "Ngưng nhạc đi nhé", "label": "music_stop"}
+{"text": "Đặt xe tới trạm xe buýt gần nhất", "label": "ride_quote"}
+{"text": "Cái đó cái gì cái kia", "label": "unknown"}
+{"text": "Nghe nhạc trữ tình", "label": "music_play"}
+{"text": "Tăng âm lượng", "label": "music_volume"}
+{"text": "Ngừng trình phát", "label": "music_stop"}
+{"text": "Lạc lạc lạc", "label": "unknown"}
+{"text": "Tắt chỉ đường ngay", "label": "nav_stop"}
+{"text": "Xem tờ tiền này mệnh giá mấy", "label": "money"}
+{"text": "Đặt xe ra phố ẩm thực", "label": "ride_quote"}
+{"text": "Quét toàn bộ khu vực này xem có gì", "label": "space"}
+{"text": "Chấp nhận chuyến này", "label": "ride_confirm"}
+{"text": "Tắt mọi chỉ dẫn", "label": "nav_stop"}
+{"text": "Tăng âm thanh lên xíu", "label": "music_volume"}
+{"text": "Tắt cái này đi", "label": "music_stop"}
+{"text": "Đường đi có ổn không", "label": "hazard"}
+{"text": "Có gì vướng chân không", "label": "hazard"}
+{"text": "Im lặng thôi", "label": "music_stop"}
+{"text": "Gọi điện thoại cho anh", "label": "contact_call"}
+{"text": "Có vật cản gì cần tránh không", "label": "hazard"}
+{"text": "Bật chế độ sos", "label": "emergency_call"}
+{"text": "Mở nhạc nhẹ thôi", "label": "music_play"}
+{"text": "Tin tức về ca sĩ này ra sao", "label": "chat"}
+{"text": "Xác nhận chuyến này đi", "label": "ride_confirm"}
+{"text": "Trời còn nắng không", "label": "chat"}
+{"text": "Bật cho nghe thanh tuyền", "label": "music_play"}
+{"text": "Đọc dòng chữ trước mắt", "label": "ocr"}
+{"text": "Tạch tạch ạch ạch", "label": "unknown"}
+{"text": "Thời tiết hôm nay thế nào", "label": "chat"}
+{"text": "À ừ ờ kìa", "label": "unknown"}
+{"text": "Đừng chỉ đường nữa", "label": "nav_stop"}
+{"text": "Gọi xe về đại lộ võ văn kiệt", "label": "ride_quote"}
+{"text": "Không đặt chuyến đó", "label": "ride_confirm"}
+{"text": "Tên bài hát này là gì nhỉ", "label": "chat"}
+{"text": "Đọc tên thuốc này xem", "label": "ocr"}
+{"text": "Dẫn lối tới hộp thuốc", "label": "find"}
+{"text": "Liên lạc cơ sở y tế", "label": "emergency_call"}
+{"text": "Hủy chuyến đi ngay", "label": "ride_confirm"}
+{"text": "Chỉ hướng đi tới bưu điện", "label": "nav_start"}
+{"text": "Mở bài diễm xưa", "label": "music_play"}
+{"text": "Cho nghe nhạc vàng", "label": "music_play"}
+{"text": "Cho biết giá đi ga sài gòn", "label": "ride_quote"}
+{"text": "Lô ca ta xi mà", "label": "unknown"}
+{"text": "Trước mặt có vật gì không", "label": "hazard"}
+{"text": "Cần xe ra sân vận động", "label": "ride_quote"}
+{"text": "Gọi điện ngay cho yên", "label": "contact_call"}
+{"text": "Ngừng hướng dẫn đi", "label": "nav_stop"}
+{"text": "Đọc mấy dòng này xem", "label": "ocr"}
+{"text": "Tê mô mô tê", "label": "unknown"}
+{"text": "Kích hoạt sos ngay", "label": "emergency_call"}
+{"text": "Dừng chơi nhạc", "label": "music_stop"}
+{"text": "Chiếc khăn đang nằm ở đâu", "label": "find"}
+{"text": "Cái cốc nước ở phía nào", "label": "find"}
+{"text": "Đưa tôi đến chợ bến thành", "label": "nav_start"}
+{"text": "Quét đường đi xem có vật cản không", "label": "hazard"}
+{"text": "Gửi yêu cầu cấp cứu", "label": "emergency_call"}
+{"text": "Báo giá đi công viên", "label": "ride_quote"}
+{"text": "Chỉ hướng tới đôi giày", "label": "find"}
+{"text": "Quét xem phía trước có gì", "label": "hazard"}
+{"text": "Gọi đến cho chú ba", "label": "contact_call"}
+{"text": "Có chữ gì không", "label": "ocr"}
+{"text": "Có vật cản gì không", "label": "space"}
+{"text": "Không nghe nhạc nữa", "label": "music_stop"}
+{"text": "Hôm nay là ngày mấy âm lịch", "label": "chat"}
+{"text": "Có bao nhiêu người quanh đây", "label": "space"}
+{"text": "Tăng âm lượng lên", "label": "music_volume"}
+{"text": "Quay số cho linh", "label": "contact_call"}
+{"text": "Nhận diện tờ tiền coi", "label": "money"}
+{"text": "Đọc giúp nội dung đó", "label": "ocr"}
+{"text": "Bật bài lòng mẹ", "label": "music_play"}
+{"text": "Gọi cấp cứu ngay", "label": "emergency_call"}
+{"text": "Không cần nhạc nữa", "label": "music_stop"}
+{"text": "Phát nhạc đi", "label": "music_play"}
+{"text": "Gọi cứu hộ gấp", "label": "emergency_call"}
+{"text": "Nhận xét giọng hát của ca sĩ này", "label": "chat"}
+{"text": "Bỏ nhạc đi không nghe nữa", "label": "music_stop"}
+{"text": "Mất cái ví rồi tìm coi", "label": "find"}
+{"text": "Đi nhà thờ đức bà", "label": "nav_start"}
+{"text": "Thực hiện cuộc gọi đến bác sĩ hằng", "label": "contact_call"}
+{"text": "Mấy giờ rồi", "label": "chat"}
+{"text": "Tính tiền chuyến tới siêu thị", "label": "ride_quote"}
+{"text": "Xem hộ cái biển báo", "label": "ocr"}
+{"text": "Đọc nội dung trên giấy", "label": "ocr"}
+{"text": "Tìm giúp cái thẻ xe", "label": "find"}
+{"text": "Cái máy tính để ở đâu", "label": "find"}
+{"text": "Giờ này là mấy giờ", "label": "chat"}
+{"text": "Nhiệt độ bao nhiêu độ", "label": "chat"}
+{"text": "Đọc tờ giấy trước mặt", "label": "ocr"}
+{"text": "Phát hiện vật thể phía trước", "label": "hazard"}
+{"text": "Tìm dùm cái đèn pin", "label": "find"}
+{"text": "Xem có ai đứng gần không", "label": "space"}
+{"text": "Phát tín hiệu khẩn cấp", "label": "emergency_call"}
+{"text": "Có văn bản nào không", "label": "ocr"}
+{"text": "Cứ phát ca sĩ hà anh tuấn", "label": "music_play"}
+{"text": "Ngắt kết nối nhạc", "label": "music_stop"}
+{"text": "Đây là tờ bao nhiêu", "label": "money"}
+{"text": "Tờ này mấy tiền", "label": "money"}
+{"text": "Còn bao xa tới siêu thị", "label": "nav_start"}
+{"text": "Cái thìa để chỗ mô", "label": "find"}
+{"text": "Kết thúc dẫn đường", "label": "nav_stop"}
+{"text": "Cái nào cái nào", "label": "unknown"}
+{"text": "Tắt nhạc", "label": "music_stop"}
+{"text": "Đọc số tiền trên tay", "label": "money"}
+{"text": "Nhìn xem chỗ này có gì", "label": "space"}
+{"text": "Dịch dòng chữ này coi", "label": "ocr"}
+{"text": "Đọc cái tờ giấy đó", "label": "ocr"}
+{"text": "Hủy đặt xe ngay", "label": "ride_confirm"}
+{"text": "Đến số 15 lê lợi", "label": "nav_start"}
+{"text": "Cho chạy bài vừa mới nghe", "label": "music_play"}
+{"text": "Đọc thông tin này coi", "label": "chat"}
+{"text": "Cho biết tờ này bao nhiêu", "label": "money"}
+{"text": "Chỉnh âm lượng thấp xuống", "label": "music_volume"}
+{"text": "Kiểm tra an toàn lối đi", "label": "hazard"}
+{"text": "Xem không gian có trống trải không", "label": "space"}
+{"text": "Ờ à ừm thế nào", "label": "unknown"}
+{"text": "Đọc nhãn thuốc", "label": "ocr"}
+{"text": "Hả hả gì", "label": "unknown"}
+{"text": "Xung quanh có gì", "label": "space"}
+{"text": "Bà ba bà ba", "label": "unknown"}
+{"text": "Đang ở đâu đây", "label": "chat"}
+{"text": "Tới địa điểm 50 nguyễn huệ", "label": "nav_start"}
+{"text": "Đặt cuốc xe đến nhà thờ đức bà", "label": "ride_quote"}
+{"text": "Tắt tiếng nhạc dùng", "label": "music_stop"}
+{"text": "Thôi dẫn đường", "label": "nav_stop"}
+{"text": "Nội dung trên tờ rơi", "label": "ocr"}
+{"text": "Phía trước có vật cản gì không", "label": "hazard"}
+{"text": "Đi siêu thị gần nhất", "label": "nav_start"}
+{"text": "Đọc lời bài hát này coi", "label": "chat"}
+{"text": "Trên bao bì ghi chi", "label": "ocr"}
+{"text": "Gọi người hỗ trợ khẩn", "label": "emergency_call"}
+{"text": "Có bàn ghế gì ở đây không", "label": "space"}
+{"text": "Gọi tới máy của bình", "label": "contact_call"}
+{"text": "Xem có ghế trống không", "label": "space"}
+{"text": "Đổi nhạc sang lệ quyên", "label": "music_play"}
+{"text": "Xác nhận đi chuyến này", "label": "ride_confirm"}
+{"text": "Tăng thêm âm lượng đi", "label": "music_volume"}
+{"text": "Trời có mưa không", "label": "chat"}
+{"text": "Kiểm tra giá đến bệnh viện phụ sản", "label": "ride_quote"}
+{"text": "Dẫn lối đến phòng tập gym", "label": "nav_start"}
+{"text": "Rè rè à ơi", "label": "unknown"}
+{"text": "Tìm lối tới quán phở gia truyền", "label": "nav_start"}
+{"text": "Tăng mức tiếng lên", "label": "music_volume"}
+{"text": "Tính tiền chuyến tới công viên lê văn tám", "label": "ride_quote"}
+{"text": "A á a á", "label": "unknown"}
+{"text": "Đặt chuyến xe này", "label": "ride_confirm"}
+{"text": "Xem hộ nội dung này", "label": "ocr"}
+{"text": "Gọi cứu thương xem", "label": "emergency_call"}
+{"text": "Dẫn lối tới cái tủ lạnh", "label": "find"}
+{"text": "Phía trước có gì không báo đi", "label": "hazard"}
+{"text": "Dừng phát đi", "label": "music_stop"}
+{"text": "Chỉ đường lấy cây bút", "label": "find"}
+{"text": "Ngắt nhạc ngay lập tức", "label": "music_stop"}
+{"text": "Đừng phát nhạc nữa", "label": "music_stop"}
+{"text": "Ngưng nhạc lại nè", "label": "music_stop"}
+{"text": "Hôm nay ngày mấy", "label": "chat"}
+{"text": "Phía trước có thông thoáng không", "label": "hazard"}
+{"text": "Cho tắt nhạc", "label": "music_stop"}
+{"text": "Hỏi về tiểu sử ca sĩ này", "label": "chat"}
+{"text": "Gọi nhanh cho bố", "label": "contact_call"}
+{"text": "Nghe mấy bài nhạc sống", "label": "music_play"}
+{"text": "Gọi cấp cứu", "label": "emergency_call"}
+{"text": "Hủy chỉ dẫn", "label": "nav_stop"}
+{"text": "Giảm bớt tiếng nhạc", "label": "music_volume"}
+{"text": "Tình thế khẩn cấp", "label": "emergency_call"}
+{"text": "Đọc thông tin trên biển", "label": "ocr"}
+{"text": "Giảm tiếng xuống coi", "label": "music_volume"}
+{"text": "Chỉ đường tới nhà hát lớn", "label": "nav_start"}
+{"text": "Mô tả mọi thứ quanh đây", "label": "space"}
+{"text": "Cái này ghi gì xem nào", "label": "ocr"}
+{"text": "Gọi cho diệp", "label": "contact_call"}
+{"text": "Bớt tiếng lại xem", "label": "music_volume"}

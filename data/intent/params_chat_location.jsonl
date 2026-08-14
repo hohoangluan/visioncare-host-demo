@@ -1,0 +1,120 @@
+{"text": "Ai là chủ tịch nước", "label": "false"}
+{"text": "Bao lâu đi tới khu lân cận", "label": "true"}
+{"text": "Bao xa tới ngã tư gần nhất", "label": "true"}
+{"text": "Bao xa tới quán gần nhất", "label": "true"}
+{"text": "Bây giờ là mấy giờ", "label": "false"}
+{"text": "Bật đèn lên coi", "label": "false"}
+{"text": "Cho biết hướng đi", "label": "false"}
+{"text": "Cho biết thời gian", "label": "false"}
+{"text": "Chuyển bài khác coi", "label": "false"}
+{"text": "Chỉ đường về nhà", "label": "false"}
+{"text": "Chỗ này có gần bệnh viện không", "label": "true"}
+{"text": "Chỗ này là đường nào", "label": "true"}
+{"text": "Chữ này ghi gì", "label": "false"}
+{"text": "Còn bao lâu tới nơi gần đây", "label": "true"}
+{"text": "Còn bao nhiêu bước tới đó", "label": "true"}
+{"text": "Còn bao nhiêu cây số tới nơi", "label": "true"}
+{"text": "Còn bao nhiêu mét tới cửa hàng", "label": "true"}
+{"text": "Còn bao nhiêu xa nữa", "label": "true"}
+{"text": "Còn bao xa nữa", "label": "false"}
+{"text": "Còn bao xa nữa thì tới nơi", "label": "true"}
+{"text": "Còn bao xa tới ga tàu", "label": "true"}
+{"text": "Còn bao xa tới trạm xe buýt", "label": "true"}
+{"text": "Có ai nhắn gì không", "label": "false"}
+{"text": "Có chướng ngại vật nào", "label": "false"}
+{"text": "Có gì viết ở đây", "label": "false"}
+{"text": "Có lối sang đường gần đây không", "label": "true"}
+{"text": "Có lối đi bộ gần đây không", "label": "true"}
+{"text": "Có siêu thị gần đây không", "label": "true"}
+{"text": "Có trạm đổ xăng quanh đây không", "label": "true"}
+{"text": "Dừng phát nhạc", "label": "false"}
+{"text": "Gần đây có bãi đỗ xe không", "label": "true"}
+{"text": "Gần đây có khách sạn nào ổn không", "label": "true"}
+{"text": "Gần đây có quán cơm không", "label": "true"}
+{"text": "Gọi cho mẹ", "label": "false"}
+{"text": "Gọi video cho anh", "label": "false"}
+{"text": "Gửi tin nhắn đi", "label": "false"}
+{"text": "Hôm nay là thứ mấy", "label": "false"}
+{"text": "Hướng này dẫn tới đâu", "label": "true"}
+{"text": "Hẹn giờ mười phút nữa", "label": "false"}
+{"text": "Khoảng cách tới đó", "label": "false"}
+{"text": "Kiểm tra pin thiết bị", "label": "false"}
+{"text": "Kiểm tra tin nhắn", "label": "false"}
+{"text": "Kết nối với bố", "label": "false"}
+{"text": "Kể một mẩu chuyện cười", "label": "false"}
+{"text": "Lân cận có chợ không", "label": "true"}
+{"text": "Lân cận có tiệm sửa xe không", "label": "true"}
+{"text": "Mấy giờ rồi", "label": "false"}
+{"text": "Một cân bằng bao nhiêu gam", "label": "false"}
+{"text": "Mở khóa cửa chính", "label": "false"}
+{"text": "Mở nhạc nhẹ", "label": "false"}
+{"text": "Nhiệt độ bây giờ là bao nhiêu", "label": "false"}
+{"text": "Nhấc máy gọi chị", "label": "false"}
+{"text": "Nhận diện người đang đứng", "label": "false"}
+{"text": "Này ghi chữ gì", "label": "false"}
+{"text": "Phía trước có chướng ngại vật gì không", "label": "true"}
+{"text": "Phía trước có vật cản không", "label": "false"}
+{"text": "Quanh đây có ai không", "label": "true"}
+{"text": "Quanh đây có chỗ nào đổ xăng", "label": "true"}
+{"text": "Quanh đây có nhà vệ sinh không", "label": "true"}
+{"text": "Quanh đây có tiệm tạp hóa nào không", "label": "true"}
+{"text": "Quay số cho bạn", "label": "false"}
+{"text": "Quét vật thể phía trước", "label": "false"}
+{"text": "Soạn tin báo cho nhà", "label": "false"}
+{"text": "Sạc đầy chưa", "label": "false"}
+{"text": "Thời tiết hôm nay thế nào", "label": "false"}
+{"text": "Thủ đô nước pháp là gì", "label": "false"}
+{"text": "Tiếp tục phát nhạc", "label": "false"}
+{"text": "Trời chỗ này sắp mưa không", "label": "true"}
+{"text": "Trời có mưa không", "label": "false"}
+{"text": "Tìm quán cà phê quanh đây", "label": "true"}
+{"text": "Tìm quán giải khát gần đây nhất", "label": "true"}
+{"text": "Tìm quán ăn gần nhất với tôi", "label": "true"}
+{"text": "Tôi đang ở đâu thế này", "label": "true"}
+{"text": "Tăng âm lượng", "label": "false"}
+{"text": "Tại chỗ này có gì nổi bật", "label": "true"}
+{"text": "Tại vị trí này có gì hay", "label": "true"}
+{"text": "Tại đây có trạm y tế không", "label": "true"}
+{"text": "Tạm dừng bài hát", "label": "false"}
+{"text": "Tắt nhạc đi", "label": "false"}
+{"text": "Tắt âm thanh", "label": "false"}
+{"text": "Tắt đèn phòng khách", "label": "false"}
+{"text": "Vặn nhỏ tiếng lại", "label": "false"}
+{"text": "Vị trí hiện tại ở đâu", "label": "false"}
+{"text": "Xem có cửa tiệm nào gần đây không", "label": "true"}
+{"text": "Xem hạn sử dụng", "label": "false"}
+{"text": "Xem lại vị trí hiện tại", "label": "true"}
+{"text": "Xem xung quanh có cửa hàng tiện lợi nào không", "label": "true"}
+{"text": "Xung quanh có công viên nào không", "label": "true"}
+{"text": "Xung quanh có gì lạ", "label": "false"}
+{"text": "Xung quanh có điểm dừng xe buýt không", "label": "true"}
+{"text": "Xung quanh đây có bưu điện không", "label": "true"}
+{"text": "Xung quanh đây có cây atm không", "label": "true"}
+{"text": "Xung quanh đây có đèn tín hiệu không", "label": "true"}
+{"text": "Xung quanh đây có đường cấm không", "label": "true"}
+{"text": "Xác định địa điểm quanh đây", "label": "true"}
+{"text": "Xóa báo thức đã đặt", "label": "false"}
+{"text": "Đang đứng ở vị trí nào", "label": "true"}
+{"text": "Đang ở khu vực nào đây", "label": "true"}
+{"text": "Đang ở đường nào", "label": "false"}
+{"text": "Đã đi được bao lâu", "label": "false"}
+{"text": "Đóng cửa lại", "label": "false"}
+{"text": "Đường này có an toàn không", "label": "true"}
+{"text": "Đường này có gần trung tâm không", "label": "true"}
+{"text": "Đường này dẫn đi đâu", "label": "true"}
+{"text": "Đặt báo thức sáng mai", "label": "false"}
+{"text": "Địa điểm này gọi là gì", "label": "true"}
+{"text": "Định nghĩa tình yêu", "label": "false"}
+{"text": "Định vị chỗ tôi đang đứng", "label": "true"}
+{"text": "Đọc lại tin nhắn cũ", "label": "false"}
+{"text": "Đọc nội dung trên nhãn", "label": "false"}
+{"text": "Đọc thông báo mới", "label": "false"}
+{"text": "Đọc to tên con đường này", "label": "true"}
+{"text": "Đọc truyện cổ tích", "label": "false"}
+{"text": "Đọc tên tòa nhà gần nhất", "label": "true"}
+{"text": "Đọc tên đường chỗ này coi", "label": "true"}
+{"text": "Đọc tên địa điểm lân cận", "label": "true"}
+{"text": "Đọc tọa độ chỗ đang đứng", "label": "true"}
+{"text": "Đọc văn bản trước mặt", "label": "false"}
+{"text": "Đọc địa chỉ hiện tại", "label": "true"}
+{"text": "Ở gần đây có nhà thuốc không", "label": "true"}

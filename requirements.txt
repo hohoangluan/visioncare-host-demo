@@ -3,15 +3,15 @@ fastapi
 uvicorn[standard]
 python-multipart
 numpy
-torch
-torchaudio
-transformers
-paddleocr>=3.0,<4
-paddlepaddle
+# torch/torchaudio/transformers đã bỏ: chúng chỉ có ở đây để chạy PhoWhisper.
+# STT giờ là sherpa-onnx, TTS chạy backend ONNX của vieneu (torch chỉ nằm trong
+# extra "legacy" của nó) — không dòng code nào trong repo còn import torch.
+sherpa-onnx
 pillow
 google-genai
 python-dotenv
 vieneu
+lameenc
 # dev / test
 pytest
 httpx

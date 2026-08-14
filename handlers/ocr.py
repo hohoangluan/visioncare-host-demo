@@ -1,8 +1,9 @@
+from collections.abc import Iterator
+
 from models import ocr
-from schemas import Result
 
 
-def handle(image: bytes, command_text: str) -> Result:
+def handle(image: bytes, command_text: str) -> Iterator[str]:
     """Đọc chữ trong ảnh. Mặc định dịch sang tiếng Việt.
 
     "nguyên văn" -> đọc thô, không dịch. "chuyên ngành" -> dịch nhưng giữ
@@ -15,4 +16,4 @@ def handle(image: bytes, command_text: str) -> Result:
         mode = ocr.Mode.SPECIALIZED
     else:
         mode = ocr.Mode.NORMAL
-    return Result(speech=ocr.read(image, mode))
+    return ocr.read_stream(image, mode)

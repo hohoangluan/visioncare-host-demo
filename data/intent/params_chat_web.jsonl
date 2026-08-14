@@ -1,0 +1,120 @@
+{"text": "Ai ghi bàn trận đêm qua", "label": "true"}
+{"text": "Ai thắng trong trận hôm qua", "label": "true"}
+{"text": "Ai đang đứng đó", "label": "false"}
+{"text": "Bài này tên gì", "label": "false"}
+{"text": "Bây giờ mấy giờ", "label": "false"}
+{"text": "Bên trái có gì", "label": "false"}
+{"text": "Bật đèn lên", "label": "false"}
+{"text": "Cho biết giá xăng hôm nay", "label": "true"}
+{"text": "Cho tôi giá vàng sjc", "label": "true"}
+{"text": "Cho xem lịch phim hot", "label": "true"}
+{"text": "Chuyển bài khác", "label": "false"}
+{"text": "Cách trạm xe bao xa", "label": "false"}
+{"text": "Cái này ghi gì đó", "label": "false"}
+{"text": "Cái này màu gì", "label": "false"}
+{"text": "Cái này viết gì", "label": "false"}
+{"text": "Còn bao xa nữa", "label": "false"}
+{"text": "Có bậc thang không", "label": "false"}
+{"text": "Có chữ gì không", "label": "false"}
+{"text": "Có sự kiện gì gần đây", "label": "true"}
+{"text": "Có tin gì nóng không", "label": "true"}
+{"text": "Cảnh báo nguy hiểm", "label": "false"}
+{"text": "Cập nhật giá vàng mới nhất", "label": "true"}
+{"text": "Cập nhật giá vàng sjc", "label": "true"}
+{"text": "Cửa hàng này đóng cửa chưa", "label": "true"}
+{"text": "Dịch câu này sang tiếng anh", "label": "false"}
+{"text": "Dừng phát", "label": "false"}
+{"text": "Ghi chú việc này", "label": "false"}
+{"text": "Giá vàng hôm nay là bao nhiêu", "label": "true"}
+{"text": "Giá vàng thế giới hiện tại bao nhiêu", "label": "true"}
+{"text": "Giá vàng đang lên hay xuống", "label": "true"}
+{"text": "Giá xăng hiện tại tăng hay giảm", "label": "true"}
+{"text": "Giá xăng niêm yết hiện tại", "label": "true"}
+{"text": "Giá xăng tăng thêm bao nhiêu", "label": "true"}
+{"text": "Giải thích từ này", "label": "false"}
+{"text": "Giảm tiếng xuống", "label": "false"}
+{"text": "Giờ hoạt động của thư viện", "label": "true"}
+{"text": "Giờ mở cửa siêu thị gần đây", "label": "true"}
+{"text": "Gọi cho mẹ", "label": "false"}
+{"text": "Gọi cấp cứu", "label": "false"}
+{"text": "Gọi số khẩn cấp", "label": "false"}
+{"text": "Hôm nay có mưa không", "label": "false"}
+{"text": "Hôm nay ngày mấy", "label": "false"}
+{"text": "Hôm nay trời có bão không", "label": "true"}
+{"text": "Hủy lệnh vừa rồi", "label": "false"}
+{"text": "Khi nào cửa hàng mở cửa lại", "label": "true"}
+{"text": "Khi nào trung tâm này làm việc", "label": "true"}
+{"text": "Kiểm tra pin", "label": "false"}
+{"text": "Kết nối wifi đi", "label": "false"}
+{"text": "Kết quả bóng đá vừa xong", "label": "true"}
+{"text": "Kết quả trận đấu vừa rồi là mấy", "label": "true"}
+{"text": "Liệt kê các phim đang công chiếu", "label": "true"}
+{"text": "Lặp lại thông tin vừa nghe", "label": "false"}
+{"text": "Lịch trình hôm nay có gì", "label": "false"}
+{"text": "Mấy giờ trung tâm đóng cửa", "label": "true"}
+{"text": "Nhiệt độ ngoài trời ra sao", "label": "true"}
+{"text": "Nhấc máy", "label": "false"}
+{"text": "Nhắc tôi lúc mười giờ", "label": "false"}
+{"text": "Phim nào đang chiếu tại rạp", "label": "true"}
+{"text": "Phim này có suất chiếu mấy giờ", "label": "true"}
+{"text": "Phát nhạc", "label": "false"}
+{"text": "Phía trước có vật cản không", "label": "false"}
+{"text": "Rạp chiếu phim đang có phim gì", "label": "true"}
+{"text": "Siêu thị còn mở cửa không", "label": "true"}
+{"text": "Soạn tin nhắn", "label": "false"}
+{"text": "Sắp hết pin chưa", "label": "false"}
+{"text": "Sự kiện ngoài trời nào đang diễn ra", "label": "true"}
+{"text": "Thông báo lịch trình hôm nay", "label": "true"}
+{"text": "Thông báo mới nhất là gì", "label": "false"}
+{"text": "Thời tiết hôm nay thế nào", "label": "true"}
+{"text": "Thời tiết ngày mai có lạnh không", "label": "true"}
+{"text": "Thời tiết thế nào", "label": "false"}
+{"text": "Tin tức sáng nay có gì đặc biệt", "label": "true"}
+{"text": "Tin tức thế giới có gì mới", "label": "true"}
+{"text": "Tiếp tục đi", "label": "false"}
+{"text": "Trận hôm nay đá mấy giờ", "label": "true"}
+{"text": "Trời có nắng không xem giúp", "label": "true"}
+{"text": "Trời sáng hay tối", "label": "false"}
+{"text": "Tên các bộ phim đang chiếu là gì", "label": "true"}
+{"text": "Tìm phim hay đang chiếu rạp", "label": "true"}
+{"text": "Tìm đường về nhà", "label": "false"}
+{"text": "Tình hình thời tiết chiều nay", "label": "true"}
+{"text": "Tính giúp phép nhân này", "label": "false"}
+{"text": "Tăng âm lượng", "label": "false"}
+{"text": "Tả khung cảnh xung quanh", "label": "false"}
+{"text": "Tắt cuộc gọi", "label": "false"}
+{"text": "Tắt nhạc đi", "label": "false"}
+{"text": "Tắt đèn", "label": "false"}
+{"text": "Tỉ giá ngoại tệ hôm nay", "label": "false"}
+{"text": "Tỉ số bóng đá trực tiếp", "label": "true"}
+{"text": "Tỉ số trận đêm qua", "label": "true"}
+{"text": "Tỉ số đội tuyển việt nam", "label": "true"}
+{"text": "Tổng hợp tin trong ngày", "label": "true"}
+{"text": "Vàng miếng đang bao nhiêu tiền", "label": "true"}
+{"text": "Vị trí hiện tại ở đâu", "label": "false"}
+{"text": "Xem dự báo mưa gió", "label": "true"}
+{"text": "Xem hạn sử dụng", "label": "false"}
+{"text": "Xem sự kiện nào diễn ra lúc này", "label": "true"}
+{"text": "Xem sự kiện nào sắp bắt đầu", "label": "true"}
+{"text": "Xăng a95 giá bao nhiêu", "label": "true"}
+{"text": "Xăng dầu hôm nay giá nhiêu", "label": "true"}
+{"text": "Xăng tăng hay giảm vậy", "label": "true"}
+{"text": "Đang có hội chợ gì gần đây", "label": "true"}
+{"text": "Điểm tin buổi sáng coi", "label": "true"}
+{"text": "Đây là tờ tiền mệnh giá bao nhiêu", "label": "false"}
+{"text": "Đường này đi hướng nào", "label": "false"}
+{"text": "Đếm số bậc", "label": "false"}
+{"text": "Đếm số người trong phòng", "label": "false"}
+{"text": "Đến mấy giờ thì rạp đóng cửa", "label": "true"}
+{"text": "Đến nơi chưa", "label": "false"}
+{"text": "Định nghĩa khái niệm đó", "label": "false"}
+{"text": "Đọc các tiêu đề báo lớn", "label": "true"}
+{"text": "Đọc dự báo thời tiết ba ngày tới", "label": "true"}
+{"text": "Đọc lại câu lệnh gần nhất", "label": "false"}
+{"text": "Đọc nhãn chai", "label": "false"}
+{"text": "Đọc nội dung giấy này", "label": "false"}
+{"text": "Đọc tin nhắn", "label": "false"}
+{"text": "Đọc tin tức mới nhất", "label": "true"}
+{"text": "Đọc tin tức về giao thông", "label": "true"}
+{"text": "Đọc tóm tắt tin tức quan trọng", "label": "true"}
+{"text": "Đọc văn bản này", "label": "false"}

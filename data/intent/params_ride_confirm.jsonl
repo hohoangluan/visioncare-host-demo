@@ -1,0 +1,120 @@
+{"text": "Bỏ chuyến này xem", "label": "false"}
+{"text": "Bỏ chuyến xe coi", "label": "false"}
+{"text": "Bỏ chuyến xe này", "label": "false"}
+{"text": "Bỏ chuyến xe này đi", "label": "false"}
+{"text": "Bỏ chuyến xe đi", "label": "false"}
+{"text": "Bỏ chuyến xe đó", "label": "false"}
+{"text": "Bỏ lệnh tìm xe", "label": "false"}
+{"text": "Bỏ lệnh đặt xe", "label": "false"}
+{"text": "Bỏ qua cuốc xe", "label": "false"}
+{"text": "Bỏ tìm xe đi", "label": "false"}
+{"text": "Bỏ đi không đi", "label": "false"}
+{"text": "Bỏ đi không đi nữa", "label": "false"}
+{"text": "Chốt chuyến", "label": "true"}
+{"text": "Chốt chuyến đó", "label": "true"}
+{"text": "Chốt giá này", "label": "true"}
+{"text": "Chốt giá này đi", "label": "true"}
+{"text": "Chốt đi", "label": "true"}
+{"text": "Chốt đơn đặt", "label": "true"}
+{"text": "Chốt đặt xe", "label": "true"}
+{"text": "Dừng gọi xe đi", "label": "false"}
+{"text": "Dừng tìm kiếm xe", "label": "false"}
+{"text": "Dừng tìm xe đi", "label": "false"}
+{"text": "Dừng việc đặt xe", "label": "false"}
+{"text": "Dừng đặt chuyến đi", "label": "false"}
+{"text": "Hủy chuyến này xem", "label": "false"}
+{"text": "Hủy chuyến xe ngay", "label": "false"}
+{"text": "Hủy chuyến đi", "label": "false"}
+{"text": "Hủy chuyến đi ngay", "label": "false"}
+{"text": "Hủy chuyến đi xem", "label": "false"}
+{"text": "Hủy chuyến đó coi", "label": "false"}
+{"text": "Hủy lệnh tìm xe", "label": "false"}
+{"text": "Hủy ngay chuyến xe", "label": "false"}
+{"text": "Hủy ngay lập tức", "label": "false"}
+{"text": "Hủy nhanh chuyến này", "label": "false"}
+{"text": "Hủy yêu cầu gọi xe", "label": "false"}
+{"text": "Hủy yêu cầu đi", "label": "false"}
+{"text": "Hủy đơn xe đó", "label": "false"}
+{"text": "Hủy đơn đó đi", "label": "false"}
+{"text": "Không cần gọi xe", "label": "false"}
+{"text": "Không cần xe nữa", "label": "false"}
+{"text": "Không cần đặt nữa", "label": "false"}
+{"text": "Không gọi xe nữa", "label": "false"}
+{"text": "Không gọi xe nữa đâu", "label": "false"}
+{"text": "Không thuê xe nữa", "label": "false"}
+{"text": "Không đi chuyến này", "label": "false"}
+{"text": "Không đi chuyến này đâu", "label": "false"}
+{"text": "Không đi chuyến đó", "label": "false"}
+{"text": "Không đi nữa đâu", "label": "false"}
+{"text": "Không đặt chuyến này", "label": "false"}
+{"text": "Không đặt chuyến đó", "label": "false"}
+{"text": "Không đặt xe nữa", "label": "false"}
+{"text": "Không đặt xe nữa coi", "label": "false"}
+{"text": "Khỏi đi chuyến này", "label": "false"}
+{"text": "Ngừng đặt xe lại", "label": "false"}
+{"text": "Ngừng đặt xe ngay", "label": "false"}
+{"text": "Ok chuyến này", "label": "true"}
+{"text": "Ok chốt đi", "label": "true"}
+{"text": "Ok tiến hành", "label": "true"}
+{"text": "Ok xác nhận", "label": "true"}
+{"text": "Ok đặt ngay", "label": "true"}
+{"text": "Ok đặt đi", "label": "true"}
+{"text": "Ok đồng ý", "label": "true"}
+{"text": "Thôi bỏ chuyến đi", "label": "false"}
+{"text": "Thôi bỏ xe đi", "label": "false"}
+{"text": "Thôi dẹp chuyến này", "label": "false"}
+{"text": "Thôi dẹp lại", "label": "false"}
+{"text": "Thôi dừng lại đi", "label": "false"}
+{"text": "Thôi dừng lệnh", "label": "false"}
+{"text": "Thôi hủy đi", "label": "false"}
+{"text": "Thôi không thuê nữa", "label": "false"}
+{"text": "Thôi không đi", "label": "false"}
+{"text": "Thôi không đi nữa", "label": "false"}
+{"text": "Thôi khỏi đi nha", "label": "false"}
+{"text": "Thực hiện đi", "label": "true"}
+{"text": "Thực hiện đặt", "label": "true"}
+{"text": "Thực hiện đặt chuyến", "label": "true"}
+{"text": "Thực hiện đặt xe", "label": "true"}
+{"text": "Tiến hành ngay", "label": "true"}
+{"text": "Tiến hành đặt", "label": "true"}
+{"text": "Tắt tìm xe cho tôi", "label": "false"}
+{"text": "Xác nhận", "label": "true"}
+{"text": "Xác nhận chuyến", "label": "true"}
+{"text": "Xác nhận giá này", "label": "true"}
+{"text": "Xác nhận giá này đi", "label": "true"}
+{"text": "Xác nhận ngay", "label": "true"}
+{"text": "Xác nhận đặt", "label": "true"}
+{"text": "Xác nhận đặt chuyến", "label": "true"}
+{"text": "Xác nhận đặt đi", "label": "true"}
+{"text": "Đi chuyến này", "label": "true"}
+{"text": "Đúng giá xác nhận", "label": "true"}
+{"text": "Đúng giá đó", "label": "true"}
+{"text": "Đúng giá đó đi", "label": "true"}
+{"text": "Đúng rồi", "label": "true"}
+{"text": "Đúng rồi chốt xe", "label": "true"}
+{"text": "Đúng rồi chốt đi", "label": "true"}
+{"text": "Đúng rồi tiến hành", "label": "true"}
+{"text": "Đúng rồi xác nhận", "label": "true"}
+{"text": "Đúng rồi đặt xe", "label": "true"}
+{"text": "Đúng rồi đồng ý", "label": "true"}
+{"text": "Đúng vậy đặt đi", "label": "true"}
+{"text": "Được đó", "label": "true"}
+{"text": "Đặt chuyến này", "label": "true"}
+{"text": "Đặt chuyến đó đi", "label": "true"}
+{"text": "Đặt ngay chuyến này", "label": "true"}
+{"text": "Đặt xe luôn", "label": "true"}
+{"text": "Đặt xe với giá đó", "label": "true"}
+{"text": "Đặt xe đi", "label": "true"}
+{"text": "Đồng ý", "label": "true"}
+{"text": "Đồng ý chuyến xe", "label": "true"}
+{"text": "Đồng ý luôn", "label": "true"}
+{"text": "Đồng ý thực hiện", "label": "true"}
+{"text": "Đồng ý với giá", "label": "true"}
+{"text": "Đồng ý đi thôi", "label": "true"}
+{"text": "Đồng ý đặt luôn", "label": "true"}
+{"text": "Đồng ý đặt xe", "label": "true"}
+{"text": "Ừ chốt đi", "label": "true"}
+{"text": "Ừ thực hiện đi", "label": "true"}
+{"text": "Ừ được đó", "label": "true"}
+{"text": "Ừ đặt chuyến này", "label": "true"}
+{"text": "Ừ đặt đi", "label": "true"}
