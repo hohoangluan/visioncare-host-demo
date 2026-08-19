@@ -27,7 +27,7 @@ STORAGE_DIR = get("STORAGE_DIR", "./storage")
 # "wav" bắt người dùng chờ tổng hợp xong cả bài mới nghe được tiếng đầu — với
 # câu trả lời 35s audio là chờ thêm ~14s đứng im. Quá lâu, nên mặc định là
 # stream, và chống ngắt quãng bằng `AUDIO_PREROLL_SECONDS` bên dưới.
-RESPONSE_FORMAT = get("RESPONSE_FORMAT", "mp3_stream")
+RESPONSE_FORMAT = get("RESPONSE_FORMAT", "auto")
 
 # Số giây audio server gom sẵn trước khi gửi byte đầu về MCU.
 #
@@ -39,6 +39,11 @@ RESPONSE_FORMAT = get("RESPONSE_FORMAT", "mp3_stream")
 # cho jitter WiFi. Tốn thêm rất ít thời gian chờ vì TTS sinh nhanh gấp ~2.5 lần
 # tốc độ phát — gom 2s audio chỉ mất ~0.8s.
 AUDIO_PREROLL_SECONDS = float(get("AUDIO_PREROLL_SECONDS", "2.0"))
+# Chế độ phát âm thanh đệm ban đầu:
+#   "warm_melodic" - âm thanh đệm warm_melodic.wav nén IMA ADPCM (mặc định).
+#   "chime"        - tiếng chuông Sound Effect êm tai ("Bính Boong" Earcon).
+#   "voice"        - câu thoại tiếng Việt ("Đã tiếp nhận yêu cầu").
+AUDIO_PREROLL_MODE = get("AUDIO_PREROLL_MODE", "warm_melodic")
 # Nhịp các câu trấn an ("hệ thống đang xử lý, bạn chờ một chút") trong lúc chờ.
 #
 # Phân biệt hai loại câu, đừng gộp: câu BÁO TIẾN ĐỘ (đã tìm được bài X, đã mở
@@ -189,9 +194,9 @@ INTENT_LOCAL_PARAM_MIN_CONF = float(get("INTENT_LOCAL_PARAM_MIN_CONF", "0.75"))
 TTS_VOICE = get("TTS_VOICE", "Ngọc Linh")
 TTS_STYLE = get("TTS_STYLE", "tu_nhien")
 
-# VisionCare Host API configuration
-VISIONCARE_HOST_URL = get("VISIONCARE_HOST_URL", "https://app.visioncare-host.uk")
-VISIONCARE_CLIENT_TOKEN = get("VISIONCARE_CLIENT_TOKEN", "demo-client-token")
+# VisionCare Host API configuration (app server running on localhost:8001)
+VISIONCARE_HOST_URL = get("VISIONCARE_HOST_URL", "http://127.0.0.1:8001")
+VISIONCARE_CLIENT_TOKEN = get("VISIONCARE_CLIENT_TOKEN", "f23ChvjGZt_WYrY-A8eJAyxO5LVEF_TGujmE7F_gRAY")
 VISIONCARE_DEVICE_ID = get("VISIONCARE_DEVICE_ID", "glasses-123")
 
 # Số giây chờ kết quả thật của một action sau khi host trả `202 Accepted`.
@@ -225,4 +230,12 @@ VISIONCARE_RESULT_POLL_SECONDS = float(get("VISIONCARE_RESULT_POLL_SECONDS", "0.
 VISIONCARE_MUSIC_RESULT_TIMEOUT_SECONDS = float(
     get("VISIONCARE_MUSIC_RESULT_TIMEOUT_SECONDS", "40")
 )
+VISIONCARE_FAST_ACTION_SECONDS = float(get("VISIONCARE_FAST_ACTION_SECONDS", "2.0"))
+VISIONCARE_CALLBACK_TOKEN = get("VISIONCARE_CALLBACK_TOKEN", "visioncare-secret-token")
+
+CHAT_LOCATION_REFRESH_SECONDS = float(get("CHAT_LOCATION_REFRESH_SECONDS", "240.0"))
+CHAT_LOCATION_MAX_FIX_AGE_SECONDS = float(get("CHAT_LOCATION_MAX_FIX_AGE_SECONDS", "600.0"))
+CHAT_LOCATION_TTL_SECONDS = float(get("CHAT_LOCATION_TTL_SECONDS", "600.0"))
+CHAT_ALWAYS_SEARCH = get("CHAT_ALWAYS_SEARCH", "1") != "0"
+
 

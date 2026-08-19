@@ -9,6 +9,7 @@ from queue import Full, Queue
 import numpy as np
 
 import config
+from pipeline import adpcm
 
 # VieNeu-TTS v3 Turbo outputs 48 kHz mono float32 audio.
 SAMPLE_RATE = 48000
@@ -46,6 +47,9 @@ _PIPELINE_QUEUE_CHUNKS = 32
 # nhân đơn giản (giây * byte-rate), giống cách đã làm với PCM trần.
 MP3_BITRATE_KBPS = 32
 MP3_BYTE_RATE = MP3_BITRATE_KBPS * 1000 // 8
+
+# ADPCM cũng CBR: 4 bit/mẫu cộng 4 byte đầu mỗi khối 256 byte.
+ADPCM_BYTE_RATE = adpcm.BYTE_RATE  # ~8110.9 B/s ở 16 kHz
 
 
 def _split_long(text: str) -> tuple[str, str]:
@@ -310,6 +314,29 @@ def synthesize_text_stream(text_chunks: Iterable[str]) -> Iterator[bytes]:
 
     if failure:
         raise failure[0]
+
+
+def encode_adpcm(pcm_stream: Iterator[bytes]) -> Iterator[bytes]:
+    """PCM 16-bit/16kHz mono -> khối IMA ADPCM 256 byte, định dạng board ưu tiên.
+
+    1/4 dung lượng PCM trần mà board giải mã thẳng bằng phần cứng sẵn có, không
+    cần decoder MP3. Chi phí nén đo được ~114 lần thời gian thực, tức khoảng 9 ms
+    cho mỗi giây audio — không đáng kể so với chính TTS (~2,5 lần thời gian
+    thực), nên đổi sang đây không làm người dùng chờ thêm.
+
+    Mảnh PCM vào không cần trùng biên khối: `adpcm.Encoder` giữ phần dư lại và
+    ghép vào mảnh sau.
+    """
+    encoder = adpcm.Encoder()
+    for pcm in pcm_stream:
+        blocks = encoder.encode(pcm)
+        if blocks:
+            yield blocks
+
+    # Khối cuối chưa đủ 505 mẫu vẫn phải ra, nếu không câu bị cụt tới 31 ms.
+    tail = encoder.flush()
+    if tail:
+        yield tail
 
 
 def encode_mp3(pcm_stream: Iterator[bytes]) -> Iterator[bytes]:

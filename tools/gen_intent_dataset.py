@@ -56,12 +56,13 @@ LABELS: dict[str, str] = {
                        "— chỉ một cái tên ca sĩ, hoặc 'bài nào cũng được'",
     Intent.MUSIC_STOP: "muốn tắt nhạc, dừng phát nhạc",
     Intent.MUSIC_VOLUME: "muốn tăng/giảm/chỉnh âm lượng",
-    Intent.CHAT: "câu CÓ nghĩa nhưng không thuộc nhóm nào ở trên — trò chuyện "
-                 "tự do, hỏi đáp thường ngày, chào hỏi, hỏi giờ, hỏi thời tiết, "
-                 "than thở, nhờ kể chuyện",
-    Intent.UNKNOWN: "câu KHÔNG mang ý nghĩa nào đọc ra được — đây là ĐẦU RA LỖI "
-                    "CỦA CHÍNH BỘ NHẬN DẠNG GIỌNG NÓI khi micro chỉ thu được "
-                    "tiếng ồn, người dùng lỡ bấm gửi, hoặc nói lí nhí",
+    # Nhãn MẶC ĐỊNH, không phải một nhãn ngang hàng: mọi câu không thuộc 14 nhãn
+    # trên đều về đây, kể cả câu bộ nhận dạng giọng nói nghe nhầm thành chuỗi từ
+    # rời rạc. Nhãn `unknown` cũ đã bỏ — xem `_LABELS` trong `pipeline/intent.py`.
+    Intent.CHAT: "MỌI thứ không thuộc các nhãn trên — trò chuyện tự do, hỏi đáp "
+                 "thường ngày, chào hỏi, tạm biệt, hỏi giờ, hỏi thời tiết, hỏi "
+                 "mình đang ở đâu, than thở, nhờ kể chuyện. Gồm cả câu cụt, sai "
+                 "ngữ pháp, hoặc nghe không ra nghĩa gì",
 }
 
 # Yêu cầu chung về độ thật của câu. Đây là phần quyết định chất lượng bộ dữ
@@ -120,25 +121,19 @@ _SCHEMA = {
 
 def _prompt_for(label: str, desc: str, n: int) -> str:
     extra = ""
-    if label == Intent.UNKNOWN:
-        extra = (
-            "\nRIÊNG nhãn này: đừng viết câu vô nghĩa kiểu người trêu đùa. Hãy "
-            "viết đúng thứ mà một bộ nhận dạng giọng nói TIẾNG VIỆT phun ra khi "
-            "nó nghe phải tiếng ồn, tiếng tivi, tiếng gió, hoặc người nói lí nhí: "
-            "chuỗi âm tiết tiếng Việt CÓ THẬT nhưng ghép lại không thành ý — "
-            "âm tiết lặp lại, mảnh câu đứt đoạn, từ rời rạc không liên quan nhau. "
-            "Ví dụ: 'ờ à ừm', 'xe xe xe xe', 'lô ca ta xi mà', 'cái cái là là', "
-            "'ba bốn ơ kìa', 'ừ hử ừ hử'.\n"
-            "KHÔNG được viết câu vẫn đoán ra ý (kiểu 'nóng quá', 'mệt ghê') — "
-            "những câu đó thuộc nhãn chat, không phải nhãn này.\n"
-        )
     if label == Intent.CHAT:
         extra = (
-            "\nRIÊNG nhãn này: nhớ rằng câu ngắn, cụt, sai ngữ pháp mà VẪN đoán "
-            "ra ý thì vẫn là chat chứ không phải vô nghĩa — 'mấy giờ rồi', "
-            "'nóng quá', 'buồn ngủ ghê', 'ê'. Cho vào nhiều câu kiểu đó.\n"
-            "Trộn đủ: hỏi giờ, hỏi thời tiết, hỏi tin tức, hỏi kiến thức chung, "
-            "chào hỏi, than thở, nhờ kể chuyện, hỏi về chính cái kính.\n"
+            "\nRIÊNG nhãn này: đây là nhãn MẶC ĐỊNH, nhận mọi câu không thuộc 14 "
+            "nhãn kia. Cho vào nhiều câu ngắn, cụt, sai ngữ pháp — 'mấy giờ rồi', "
+            "'nóng quá', 'buồn ngủ ghê', 'ê'.\n"
+            "Trộn đủ: chào hỏi, tạm biệt, cảm ơn, hỏi giờ, hỏi thời tiết, hỏi tin "
+            "tức, hỏi kiến thức chung, hỏi mình đang ở đâu, than thở, nhờ kể "
+            "chuyện, hỏi về chính cái kính.\n"
+            "Cho vào KHOẢNG MỘT PHẦN MƯỜI số câu là thứ mà bộ nhận dạng giọng nói "
+            "phun ra khi nghe phải tiếng ồn hoặc người nói lí nhí: chuỗi âm tiết "
+            "tiếng Việt có thật nhưng ghép lại không thành ý — 'ờ à ừm', "
+            "'xe xe xe xe', 'lô ca ta xi mà', 'ba bốn ơ kìa'. Chúng cũng thuộc "
+            "nhãn này: trợ lý sẽ tự nói là chưa hiểu, chứ không có nhãn riêng.\n"
         )
     if label in (Intent.NAV_START, Intent.RIDE_QUOTE):
         extra = (
@@ -183,9 +178,6 @@ BOUNDARIES = [
      "một bên là tìm MỘT đồ vật cụ thể, bên kia là mô tả CẢ khung cảnh"),
     (Intent.NAV_START, Intent.RIDE_QUOTE,
      "một bên là tự ĐI BỘ có người chỉ đường, bên kia là ĐẶT XE chở đi"),
-    (Intent.CHAT, Intent.UNKNOWN,
-     "một bên là câu cụt/sai ngữ pháp nhưng VẪN đoán ra ý, bên kia là chuỗi âm "
-     "tiết thật sự không đọc ra ý gì"),
     (Intent.MUSIC_PLAY, Intent.CHAT,
      "một bên là bảo mở nhạc, bên kia là nói CHUYỆN về nhạc/ca sĩ mà không bảo mở"),
     (Intent.MUSIC_VOLUME, Intent.MUSIC_STOP,
@@ -236,11 +228,12 @@ def _is_unaccented(text: str, label: str) -> bool:
     lại là nhãn hỏng nặng nhất. STT luôn trả chữ có dấu, nên câu không dấu là
     câu không bao giờ gặp lúc chạy thật: giữ lại chỉ làm loãng lớp đó.
 
-    `unknown` được miễn: chuỗi âm tiết vô nghĩa ("lô ca ta xi", "ta ta ta")
-    không dấu là chuyện bình thường và đúng thực tế.
+    KHÔNG còn miễn cho nhãn nào. Trước đây `unknown` được miễn vì chuỗi âm tiết
+    vô nghĩa ("lô ca ta xi", "ta ta ta") không dấu là chuyện thường. Nhãn đó đã
+    bỏ và những câu ấy về `chat`, nên miễn cả `chat` là mở toang cửa cho câu
+    tuột dấu ở nhãn đông nhất. Đổi lại phải dặn trong prompt là viết chúng có
+    dấu ("lô ca ta xi mà"), và STT thật cũng trả chữ có dấu nên thế mới đúng.
     """
-    if label == Intent.UNKNOWN:
-        return False
     words = [w for w in text.lower().split() if w.isalpha()]
     if len(words) < 3:
         return False

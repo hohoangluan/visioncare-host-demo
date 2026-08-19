@@ -79,17 +79,22 @@ def test_no_image_needed_for_a_phone_action():
         assert list(router.resolve_speech(None, _fake_wav())) == ["đang gọi"]
 
 
-def test_gibberish_gets_the_not_understood_message():
+def test_gibberish_goes_to_chat_instead_of_a_canned_refusal():
+    """Câu nghe ra chữ mà không ra nghĩa giờ về `chat`, không còn nhãn riêng.
+
+    Gemini đọc được nguyên văn nên nó phán "có hiểu được không" chính xác hơn bộ
+    phân loại, và nói được câu sát tình huống thay vì đọc một câu soạn sẵn. Ràng
+    buộc không-bịa nằm trong `_SYSTEM_PROMPT` của `handlers/chat.py`.
+    """
     with patch("pipeline.stt.transcribe", return_value="lô ca ta xi mà"), \
-         patch("pipeline.intent.detect_with_params", return_value=(Intent.UNKNOWN, {})):
-        assert list(router.resolve_speech(b"img", _fake_wav())) == [
-            router._NOT_UNDERSTOOD_MESSAGE
-        ]
+         patch("pipeline.intent.detect_with_params", return_value=(Intent.CHAT, {})), \
+         patch("handlers.chat.handle", return_value=iter(["Tôi chưa hiểu ý bạn."])):
+        assert list(router.resolve_speech(b"img", _fake_wav())) == ["Tôi chưa hiểu ý bạn."]
 
 
 def test_silence_gets_the_did_not_hear_message():
-    """Nghe ra chữ mà vô nghĩa, với không nghe ra chữ nào, là hai cách sửa khác
-    nhau: nói lại cho rõ ý, hay nói to hơn."""
+    """Không nghe ra chữ nào là chuyện khác hẳn nghe ra chữ mà khó hiểu: cách
+    sửa là nói TO HƠN / gần mic hơn, và chưa có gì để đưa cho Gemini đọc cả."""
     with patch("pipeline.stt.transcribe", return_value="  "), \
          patch("pipeline.intent.detect_with_params", return_value=(Intent.UNKNOWN, {})):
         assert list(router.resolve_speech(b"img", _fake_wav())) == [

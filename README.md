@@ -78,11 +78,54 @@ python -m pytest -v
 lỗi. Câu báo lỗi được đọc thành audio để người khiếm thị nghe được, thay vì
 thiết bị nhận một lỗi JSON không phát được.
 
-### Định dạng audio trả về
+### Định dạng audio NHẬN VÀO
+
+Board gửi `record.wav` là **WAV IMA ADPCM 4-bit** (`fmt` tag `0x0011`), mono
+16 kHz, `nBlockAlign` 256, `wSamplesPerBlock` 505, header 60 byte. Đọc bằng
+`pipeline/adpcm.py` (`decode_wav`), không phải module `wave` của Python —
+`wave` chỉ mở được `WAVE_FORMAT_PCM` và ném `unknown format: 17` với file board.
+
+🔴 Cũng đừng dùng `audioop.lin2adpcm()` / `adpcm2lin()`: đó là biến thể riêng
+của Python, không có phần đầu 4 byte mỗi khối, giải ra nhiễu trắng.
+
+Đường vào vẫn nhận cả WAV PCM 16-bit như cũ, nên file test và firmware đời cũ
+không gãy.
+
+### Định dạng audio TRẢ VỀ
 
 Chọn bằng `config.RESPONSE_FORMAT` (biến môi trường `RESPONSE_FORMAT`).
 
-**`mp3_stream` (mặc định)** — nén MP3 CBR 32kbps, mono, 16000 Hz, gửi theo HTTP
+**`auto` (mặc định)** — đọc `Accept` của client rồi chọn. Board khai
+`Accept: audio/wav;codec=ima_adpcm, audio/mpeg, audio/wav` nên nhận
+`adpcm_wav`; client chỉ khai `audio/mpeg` nhận MP3; chỉ khai `audio/wav` nhận
+WAV PCM. Nhờ vậy hai đời firmware chạy được cùng lúc trên cùng một endpoint.
+
+**`adpcm_wav`** — WAV IMA ADPCM, mono 16000 Hz, khối 256. Định dạng board xếp
+ưu tiên số 1. 60 byte header rời server **ngay lập tức**, trước cả khi gom đệm
+preroll — board đọc header ngay trên luồng để cấu hình decoder. Đang stream nên
+chưa biết tổng độ dài: cỡ khối `data` ghi `0xFFFFFFFF`, board hiểu là "server
+định dạng dần" và tự chuyển sang phỏng đoán mức đệm.
+
+```
+Content-Type: audio/wav
+X-Audio-Encoding: ima_adpcm
+X-Audio-Sample-Rate: 16000
+X-Audio-Bits: 4
+X-Audio-Channels: 1
+X-Audio-Byte-Rate: 8110
+X-Audio-Block-Align: 256
+X-Audio-Samples-Per-Block: 505
+X-Audio-Preroll-Seconds: 2.0
+X-Audio-Format: ima_adpcm;rate=16000;channels=1;block=256
+```
+
+**`adpcm_stream`** — chỉ các khối ADPCM 256 byte, không header RIFF, không
+`fact`. Cùng bộ header HTTP như trên nhưng `Content-Type:
+application/octet-stream`. Tiết kiệm 60 byte mỗi lượt và bỏ hẳn chuyện phải khai
+một độ dài chưa biết. Đổi lại `ffprobe` không đọc thẳng được — muốn kiểm bằng
+ffmpeg thì dùng `adpcm_wav`.
+
+**`mp3_stream`** — nén MP3 CBR 32kbps, mono, 16000 Hz, gửi theo HTTP
 chunked, phát dần được. 1/8 dung lượng so với PCM trần — đỡ tải WiFi/MCU.
 MCU cần decoder MP3 để giải nén trước khi đẩy I2S.
 
@@ -125,13 +168,40 @@ ghép — trên MCU `atoi` một header là xong, tách chuỗi là thêm một 
 phát ngay khi nhận được mảnh đó, không phải chờ thêm.
 
 **Chọn cái nào**: `pcm_stream` đòi đường truyền giữ đều **32 KB/s** (16 kHz ×
-16-bit). Dưới mức đó thì nghe ngắt quãng dù server có đệm bao nhiêu đi nữa —
-đo bằng `test.py`, nó in tốc độ tải thật. MCU qua HTTPS thường không đạt (TLS
-tốn CPU), nên mặc định là `wav`.
+16-bit), ADPCM chỉ đòi **8 KB/s**, MP3 32kbps đòi **4 KB/s**. MCU qua HTTPS
+thường không đạt mức 32 KB/s (TLS tốn CPU), nên PCM trần chỉ nên dùng khi debug
+trong mạng LAN.
 
 `wav` chỉ thật sự hết ngắt nếu MCU **tải trọn file rồi mới phát**. Vừa tải vừa
 đẩy I2S thì vẫn phụ thuộc băng thông y hệt, chỉ mất thêm thời gian chờ. File
 35s audio nặng ~1.1 MB — không vừa RAM nội ESP32 (~320 KB), nên cần SD/PSRAM.
+
+🔴 **Băng thông KHÔNG phải thứ quyết định người dùng chờ bao lâu.** Board so số
+giây tiếng nhận được với số giây đồng hồ trôi qua kể từ byte đầu tiên:
+
+| Server nhả được | Board làm gì | Người dùng nghe thấy |
+|---|---|---|
+| ≥ 1.30× thời gian thực | đệm 400 ms rồi phát | tiếng ra gần như ngay |
+| ≥ 1.12× | đệm 1500 ms rồi phát | trễ 1.5 giây |
+| < 1.12×, không biết tổng độ dài | đợi nhận xong hết rồi mới phát | trễ bằng cả thời gian sinh tiếng |
+
+Đó là tỉ lệ giây-tiếng trên giây-đồng-hồ, không phải băng thông mạng. Server
+sinh 1 giây tiếng mất 1 giây thì tỉ lệ là 1.00× dù nén cỡ nào — **nén 4 lần
+không cải thiện con số này**, chỉ tốc độ sinh tiếng của TTS mới cải thiện được.
+Đo bằng `python tools/bench_e2e.py`, cột `nhả`.
+
+### Đo tốc độ end-to-end
+
+```powershell
+python tools/make_board_audio.py   # dựng audio thử đúng định dạng board gửi lên
+python -m uvicorn app:app          # cửa sổ khác
+python tools/bench_e2e.py          # đo cả 16 nhánh, in bảng
+```
+
+`bench_e2e.py` dựng gói multipart y như firmware và gửi qua socket trần, nên đo
+được đúng bốn mốc board đếm: lúc có headers (trần 90 s), byte đầu tiên của thân
+(trần 180 s), tổng, và tỉ lệ nhả. Đo bằng `requests`/`httpx` không được —
+chúng gom cả body nên che mất chính thứ cần đo.
 
 Cả Gemini lẫn TTS đều stream, nối thẳng vào nhau:
 

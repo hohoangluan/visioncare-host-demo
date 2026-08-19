@@ -16,9 +16,11 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("test_live")
 
 # Live server credentials
-config.VISIONCARE_HOST_URL = "https://app.visioncare-host.uk"
 config.VISIONCARE_CLIENT_TOKEN = "f23ChvjGZt_WYrY-A8eJAyxO5LVEF_TGujmE7F_gRAY"
 config.VISIONCARE_DEVICE_ID = "glasses-123"
+visioncare_client.reset_client()
+
+DEVICE_CLIENT_TOKEN = "_W7kNZRwdQC9jawhJr7ji_TJ6JzUI5igkHQrE6oAQKE"
 
 
 def test_health():
@@ -38,7 +40,7 @@ def pair_glasses():
     url = f"{config.VISIONCARE_HOST_URL}/api/v1/device/glasses/link"
     payload = json.dumps({"user_id": "user-100", "device_id": config.VISIONCARE_DEVICE_ID}).encode("utf-8")
     headers = {
-        "Authorization": f"Bearer {config.VISIONCARE_CLIENT_TOKEN}",
+        "Authorization": f"Bearer {DEVICE_CLIENT_TOKEN}",
         "Content-Type": "application/json",
         "User-Agent": "VisionCare-Glasses/1.0",
     }
@@ -54,7 +56,7 @@ def pair_glasses():
 
 
 def test_live_calls():
-    print("\n=== STARTING LIVE API CALLS TO HOST https://app.visioncare-host.uk/ ===")
+    print(f"\n=== STARTING LIVE API CALLS TO HOST {config.VISIONCARE_HOST_URL}/ ===")
     
     test_cases = [
         ("Navigation Start", lambda: list(navigation.handle_start(b"", "chỉ đường đến Bưu điện Thành phố", {"destination": "Bưu điện Thành phố Hồ Chí Minh"}))),

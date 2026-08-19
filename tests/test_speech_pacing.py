@@ -198,7 +198,7 @@ def test_notice_still_spoken_when_the_wait_is_genuinely_long(monkeypatch):
         time.sleep(0.6)
         yield "câu trả lời"
 
-    spoken = list(waiting.with_progress_notice(slow_stream()))
+    spoken = list(waiting.with_progress_notice(slow_stream(), notices=("Vẫn đang xử lý",)))
     assert spoken[-1] == "câu trả lời"
     assert len(spoken) > 1
 

@@ -26,7 +26,15 @@ sys.path.insert(0, str(PROJ))
 
 DATA_DIR = PROJ / "data" / "intent"
 OUT_DIR = PROJ / "models" / "intent_encoder"
-TASKS = ("chat_location", "chat_web", "volume_direction", "ride_confirm")
+
+# `chat_location` và `chat_web` ĐÃ BỎ. Hai cờ chúng phục vụ không còn tồn tại:
+# vị trí do thread nền giữ nóng nên luôn nhét vào prompt, còn có tra Google hay
+# không thì chính model quyết lúc sinh chữ (xem `handlers/chat.py`).
+#
+# Dữ liệu `params_chat_location.jsonl` / `params_chat_web.jsonl` giữ lại trong
+# repo để dựng lại được nếu quay xe, nhưng không huấn luyện nữa — head không ai
+# đọc mà vẫn nằm trong `heads_params.npz` chỉ làm người sau tưởng nó đang chạy.
+TASKS = ("volume_direction", "ride_confirm")
 
 
 def _train_intent_head(embed, args) -> dict:
@@ -56,7 +64,28 @@ def _train_intent_head(embed, args) -> dict:
     Xtr_t, ytr = load("train")
     Xev_t, yev = load("eval")
     Xtr, Xev = embed(Xtr_t), embed(Xev_t)
-    clf = LogisticRegression(max_iter=2000, C=10).fit(Xtr, ytr)
+    # `class_weight="balanced"` + C=30, không phải C=10 trần như trước.
+    #
+    # VÌ SAO: sau khi bù dữ liệu, `chat` có 382 câu còn các nhãn khác 60-104 —
+    # gấp 5 lần. Hồi quy logistic dịch ranh giới về phía lớp đông, và đo được
+    # đúng như vậy. So trên CÙNG tập eval cũ 236 câu (bài duy nhất so được với
+    # model trước đây, vốn đạt nhận 87.3% / đúng 97.1%):
+    #
+    #   C=10, không cân     nhận 86.4%  đúng 95.1%   | chat 92.4%  | hazard 53%
+    #   C=10, balanced      nhận 89.8%  đúng 98.1%   | chat 79.3%  | nav_start 74%
+    #   C=1,  balanced      nhận 56.8%  đúng 99.3%   | chat 22.8%  | hazard 20%
+    #   C=30, balanced      nhận 92.8%  đúng 97.3%   | chat 90.2%  | ride_quote 80%
+    #
+    # C=30 + balanced hơn model cũ ở CẢ HAI trục, thứ ba cấu hình kia không làm
+    # được. Cột cuối là lý do không chọn "C=10 không cân" dù nó cho `chat` cao
+    # nhất: nó dìm `hazard` xuống 53%, tức quá nửa câu hỏi "phía trước có an
+    # toàn không" phải chờ thêm một vòng Gemini — đúng nhãn không nên chờ.
+    #
+    # C nhỏ phạt hệ số mạnh hơn, và với `balanced` thì phạt đó dồn lên đúng các
+    # lớp thưa: C=1 kéo coverage xuống 56.8%, gần như tắt hẳn bước cục bộ.
+    clf = LogisticRegression(
+        max_iter=3000, C=30, class_weight="balanced"
+    ).fit(Xtr, ytr)
 
     prob = clf.predict_proba(Xev)
     pred = clf.classes_[prob.argmax(1)]

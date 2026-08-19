@@ -1,9 +1,9 @@
 {"text": "Hạ âm lượng thấp xuống", "label": "music_volume"}
 {"text": "Gửi tin cấp cứu", "label": "emergency_call"}
 {"text": "Cái này nặng bao nhiêu", "label": "chat"}
-{"text": "Tách tách tách", "label": "unknown"}
-{"text": "Bô bô la la", "label": "unknown"}
-{"text": "Tít tít rè rè", "label": "unknown"}
+{"text": "Tách tách tách", "label": "chat"}
+{"text": "Bô bô la la", "label": "chat"}
+{"text": "Tít tít rè rè", "label": "chat"}
 {"text": "Dẫn hướng đi công viên thống nhất", "label": "nav_start"}
 {"text": "Gọi ngay đội cấp cứu", "label": "emergency_call"}
 {"text": "Liên lạc với bạn thân", "label": "contact_call"}
@@ -36,15 +36,15 @@
 {"text": "Gọi cho vợ yêu", "label": "contact_call"}
 {"text": "Tắt định vị", "label": "nav_stop"}
 {"text": "Chốt chuyến đi", "label": "ride_confirm"}
-{"text": "Ừ thì ừ thì", "label": "unknown"}
-{"text": "A á ơ ừ", "label": "unknown"}
+{"text": "Ừ thì ừ thì", "label": "chat"}
+{"text": "A á ơ ừ", "label": "chat"}
 {"text": "Ngừng lộ trình", "label": "nav_stop"}
 {"text": "Hướng tới cái túi xách", "label": "find"}
 {"text": "Gọi xe đến khách sạn rex", "label": "ride_quote"}
-{"text": "Rè rè rè rè", "label": "unknown"}
+{"text": "Rè rè rè rè", "label": "chat"}
 {"text": "Làm cho nhạc nhỏ lại", "label": "music_volume"}
 {"text": "Định vị cái điện thoại", "label": "find"}
-{"text": "Cái gì cái gì gì", "label": "unknown"}
+{"text": "Cái gì cái gì gì", "label": "chat"}
 {"text": "Tới địa chỉ 200 kim mã", "label": "nav_start"}
 {"text": "Điện thoại đang ở đâu", "label": "find"}
 {"text": "Không đi xe này nữa", "label": "ride_confirm"}
@@ -58,7 +58,7 @@
 {"text": "Tới trụ sở công an phường", "label": "nav_start"}
 {"text": "Quanh đây có ai không", "label": "space"}
 {"text": "Hủy chuyến đó đi", "label": "ride_confirm"}
-{"text": "Rì rầm rì rầm", "label": "unknown"}
+{"text": "Rì rầm rì rầm", "label": "chat"}
 {"text": "Phát đại một bài nhạc vàng", "label": "music_play"}
 {"text": "Còn bao nhiêu phần trăm pin", "label": "chat"}
 {"text": "Đọc mấy chữ này coi", "label": "ocr"}
@@ -122,12 +122,12 @@
 {"text": "Cần xe về nhà thi đấu", "label": "ride_quote"}
 {"text": "Không phát nhạc nữa", "label": "music_stop"}
 {"text": "Thông báo nguy hiểm khẩn", "label": "emergency_call"}
-{"text": "Ái ối á á á", "label": "unknown"}
+{"text": "Ái ối á á á", "label": "chat"}
 {"text": "Hướng về phía cái điện thoại", "label": "find"}
 {"text": "Mô tả toàn bộ phòng này", "label": "space"}
 {"text": "Phát hiện xem có gì cản đường không", "label": "hazard"}
 {"text": "Đọc mệnh giá tờ tiền này", "label": "money"}
-{"text": "Rào rào rào rào", "label": "unknown"}
+{"text": "Rào rào rào rào", "label": "chat"}
 {"text": "Vặn nhỏ tiếng nhạc coi", "label": "music_volume"}
 {"text": "Trước mặt có gì thế", "label": "space"}
 {"text": "Đang có những người nào xung quanh", "label": "space"}
@@ -160,7 +160,7 @@
 {"text": "Mở cho nghe phương thanh", "label": "music_play"}
 {"text": "Phát mấy bài nhạc trẻ", "label": "music_play"}
 {"text": "Im lặng đi", "label": "music_stop"}
-{"text": "Đùng đùng xoẹt xoẹt", "label": "unknown"}
+{"text": "Đùng đùng xoẹt xoẹt", "label": "chat"}
 {"text": "Gửi vị trí cứu trợ", "label": "emergency_call"}
 {"text": "Giá tới nhà văn hóa thiếu nhi", "label": "ride_quote"}
 {"text": "Đây là tờ tiền gì", "label": "money"}
@@ -188,7 +188,7 @@
 {"text": "Quét toàn bộ căn phòng", "label": "space"}
 {"text": "Đọc giá tiền tờ này coi", "label": "money"}
 {"text": "Gọi cứu giúp", "label": "emergency_call"}
-{"text": "Răng rứa răng rứa", "label": "unknown"}
+{"text": "Răng rứa răng rứa", "label": "chat"}
 {"text": "Bỏ chuyến này coi", "label": "ride_confirm"}
 {"text": "Gọi điện thoại cho thảo", "label": "contact_call"}
 {"text": "Dẫn tới nhà sách fahasa", "label": "nav_start"}
@@ -213,10 +213,10 @@
 {"text": "Đọc giá trị tờ tiền cầm", "label": "money"}
 {"text": "Âm lượng cao quá", "label": "music_volume"}
 {"text": "Mở loa lớn hơn", "label": "music_volume"}
-{"text": "Xe xe xe xe", "label": "unknown"}
+{"text": "Xe xe xe xe", "label": "chat"}
 {"text": "Trước mặt có gì cản đường", "label": "hazard"}
 {"text": "Quét không gian", "label": "space"}
-{"text": "Nha nha nha nha", "label": "unknown"}
+{"text": "Nha nha nha nha", "label": "chat"}
 {"text": "Đặt cuốc đi rạp chiếu phim", "label": "ride_quote"}
 {"text": "Hủy chuyến đi", "label": "ride_confirm"}
 {"text": "Đọc giúp cái hạn sử dụng", "label": "ocr"}
@@ -241,7 +241,7 @@
 {"text": "Chốt chuyến đó xem", "label": "ride_confirm"}
 {"text": "Dừng đi", "label": "nav_stop"}
 {"text": "Phòng này thế nào", "label": "space"}
-{"text": "Hừm hừm à ờ", "label": "unknown"}
+{"text": "Hừm hừm à ờ", "label": "chat"}
 {"text": "Không đi nữa", "label": "nav_stop"}
 {"text": "Hôm nay là thứ mấy", "label": "chat"}
 {"text": "Dẫn tôi tới trung tâm thương mại", "label": "nav_start"}
@@ -252,7 +252,7 @@
 {"text": "Định vị cái điều khiển đi", "label": "find"}
 {"text": "Cho biết bố cục căn phòng này", "label": "space"}
 {"text": "Xem có lối đi không", "label": "space"}
-{"text": "Lô lô ta ta", "label": "unknown"}
+{"text": "Lô lô ta ta", "label": "chat"}
 {"text": "Đang có sự kiện gì không", "label": "chat"}
 {"text": "Kết nối máy với tú", "label": "contact_call"}
 {"text": "Có bao nhiêu người hát bài này", "label": "chat"}
@@ -261,10 +261,10 @@
 {"text": "Phía trước có an toàn không", "label": "hazard"}
 {"text": "Đọc mệnh giá tờ này đi", "label": "money"}
 {"text": "Kể một câu chuyện ma", "label": "chat"}
-{"text": "Mê mệ mề mề", "label": "unknown"}
+{"text": "Mê mệ mề mề", "label": "chat"}
 {"text": "Đâu là chiếc đồng hồ", "label": "find"}
-{"text": "Hư hư ừ ừ", "label": "unknown"}
-{"text": "Ừ từ ừm hừm ừm", "label": "unknown"}
+{"text": "Hư hư ừ ừ", "label": "chat"}
+{"text": "Ừ từ ừm hừm ừm", "label": "chat"}
 {"text": "Phát bài hát thịnh hành", "label": "music_play"}
 {"text": "Đặt chuyến đi ra bến phà", "label": "ride_quote"}
 {"text": "Kiểm tra cước phí ra bưu điện phường", "label": "ride_quote"}
@@ -278,7 +278,7 @@
 {"text": "Định vị cái khăn giấy", "label": "find"}
 {"text": "Xem hạn sử dụng còn không", "label": "ocr"}
 {"text": "Gọi cho cô sáu", "label": "contact_call"}
-{"text": "Ê a ê a", "label": "unknown"}
+{"text": "Ê a ê a", "label": "chat"}
 {"text": "Kể chuyện gì vui vẻ coi", "label": "chat"}
 {"text": "Đang cần cấp cứu", "label": "emergency_call"}
 {"text": "Đọc chữ trên hóa đơn", "label": "ocr"}
@@ -336,9 +336,9 @@
 {"text": "Liên lạc với chú tư", "label": "contact_call"}
 {"text": "Ừ từ đọc lại đoạn đó", "label": "chat"}
 {"text": "Giảm độ lớn âm thanh", "label": "music_volume"}
-{"text": "Làm làm làm làm", "label": "unknown"}
+{"text": "Làm làm làm làm", "label": "chat"}
 {"text": "Phía trước có vật gì bày biện không", "label": "space"}
-{"text": "Ờ à ùm á", "label": "unknown"}
+{"text": "Ờ à ùm á", "label": "chat"}
 {"text": "Cái hộp bút nằm chỗ nào", "label": "find"}
 {"text": "Nhạc này phát hành từ bao giờ", "label": "chat"}
 {"text": "Đang có cái gì trước mắt", "label": "space"}
@@ -349,7 +349,7 @@
 {"text": "Có ai trong phòng này không", "label": "space"}
 {"text": "Ngừng hẳn", "label": "nav_stop"}
 {"text": "Ngừng hẳn đi", "label": "nav_stop"}
-{"text": "Cái đó cái này cái nọ", "label": "unknown"}
+{"text": "Cái đó cái này cái nọ", "label": "chat"}
 {"text": "Đặt xe đi chợ bến thành", "label": "ride_quote"}
 {"text": "Chìa khóa ở đâu", "label": "find"}
 {"text": "Nhấn gọi cho tuấn", "label": "contact_call"}
@@ -380,7 +380,7 @@
 {"text": "Tờ tiền này là bao nhiêu tiền", "label": "money"}
 {"text": "Đặt xe ra nhà hát lớn", "label": "ride_quote"}
 {"text": "Phát báo động khẩn cấp", "label": "emergency_call"}
-{"text": "Xào xạc xào xạc", "label": "unknown"}
+{"text": "Xào xạc xào xạc", "label": "chat"}
 {"text": "Có chướng ngại vật nào cần tránh", "label": "hazard"}
 {"text": "Đọc cho nghe chuyện cổ tích", "label": "chat"}
 {"text": "Nối máy cho mẹ gấp", "label": "contact_call"}
@@ -389,7 +389,7 @@
 {"text": "Hướng dẫn tới cái quạt", "label": "find"}
 {"text": "Tìm số người quen gọi xem", "label": "contact_call"}
 {"text": "Đi tới ga đà nẵng", "label": "nav_start"}
-{"text": "Ki ki ca ca", "label": "unknown"}
+{"text": "Ki ki ca ca", "label": "chat"}
 {"text": "Nghe lại nhạc cũ", "label": "music_play"}
 {"text": "Đang là thứ mấy", "label": "chat"}
 {"text": "Thông báo tình trạng khẩn", "label": "emergency_call"}
@@ -414,12 +414,12 @@
 {"text": "Vặn âm lượng nhỏ đi", "label": "music_volume"}
 {"text": "Gọi điện cho anh hai", "label": "contact_call"}
 {"text": "Cho nhạc ngưng", "label": "music_stop"}
-{"text": "Mô tê mô tê", "label": "unknown"}
+{"text": "Mô tê mô tê", "label": "chat"}
 {"text": "Cho to lên với", "label": "music_volume"}
 {"text": "Liên lạc với con gái", "label": "contact_call"}
 {"text": "Xác nhận chuyến xe này", "label": "ride_confirm"}
 {"text": "Ngưng hướng dẫn", "label": "nav_stop"}
-{"text": "Ta ta ta ta", "label": "unknown"}
+{"text": "Ta ta ta ta", "label": "chat"}
 {"text": "Đọc mấy chữ này đi", "label": "ocr"}
 {"text": "Đây là tờ bao nhiêu tiền", "label": "money"}
 {"text": "Cho biết trạng thái trong phòng", "label": "space"}
@@ -435,7 +435,7 @@
 {"text": "Mô tả người đang ở đây", "label": "space"}
 {"text": "Cần thấy cây bút trên bàn", "label": "find"}
 {"text": "Âm lượng lớn chút", "label": "music_volume"}
-{"text": "Kêu kêu kêu", "label": "unknown"}
+{"text": "Kêu kêu kêu", "label": "chat"}
 {"text": "Mở bài phố hoa", "label": "music_play"}
 {"text": "Tâm điểm cái ấm đun nước ở đâu", "label": "find"}
 {"text": "Hạ thấp âm thanh xuống", "label": "music_volume"}
@@ -455,7 +455,7 @@
 {"text": "Có an toàn để đi tiếp không", "label": "hazard"}
 {"text": "Nghe bài đắp mộ cuộc tình", "label": "music_play"}
 {"text": "Ngắt tiếng nhạc", "label": "music_stop"}
-{"text": "Ờ à ừm đó đó", "label": "unknown"}
+{"text": "Ờ à ừm đó đó", "label": "chat"}
 {"text": "Mức âm này lớn quá", "label": "music_volume"}
 {"text": "Ngừng ngay", "label": "nav_stop"}
 {"text": "Xem cái kéo ở đâu", "label": "find"}
@@ -478,7 +478,7 @@
 {"text": "Đi tới tiệm sách cũ", "label": "nav_start"}
 {"text": "Đến khách sạn melia", "label": "nav_start"}
 {"text": "Xác nhận cuốc xe này", "label": "ride_confirm"}
-{"text": "Xì xà xì xà", "label": "unknown"}
+{"text": "Xì xà xì xà", "label": "chat"}
 {"text": "Đặt grab đi chùa vĩnh nghiêm", "label": "ride_quote"}
 {"text": "Bật bài một cõi đi về", "label": "music_play"}
 {"text": "Cho nhạc dừng", "label": "music_stop"}
@@ -515,7 +515,7 @@
 {"text": "Kết nối tới máy quang", "label": "contact_call"}
 {"text": "Cần trợ giúp y tế", "label": "emergency_call"}
 {"text": "Bật ca sĩ quang lê", "label": "music_play"}
-{"text": "Xì xào xì xào", "label": "unknown"}
+{"text": "Xì xào xì xào", "label": "chat"}
 {"text": "Phát hiện nguy hiểm trên mặt sàn", "label": "hazard"}
 {"text": "Gọi trợ giúp y tế khẩn", "label": "emergency_call"}
 {"text": "Quét đường đi", "label": "hazard"}
@@ -526,7 +526,7 @@
 {"text": "Có ai đứng đó không", "label": "space"}
 {"text": "Liên lạc với phong", "label": "contact_call"}
 {"text": "Âm thanh to quá", "label": "music_volume"}
-{"text": "Ờ à ừm", "label": "unknown"}
+{"text": "Ờ à ừm", "label": "chat"}
 {"text": "Tìm đường tới khách sạn đệ nhất", "label": "nav_start"}
 {"text": "Xem giấy tờ này viết gì", "label": "ocr"}
 {"text": "Âm thanh to quá mức", "label": "music_volume"}
@@ -536,17 +536,17 @@
 {"text": "Đói bụng ghê", "label": "chat"}
 {"text": "Bao nhiêu tiền tới cầu sài gòn", "label": "ride_quote"}
 {"text": "Tờ này mệnh giá là gì", "label": "money"}
-{"text": "Cái cái là là", "label": "unknown"}
+{"text": "Cái cái là là", "label": "chat"}
 {"text": "Định hướng lấy cái bát", "label": "find"}
 {"text": "Cái này viết gì đấy", "label": "ocr"}
 {"text": "Chốt chuyến đi ngay", "label": "ride_confirm"}
 {"text": "Ngưng nhạc đi nhé", "label": "music_stop"}
 {"text": "Đặt xe tới trạm xe buýt gần nhất", "label": "ride_quote"}
-{"text": "Cái đó cái gì cái kia", "label": "unknown"}
+{"text": "Cái đó cái gì cái kia", "label": "chat"}
 {"text": "Nghe nhạc trữ tình", "label": "music_play"}
 {"text": "Tăng âm lượng", "label": "music_volume"}
 {"text": "Ngừng trình phát", "label": "music_stop"}
-{"text": "Lạc lạc lạc", "label": "unknown"}
+{"text": "Lạc lạc lạc", "label": "chat"}
 {"text": "Tắt chỉ đường ngay", "label": "nav_stop"}
 {"text": "Xem tờ tiền này mệnh giá mấy", "label": "money"}
 {"text": "Đặt xe ra phố ẩm thực", "label": "ride_quote"}
@@ -567,9 +567,9 @@
 {"text": "Trời còn nắng không", "label": "chat"}
 {"text": "Bật cho nghe thanh tuyền", "label": "music_play"}
 {"text": "Đọc dòng chữ trước mắt", "label": "ocr"}
-{"text": "Tạch tạch ạch ạch", "label": "unknown"}
+{"text": "Tạch tạch ạch ạch", "label": "chat"}
 {"text": "Thời tiết hôm nay thế nào", "label": "chat"}
-{"text": "À ừ ờ kìa", "label": "unknown"}
+{"text": "À ừ ờ kìa", "label": "chat"}
 {"text": "Đừng chỉ đường nữa", "label": "nav_stop"}
 {"text": "Gọi xe về đại lộ võ văn kiệt", "label": "ride_quote"}
 {"text": "Không đặt chuyến đó", "label": "ride_confirm"}
@@ -582,13 +582,13 @@
 {"text": "Mở bài diễm xưa", "label": "music_play"}
 {"text": "Cho nghe nhạc vàng", "label": "music_play"}
 {"text": "Cho biết giá đi ga sài gòn", "label": "ride_quote"}
-{"text": "Lô ca ta xi mà", "label": "unknown"}
+{"text": "Lô ca ta xi mà", "label": "chat"}
 {"text": "Trước mặt có vật gì không", "label": "hazard"}
 {"text": "Cần xe ra sân vận động", "label": "ride_quote"}
 {"text": "Gọi điện ngay cho yên", "label": "contact_call"}
 {"text": "Ngừng hướng dẫn đi", "label": "nav_stop"}
 {"text": "Đọc mấy dòng này xem", "label": "ocr"}
-{"text": "Tê mô mô tê", "label": "unknown"}
+{"text": "Tê mô mô tê", "label": "chat"}
 {"text": "Kích hoạt sos ngay", "label": "emergency_call"}
 {"text": "Dừng chơi nhạc", "label": "music_stop"}
 {"text": "Chiếc khăn đang nằm ở đâu", "label": "find"}
@@ -640,7 +640,7 @@
 {"text": "Còn bao xa tới siêu thị", "label": "nav_start"}
 {"text": "Cái thìa để chỗ mô", "label": "find"}
 {"text": "Kết thúc dẫn đường", "label": "nav_stop"}
-{"text": "Cái nào cái nào", "label": "unknown"}
+{"text": "Cái nào cái nào", "label": "chat"}
 {"text": "Tắt nhạc", "label": "music_stop"}
 {"text": "Đọc số tiền trên tay", "label": "money"}
 {"text": "Nhìn xem chỗ này có gì", "label": "space"}
@@ -649,16 +649,16 @@
 {"text": "Hủy đặt xe ngay", "label": "ride_confirm"}
 {"text": "Đến số 15 lê lợi", "label": "nav_start"}
 {"text": "Cho chạy bài vừa mới nghe", "label": "music_play"}
-{"text": "Đọc thông tin này coi", "label": "chat"}
+{"text": "Đọc thông tin này coi", "label": "ocr"}
 {"text": "Cho biết tờ này bao nhiêu", "label": "money"}
 {"text": "Chỉnh âm lượng thấp xuống", "label": "music_volume"}
 {"text": "Kiểm tra an toàn lối đi", "label": "hazard"}
 {"text": "Xem không gian có trống trải không", "label": "space"}
-{"text": "Ờ à ừm thế nào", "label": "unknown"}
+{"text": "Ờ à ừm thế nào", "label": "chat"}
 {"text": "Đọc nhãn thuốc", "label": "ocr"}
-{"text": "Hả hả gì", "label": "unknown"}
+{"text": "Hả hả gì", "label": "chat"}
 {"text": "Xung quanh có gì", "label": "space"}
-{"text": "Bà ba bà ba", "label": "unknown"}
+{"text": "Bà ba bà ba", "label": "chat"}
 {"text": "Đang ở đâu đây", "label": "chat"}
 {"text": "Tới địa điểm 50 nguyễn huệ", "label": "nav_start"}
 {"text": "Đặt cuốc xe đến nhà thờ đức bà", "label": "ride_quote"}
@@ -679,11 +679,11 @@
 {"text": "Trời có mưa không", "label": "chat"}
 {"text": "Kiểm tra giá đến bệnh viện phụ sản", "label": "ride_quote"}
 {"text": "Dẫn lối đến phòng tập gym", "label": "nav_start"}
-{"text": "Rè rè à ơi", "label": "unknown"}
+{"text": "Rè rè à ơi", "label": "chat"}
 {"text": "Tìm lối tới quán phở gia truyền", "label": "nav_start"}
 {"text": "Tăng mức tiếng lên", "label": "music_volume"}
 {"text": "Tính tiền chuyến tới công viên lê văn tám", "label": "ride_quote"}
-{"text": "A á a á", "label": "unknown"}
+{"text": "A á a á", "label": "chat"}
 {"text": "Đặt chuyến xe này", "label": "ride_confirm"}
 {"text": "Xem hộ nội dung này", "label": "ocr"}
 {"text": "Gọi cứu thương xem", "label": "emergency_call"}
@@ -711,3 +711,365 @@
 {"text": "Cái này ghi gì xem nào", "label": "ocr"}
 {"text": "Gọi cho diệp", "label": "contact_call"}
 {"text": "Bớt tiếng lại xem", "label": "music_volume"}
+{"text": "Pin sạc đến đâu rồi", "label": "chat"}
+{"text": "Kính làm được những việc gì", "label": "chat"}
+{"text": "Nghe không rõ cho to lên", "label": "music_volume"}
+{"text": "Kính còn mấy phần trăm pin", "label": "chat"}
+{"text": "Xem giúp lịch ngày mai", "label": "chat"}
+{"text": "Phát bài hát kế tiếp", "label": "music_play"}
+{"text": "Đổi chuyến khác", "label": "ride_confirm"}
+{"text": "Kéo to tiếng lên", "label": "music_volume"}
+{"text": "Tên ca sĩ bài đang phát", "label": "chat"}
+{"text": "Nhỏ tiếng lại", "label": "music_volume"}
+{"text": "Đau lưng quá mức xoa bóp vùng cổ vai", "label": "chat"}
+{"text": "Xem hộ hạn sử dụng trên hộp", "label": "ocr"}
+{"text": "Buồn ngủ lắm rồi chặn mọi cuộc gọi đến", "label": "chat"}
+{"text": "Tính tới tháng mấy rồi", "label": "chat"}
+{"text": "Tình hình giao thông hiện tại", "label": "chat"}
+{"text": "Điểm sôi của cồn là bao nhiêu", "label": "chat"}
+{"text": "Cái đó là thế nào nhỉ", "label": "chat"}
+{"text": "Dọc chữ in trên gói thuốc này đi", "label": "ocr"}
+{"text": "Chán ngấy mở bản tin thời sự xem", "label": "chat"}
+{"text": "Nói rõ hơn ý đằng sau đi", "label": "chat"}
+{"text": "Đọc hộ thực đơn dán tường", "label": "ocr"}
+{"text": "Phía trước đang có cảnh gì vậy", "label": "space"}
+{"text": "Có vụ gì ngoài đường thế", "label": "chat"}
+{"text": "Giá nhà đất dạo này sao", "label": "chat"}
+{"text": "Sắp tối chưa", "label": "chat"}
+{"text": "Ai vẽ bức mona lisa", "label": "chat"}
+{"text": "Sương mù nhiều không", "label": "chat"}
+{"text": "Có tuyết không", "label": "chat"}
+{"text": "Tới gara sửa xe", "label": "nav_start"}
+{"text": "Mở đường ra siêu thị", "label": "nav_start"}
+{"text": "Nói lại xem", "label": "chat"}
+{"text": "Dựng lại khung cảnh trước mặt", "label": "space"}
+{"text": "Chào buổi đêm", "label": "chat"}
+{"text": "Nhấn nghe bài vừa nhắc", "label": "music_play"}
+{"text": "Khu phố này gọi là gì", "label": "chat"}
+{"text": "Âm thanh nghe rõ không", "label": "chat"}
+{"text": "Pin dùng được bao lâu nữa", "label": "chat"}
+{"text": "Trời thế nào", "label": "chat"}
+{"text": "Mới dậy nè", "label": "chat"}
+{"text": "Thôi dẹp", "label": "ride_confirm"}
+{"text": "Xem mưa gió ra sao", "label": "chat"}
+{"text": "Hè", "label": "chat"}
+{"text": "Chi tiết tiếp theo là gì", "label": "chat"}
+{"text": "Đọc thông tin về thời tiết hôm nay", "label": "chat"}
+{"text": "Có bão không", "label": "chat"}
+{"text": "Mệt lả người không muốn nhúc nhích hủy lịch trình", "label": "chat"}
+{"text": "Đố vui kiến thức", "label": "chat"}
+{"text": "Nghe nói bài này bị đạo nhạc", "label": "chat"}
+{"text": "Kể sâu hơn đoạn vừa rồi xem", "label": "chat"}
+{"text": "Kể chuyện cười đi", "label": "chat"}
+{"text": "Đọc lại câu vừa rồi xem", "label": "chat"}
+{"text": "Vặn nhỏ hết cỡ", "label": "music_volume"}
+{"text": "Nhạc nhỏ xíu tăng lên", "label": "music_volume"}
+{"text": "Chào tạm biệt", "label": "chat"}
+{"text": "Đọc ca dao đi", "label": "chat"}
+{"text": "Nhìn quanh xem có gì lạ không", "label": "space"}
+{"text": "Chấp nhận", "label": "ride_confirm"}
+{"text": "Nhức mỏi sống lưng xoa dịu đi", "label": "chat"}
+{"text": "Kiểm tra trời nắng mưa", "label": "chat"}
+{"text": "Tính từ sáng đến giờ mấy tiếng", "label": "chat"}
+{"text": "Kể chuyện lịch sử", "label": "chat"}
+{"text": "Phản hồi đi", "label": "chat"}
+{"text": "To thêm chút nữa", "label": "music_volume"}
+{"text": "Kể chuyện ma mị", "label": "chat"}
+{"text": "Đọc thơ tình đi", "label": "chat"}
+{"text": "Hôm khác nói tiếp", "label": "chat"}
+{"text": "Đố mẹo nhanh", "label": "chat"}
+{"text": "Tại sao lại phức tạp vậy", "label": "chat"}
+{"text": "Xin chào", "label": "chat"}
+{"text": "Thứ mấy rồi nhỉ", "label": "chat"}
+{"text": "Nắng to lắm hả", "label": "chat"}
+{"text": "Nghe lại bài vừa rồi", "label": "music_play"}
+{"text": "Tại răng lại thành ra thế này", "label": "chat"}
+{"text": "Hơi chói tai vặn nhỏ lại", "label": "music_volume"}
+{"text": "Còn nhiều pin không", "label": "chat"}
+{"text": "Giá vàng mấy nay thế nào", "label": "chat"}
+{"text": "Thời tiết ngày mai", "label": "chat"}
+{"text": "Chứng khoán hôm nay tăng hay giảm", "label": "chat"}
+{"text": "Ok chốt", "label": "ride_confirm"}
+{"text": "Nói chuyện gì đi", "label": "chat"}
+{"text": "Tiến hành luôn", "label": "ride_confirm"}
+{"text": "Đêm nay lạnh bao nhiêu", "label": "chat"}
+{"text": "Đọc thơ buồn", "label": "chat"}
+{"text": "Chào buổi trưa", "label": "chat"}
+{"text": "Ồn quá giảm xuống", "label": "music_volume"}
+{"text": "Trực tiếp chưa", "label": "chat"}
+{"text": "Đố iq xem", "label": "chat"}
+{"text": "Trời mấy độ", "label": "chat"}
+{"text": "Xem trên nhãn chai có thành phần gì", "label": "ocr"}
+{"text": "Chúc buổi tối vui vẻ", "label": "chat"}
+{"text": "Chơi nhạc của người này", "label": "music_play"}
+{"text": "Riêng bài đó phát lại", "label": "music_play"}
+{"text": "Kiểm tra lại vị trí hiện tại", "label": "chat"}
+{"text": "Bài này thuộc thể loại gì", "label": "chat"}
+{"text": "Có nghe rõ tôi nói không", "label": "chat"}
+{"text": "Rước mắt đang bày ra những gì", "label": "space"}
+{"text": "Tin thể thao có gì mới", "label": "chat"}
+{"text": "Dùng để làm gì được", "label": "chat"}
+{"text": "Tổng hợp tin tức kinh tế hôm nay", "label": "chat"}
+{"text": "Ánh sáng mặt trời đi mất bao lâu tới trái đất", "label": "chat"}
+{"text": "Phát nhạc người vừa tìm", "label": "music_play"}
+{"text": "Hệ mặt trời có mấy hành tinh", "label": "chat"}
+{"text": "Hôm nay có sự kiện gì lớn", "label": "chat"}
+{"text": "Thôi bỏ", "label": "ride_confirm"}
+{"text": "Vừa rồi có tiếng gì đấy", "label": "chat"}
+{"text": "Thực hiện nha", "label": "ride_confirm"}
+{"text": "Tạm biệt nha", "label": "chat"}
+{"text": "Chỉnh âm lượng vừa phải", "label": "music_volume"}
+{"text": "Bật nhạc của ca sĩ đó", "label": "music_play"}
+{"text": "Vặn to hết cỡ", "label": "music_volume"}
+{"text": "Kiểm tra mức pin", "label": "chat"}
+{"text": "Nhắc lại câu trước đi", "label": "chat"}
+{"text": "Mấy giờ bắt đầu ca", "label": "chat"}
+{"text": "Phát album của họ", "label": "music_play"}
+{"text": "Pin bao nhiêu", "label": "chat"}
+{"text": "Đọc nội dung cái biển treo cửa", "label": "ocr"}
+{"text": "Chu vi hình chữ nhật tính thế nào", "label": "chat"}
+{"text": "Thông tin về ca sĩ này", "label": "chat"}
+{"text": "Tới quán nước gần nhất", "label": "nav_start"}
+{"text": "Bối cảnh xung quanh ra sao", "label": "space"}
+{"text": "Bắt đầu đi bến xe", "label": "nav_start"}
+{"text": "Đỉnh núi cao nhất thế giới tên gì", "label": "chat"}
+{"text": "Nhìn vào tờ giấy trước mặt xem nào", "label": "ocr"}
+{"text": "To quá điếc tai", "label": "music_volume"}
+{"text": "Không đặt nữa", "label": "ride_confirm"}
+{"text": "Bạn ơi", "label": "chat"}
+{"text": "Trái đất quay mất bao lâu", "label": "chat"}
+{"text": "Tôi nghe có rõ máy không", "label": "chat"}
+{"text": "Không gian ở đây có rộng không", "label": "space"}
+{"text": "Bài này ai sáng tác", "label": "chat"}
+{"text": "Nhận luôn", "label": "ride_confirm"}
+{"text": "Kể chuyện đời xưa", "label": "chat"}
+{"text": "Nói lại câu hồi nãy", "label": "chat"}
+{"text": "Thực hiện", "label": "ride_confirm"}
+{"text": "Vặn nhỏ xuống một nửa", "label": "music_volume"}
+{"text": "Nhắc lại xem nào", "label": "chat"}
+{"text": "Vì sao lại có chuyện đó", "label": "chat"}
+{"text": "Nực nội quá mở cửa sổ phòng", "label": "chat"}
+{"text": "Dọc dòng chữ khắc trên nhẫn", "label": "ocr"}
+{"text": "Đẩy âm lượng lên chín mươi", "label": "music_volume"}
+{"text": "Bỏ qua", "label": "ride_confirm"}
+{"text": "Lịch thi đấu bóng đá hôm nay", "label": "chat"}
+{"text": "Đưa ra quán phở", "label": "nav_start"}
+{"text": "Chào buổi tối an lành", "label": "chat"}
+{"text": "Huỷ bỏ đi", "label": "ride_confirm"}
+{"text": "Cập nhật kết quả xổ số", "label": "chat"}
+{"text": "Ngán ngẩm cảnh này đọc truyện cười nghe", "label": "chat"}
+{"text": "Mùa hè tới chưa", "label": "chat"}
+{"text": "Chạy đi", "label": "ride_confirm"}
+{"text": "Chào ngày mới", "label": "chat"}
+{"text": "Mày hỗ trợ được tính năng nào", "label": "chat"}
+{"text": "Tính năng gồm những gì", "label": "chat"}
+{"text": "Khu chung cư này tên gì", "label": "chat"}
+{"text": "Sự kiện gì đang hot nhất", "label": "chat"}
+{"text": "Kể tiếp chuyện vừa rồi đi", "label": "chat"}
+{"text": "Chữ trên lon nước này là gì", "label": "ocr"}
+{"text": "Chỉnh âm lượng bảy mươi", "label": "music_volume"}
+{"text": "Đọc bài thơ lục bát", "label": "chat"}
+{"text": "Có đó không", "label": "chat"}
+{"text": "Nói về sự kiện thế giới tuần này", "label": "chat"}
+{"text": "Vì sao lá cây màu xanh", "label": "chat"}
+{"text": "Nước sôi ở mấy độ", "label": "chat"}
+{"text": "Công thức tính diện tích hình tròn", "label": "chat"}
+{"text": "Ừ từ bật bài này", "label": "music_play"}
+{"text": "Thử máy chút", "label": "chat"}
+{"text": "Trời âm u à", "label": "chat"}
+{"text": "Tín hiệu âm thanh thế nào", "label": "chat"}
+{"text": "Tên ban nhạc này là gì", "label": "chat"}
+{"text": "Câu vừa nãy nói gì", "label": "chat"}
+{"text": "Chán phèo tìm trò chơi gì giải trí", "label": "chat"}
+{"text": "Thế thôi nhé", "label": "chat"}
+{"text": "Còn thức không", "label": "chat"}
+{"text": "Xác nhận", "label": "ride_confirm"}
+{"text": "Đọc nhiệt độ", "label": "chat"}
+{"text": "Có nghe không", "label": "chat"}
+{"text": "Hướng ra nhà sách", "label": "nav_start"}
+{"text": "Tại sao có ngày và đêm", "label": "chat"}
+{"text": "Bỏ cuốc", "label": "ride_confirm"}
+{"text": "Chơi bài kia đi", "label": "music_play"}
+{"text": "Tăng thêm chút", "label": "music_volume"}
+{"text": "Kể chuyện tếu", "label": "chat"}
+{"text": "Tìm kiếm thông tin bệnh tiểu đường", "label": "chat"}
+{"text": "Đọc thơ lục bát", "label": "chat"}
+{"text": "Thời tiết hôm nay", "label": "chat"}
+{"text": "Áp suất không khí sao", "label": "chat"}
+{"text": "Đã đến giờ ăn cơm chưa", "label": "chat"}
+{"text": "Tại sao lại như vậy", "label": "chat"}
+{"text": "Bạc hà có tác dụng gì", "label": "chat"}
+{"text": "Chỉnh to hết mức", "label": "music_volume"}
+{"text": "Xem thông tin trên vỉ thuốc", "label": "ocr"}
+{"text": "Dẫn đường ra tiệm thuốc", "label": "nav_start"}
+{"text": "Khoẻ không", "label": "chat"}
+{"text": "Đọc tin tức thời sự sáng nay", "label": "chat"}
+{"text": "Mở bài hát vừa hỏi", "label": "music_play"}
+{"text": "Kể tên đồ đạc trong phòng này", "label": "space"}
+{"text": "Mô tả cảnh vật chung quanh xem", "label": "space"}
+{"text": "Nhìn tờ lịch treo tường đọc ngày đi", "label": "ocr"}
+{"text": "Cảm ơn nha", "label": "chat"}
+{"text": "Đọc thơ xuân", "label": "chat"}
+{"text": "Cảm ơn sự giúp đỡ", "label": "chat"}
+{"text": "Mấy giờ chiều rồi", "label": "chat"}
+{"text": "Ai hát bản này thế", "label": "chat"}
+{"text": "Bệnh tiểu đường do đâu", "label": "chat"}
+{"text": "Tốc độ âm thanh là bao nhiêu", "label": "chat"}
+{"text": "Bản tuyên ngôn độc lập ra đời năm nào", "label": "chat"}
+{"text": "Ý của câu trước là gì", "label": "chat"}
+{"text": "Tỉ số trận đấu thế nào rồi", "label": "chat"}
+{"text": "Cảm ơn nhiều", "label": "chat"}
+{"text": "Tôi đi ngủ đây", "label": "chat"}
+{"text": "Phát lại câu khi nãy", "label": "chat"}
+{"text": "Tết âm lịch ngày nào", "label": "chat"}
+{"text": "Cái nhãn này ghi gì", "label": "ocr"}
+{"text": "Đọc vè đi", "label": "chat"}
+{"text": "Dự báo thời tiết thế nào", "label": "chat"}
+{"text": "Mấy giờ rồi xem coi", "label": "chat"}
+{"text": "To lên đi", "label": "music_volume"}
+{"text": "Tin tức kinh tế việt nam", "label": "chat"}
+{"text": "Hướng ra cây rút tiền", "label": "nav_start"}
+{"text": "Thôi huỷ", "label": "ride_confirm"}
+{"text": "Tỉ giá đô la hôm nay", "label": "chat"}
+{"text": "Hạ nhỏ âm lượng xuống", "label": "music_volume"}
+{"text": "Trời sắp mưa chưa", "label": "chat"}
+{"text": "Vitamin c có trong đâu", "label": "chat"}
+{"text": "Cách đổi độ c sang độ f", "label": "chat"}
+{"text": "Đố vui dân gian", "label": "chat"}
+{"text": "Đồng ý", "label": "ride_confirm"}
+{"text": "Vặn to chút nữa", "label": "music_volume"}
+{"text": "Có cần mang ô không", "label": "chat"}
+{"text": "Vậy còn chi tiết gì nữa", "label": "chat"}
+{"text": "Thủ đô pháp là gì", "label": "chat"}
+{"text": "Bao giờ sang xuân", "label": "chat"}
+{"text": "Kể nghe chuyện ma", "label": "chat"}
+{"text": "Chào", "label": "chat"}
+{"text": "Còn lâu không sáng", "label": "chat"}
+{"text": "Nóng quá không", "label": "chat"}
+{"text": "Một cân bằng bao nhiêu gam", "label": "chat"}
+{"text": "Nhạc phẩm này của nhạc sĩ nào", "label": "chat"}
+{"text": "Bây giờ thứ mấy", "label": "chat"}
+{"text": "Dẫn ra bưu điện", "label": "nav_start"}
+{"text": "Câu hát vừa rồi của ai", "label": "chat"}
+{"text": "Cập nhật tình hình thế giới", "label": "chat"}
+{"text": "Ca khúc này ra mắt năm nào", "label": "chat"}
+{"text": "Vừa rồi có ý gì", "label": "chat"}
+{"text": "Đố chữ đi", "label": "chat"}
+{"text": "Bản gốc bài này ai trình bày", "label": "chat"}
+{"text": "Hỏi lại coi", "label": "chat"}
+{"text": "Một dặm dài bao nhiêu mét", "label": "chat"}
+{"text": "Có nhà không", "label": "chat"}
+{"text": "Xem biên lai tiền điện ghi bao nhiêu", "label": "ocr"}
+{"text": "Lãi suất ngân hàng ra sao", "label": "chat"}
+{"text": "À à ừm", "label": "chat"}
+{"text": "Chốt đơn", "label": "ride_confirm"}
+{"text": "Hơi lớn giảm chút", "label": "music_volume"}
+{"text": "Díp cả mắt lại khóa máy đi ngủ thôi", "label": "chat"}
+{"text": "Cảm ơn bạn", "label": "chat"}
+{"text": "Hơi nhỏ cho to đi", "label": "music_volume"}
+{"text": "Tăng âm lượng đi", "label": "music_volume"}
+{"text": "Vụ cháy ở quận nhất thiệt hại gì", "label": "chat"}
+{"text": "Bảng xếp hạng ngoại hạng anh", "label": "chat"}
+{"text": "Giảm xuống ba mươi", "label": "music_volume"}
+{"text": "Ơi ời", "label": "chat"}
+{"text": "Khung cảnh trước mặt như thế nào", "label": "space"}
+{"text": "Có nắng không", "label": "chat"}
+{"text": "Nghe rõ không", "label": "chat"}
+{"text": "Không cần nữa", "label": "ride_confirm"}
+{"text": "Thấp tiếng xuống", "label": "music_volume"}
+{"text": "Đổi giọng đọc", "label": "chat"}
+{"text": "Bài này dịch nghĩa gì", "label": "chat"}
+{"text": "Có mưa không", "label": "chat"}
+{"text": "Tọa độ chỗ này là gì", "label": "chat"}
+{"text": "Kể chuyện tiếu lâm", "label": "chat"}
+{"text": "Chia sẻ kiến thức về vũ trụ", "label": "chat"}
+{"text": "Đố vui hại não", "label": "chat"}
+{"text": "Chào một ngày mới", "label": "chat"}
+{"text": "Kể chuyện ngụ ngôn", "label": "chat"}
+{"text": "Kéo nhỏ lại", "label": "music_volume"}
+{"text": "Nguyên tử cấu tạo thế nào", "label": "chat"}
+{"text": "Chào một buổi sáng tốt lành", "label": "chat"}
+{"text": "Tóm tắt bài báo mới nhất trên mạng", "label": "chat"}
+{"text": "Tăng to lên", "label": "music_volume"}
+{"text": "Chỉnh xuống năm mươi", "label": "music_volume"}
+{"text": "Lương tri là gì", "label": "chat"}
+{"text": "Bé quá nghe không rõ", "label": "music_volume"}
+{"text": "Ánh sáng chạy nhanh thế nào", "label": "chat"}
+{"text": "Vâng", "label": "chat"}
+{"text": "Lối vô chợ chỗ mô", "label": "nav_start"}
+{"text": "Thiết bị hết pin chưa", "label": "chat"}
+{"text": "Chào buổi tối", "label": "chat"}
+{"text": "Kết nối chưa", "label": "chat"}
+{"text": "Cái hóa đơn siêu thị dài này ghi chi", "label": "ocr"}
+{"text": "Âm lượng lớn hơn xem", "label": "music_volume"}
+{"text": "Dạ", "label": "chat"}
+{"text": "Tóm tắt tiểu sử nhà văn này", "label": "chat"}
+{"text": "Đang làm gì đấy", "label": "chat"}
+{"text": "Hai mươi nhân ba là mấy", "label": "chat"}
+{"text": "Câu nói đó hàm ý gì", "label": "chat"}
+{"text": "Đưa tới trạm xe buýt", "label": "nav_start"}
+{"text": "Chào buổi chiều mát mẻ", "label": "chat"}
+{"text": "Một lít bằng mấy ki lô gam", "label": "chat"}
+{"text": "Thông tin bầu cử tổng thống mỹ", "label": "chat"}
+{"text": "Hẹn gặp lại", "label": "chat"}
+{"text": "Còn bao nhiêu ngày nữa", "label": "chat"}
+{"text": "Nhiệt độ bao nhiêu", "label": "chat"}
+{"text": "Giá thịt heo trên thị trường", "label": "chat"}
+{"text": "Chúc ngủ ngon", "label": "chat"}
+{"text": "Âm lượng to lên đi", "label": "music_volume"}
+{"text": "Hẹn mai gặp", "label": "chat"}
+{"text": "Ngoài trời lạnh chưa", "label": "chat"}
+{"text": "Coi trời có nắng không", "label": "chat"}
+{"text": "Ừm", "label": "chat"}
+{"text": "Cập nhật tỷ giá ngoại tệ mới nhất", "label": "chat"}
+{"text": "Hôm nay ngày bao nhiêu", "label": "chat"}
+{"text": "Đã qua nửa đêm chưa", "label": "chat"}
+{"text": "Hẹn lúc khác", "label": "chat"}
+{"text": "Chào buổi chiều", "label": "chat"}
+{"text": "Dậy chưa", "label": "chat"}
+{"text": "Đọc vé xe buýt cầm ở tay", "label": "ocr"}
+{"text": "Bảng giá treo ở quầy viết chi", "label": "ocr"}
+{"text": "Giá xăng dầu hiện tại", "label": "chat"}
+{"text": "Liệt kê những vật thể trước mặt", "label": "space"}
+{"text": "Đọc giờ hộ cái", "label": "chat"}
+{"text": "Nhỏ lại đi", "label": "music_volume"}
+{"text": "Đố mẹo xem nào", "label": "chat"}
+{"text": "Hết pin chưa vậy", "label": "chat"}
+{"text": "Kim loại nào nặng nhất", "label": "chat"}
+{"text": "Tháng mấy rồi", "label": "chat"}
+{"text": "Giá trị của số pi là mấy", "label": "chat"}
+{"text": "Câu vừa rồi có ngụ ý chi", "label": "chat"}
+{"text": "Tới tiệm tạp hóa đi", "label": "nav_start"}
+{"text": "Bỏ chuyến này", "label": "ride_confirm"}
+{"text": "Giảm âm lượng đi", "label": "music_volume"}
+{"text": "Alo", "label": "chat"}
+{"text": "Cây viết mực rơi ở đâu", "label": "find"}
+{"text": "Sấp tiền lẻ cất ở đâu", "label": "find"}
+{"text": "Bịch sữa chua trong túi ở đâu", "label": "find"}
+{"text": "Cây gậy trắng giấu ở đâu", "label": "find"}
+{"text": "Cuộn băng gạc để ở đâu", "label": "find"}
+{"text": "Tờ giấy hẹn khám bệnh ở đâu", "label": "find"}
+{"text": "Chìa khóa nhà để chỗ nào", "label": "find"}
+{"text": "Hộp bánh quy cất chỗ nào", "label": "find"}
+{"text": "Chiếc điện thoại cầm tay ở đâu", "label": "find"}
+{"text": "Cái khăn mặt treo ở đâu", "label": "find"}
+{"text": "Hũ dầu gió cất ở đâu", "label": "find"}
+{"text": "Cái thẻ ngân hàng để chỗ nào", "label": "find"}
+{"text": "Túi thuốc uống của tôi để ở đâu", "label": "find"}
+{"text": "Cặp kính cận để chỗ nào", "label": "find"}
+{"text": "Cái mắt kính râm ở đâu", "label": "find"}
+{"text": "Cây rút tiền ngân hàng gần đây chỗ nào", "label": "chat"}
+{"text": "Điểm gửi xe gần nhất chỗ nào", "label": "chat"}
+{"text": "Nhà thuốc gần đây nằm ở chỗ nào", "label": "chat"}
+{"text": "Quán ăn bình dân quanh đây ở đâu", "label": "chat"}
+{"text": "Chợ truyền thống gần nhất ở đâu", "label": "chat"}
+{"text": "Kiosk bán vé ở đâu", "label": "chat"}
+{"text": "Quầy thuốc tây quanh đây chỗ nào", "label": "chat"}
+{"text": "Cửa hàng tạp hóa gần nhất chỗ nào", "label": "chat"}
+{"text": "Trạm xăng gần đây nằm ở đâu", "label": "chat"}
+{"text": "Bưu điện gần nhất nằm ở đâu", "label": "chat"}
+{"text": "Phòng giao dịch ngân hàng chỗ nào", "label": "chat"}
+{"text": "Rạm y tế phường ở đâu", "label": "chat"}
+{"text": "Quán nước vỉa hè chỗ nào", "label": "chat"}
+{"text": "Tiệm sửa xe gần đây nằm ở đâu", "label": "chat"}
+{"text": "Văn phòng phường xã ở đâu", "label": "chat"}

@@ -8,37 +8,42 @@ from handlers import action_flow, navigation, phone, ride, music
 
 
 def test_call_service_api_success(monkeypatch):
+    """Chặn ở tầng vận chuyển của httpx, không phải ở `_client()`.
+
+    Bản trước stub `urllib.request.urlopen`. Khi client đổi sang httpx thì cái
+    stub đó thành vô hại theo kiểu tệ nhất: test không lỗi vì thiếu stub, nó
+    lặng lẽ GỌI THẬT ra host production và chỉ hỏng khi API trả 400. Chặn ở
+    `MockTransport` thì không đường nào ra được mạng.
+    """
+    import httpx
+
     captured_req = {}
 
-    class FakeResponse:
-        status = 202
-        def read(self):
-            return json.dumps({
-                "status": "ok",
-                "data": {
-                    "request_id": "req-123",
-                    "operation": "ride_quote",
-                    "request_state": "processing"
-                }
-            }).encode("utf-8")
-        def __enter__(self):
-            return self
-        def __exit__(self, *args):
-            pass
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_req["url"] = str(request.url)
+        captured_req["headers"] = dict(request.headers)
+        captured_req["body"] = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(202, json={
+            "status": "ok",
+            "data": {
+                "request_id": "req-123",
+                "operation": "ride_quote",
+                "request_state": "processing",
+            },
+        })
 
-    def fake_urlopen(req, timeout=10):
-        captured_req["url"] = req.full_url
-        captured_req["headers"] = dict(req.headers)
-        captured_req["body"] = json.loads(req.data.decode("utf-8"))
-        return FakeResponse()
+    monkeypatch.setattr(
+        visioncare_client, "_CLIENT",
+        httpx.Client(transport=httpx.MockTransport(handler)),
+    )
 
-    monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
-
-    res = visioncare_client.call_service_api("api/v1/service/ride/quote", {"destination": {"address": "Bách Khoa"}})
+    res = visioncare_client.call_service_api(
+        "api/v1/service/ride/quote", {"destination": {"address": "Bách Khoa"}}
+    )
 
     assert res["status"] == "ok"
     assert captured_req["url"] == f"{config.VISIONCARE_HOST_URL}/api/v1/service/ride/quote"
-    assert captured_req["headers"]["Authorization"] == f"Bearer {config.VISIONCARE_CLIENT_TOKEN}"
+    assert captured_req["headers"]["authorization"] == f"Bearer {config.VISIONCARE_CLIENT_TOKEN}"
     assert captured_req["body"]["device_id"] == config.VISIONCARE_DEVICE_ID
     assert "request_id" in captured_req["body"]
     assert captured_req["body"]["destination"]["address"] == "Bách Khoa"
@@ -294,7 +299,8 @@ def test_music_volume_still_acts_when_the_command_was_clear(params, expected, mo
 
     "".join(music.handle_volume(b"", "chỉnh âm lượng", params))
 
-    assert calls[0][1] == expected
+    assert {key: calls[0][1][key] for key in expected} == expected
+    assert calls[0][1]["request_id"]
 
 
 def test_music_play_combines_the_artist_answer_with_the_pending_title(monkeypatch):
@@ -359,7 +365,7 @@ def test_music_stop_and_volume_speak_the_confirmed_state(monkeypatch):
     assert "66 phần trăm" in out_vol
 
 
-def test_no_result_from_the_phone_is_spoken_as_no_response(monkeypatch):
+def test_no_result_at_slo_keeps_phone_action_running(monkeypatch):
     _stub_flow(monkeypatch)
     # Never leaves processing, so run_action must fall through its budget.
     monkeypatch.setattr(action_flow, "get_request_status", lambda request_id: {"request_state": "processing"})
@@ -368,4 +374,4 @@ def test_no_result_from_the_phone_is_spoken_as_no_response(monkeypatch):
 
     out = "".join(music.handle_stop(b"", "", {}))
 
-    assert "chưa phản hồi" in out.lower()
+    assert "vẫn đang thực hiện" in out.lower()

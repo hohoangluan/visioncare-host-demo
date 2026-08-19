@@ -12,6 +12,10 @@ google-genai
 python-dotenv
 vieneu
 lameenc
+# `services/visioncare_client.py` dùng httpx.Client để TÁI DÙNG kết nối tới
+# host. Với urllib thì mỗi lượt poll dựng TLS mới (đo: 133 ms bắt tay, 252 ms
+# so với 113 ms mỗi lệnh gọi) — mà một lượt lấy vị trí là ~5 lệnh gọi và
+# `music_play` chờ tới 80 lượt poll.
+httpx
 # dev / test
 pytest
-httpx

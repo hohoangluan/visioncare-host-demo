@@ -54,10 +54,7 @@ def notice_delays(opening_seconds: float = 0.0) -> Iterator[float]:
 # từng đứng đầu danh sách này, và nghe thật thì hai câu liền nhau thành "hệ
 # thống đang xử lý... vẫn đang xử lý" — nghe như máy nói lại một câu chứ không
 # phải đang báo tiến độ. Mỗi câu ở đây phải nói một điều KHÁC câu chào.
-_DEFAULT_NOTICES = (
-    "Vẫn đang tìm thông tin cho bạn.",
-    "Sắp có kết quả rồi.",
-)
+_DEFAULT_NOTICES: tuple[str, ...] = ()
 
 # Câu cố định của module này, để `pipeline/phrases.py` dựng sẵn audio. Trỏ vào
 # đúng hằng số ở trên chứ không chép lại chữ: chép thì sửa một chỗ là chỗ kia

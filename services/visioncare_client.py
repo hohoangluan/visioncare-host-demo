@@ -1,13 +1,63 @@
 import json
 import logging
+import threading
 import time
 import uuid
-import urllib.request
-import urllib.error
+
+import httpx
 
 import config
 
 logger = logging.getLogger("blind_assist")
+
+# MỘT client dùng chung, giữ kết nối sống giữa các lệnh gọi.
+#
+# Trước đây file này dùng `urllib.request.urlopen`, tức mỗi lệnh gọi dựng một
+# kết nối mới. Một lượt `get_device_location()` là 1 POST rồi poll 0,5s/lần;
+# `wait_for_result()` của các action dài còn gọi nhiều hơn, nên vẫn tái dùng
+# kết nối HTTP tới app server chạy trên localhost.
+#
+# `httpx.Client` an toàn khi nhiều luồng dùng chung, và server chạy request
+# trong threadpool nên điều đó là bắt buộc chứ không phải tiện tay.
+_CLIENT: httpx.Client | None = None
+_CLIENT_LOCK = threading.Lock()
+
+_BASE_HEADERS = {
+    "Accept": "application/json",
+    "User-Agent": "VisionCare-Glasses/1.0",
+}
+
+
+def _client() -> httpx.Client:
+    global _CLIENT
+    if _CLIENT is None:
+        with _CLIENT_LOCK:
+            if _CLIENT is None:
+                _CLIENT = httpx.Client(
+                    base_url=config.VISIONCARE_HOST_URL.rstrip("/"),
+                    headers=_BASE_HEADERS,
+                    # Giữ kết nối sống hẳn 5 phút: nhịp lấy vị trí ở nền là 240 s,
+                    # nên hạn ngắn hơn thế là mỗi nhịp lại mở kết nối từ đầu.
+                    limits=httpx.Limits(max_keepalive_connections=4, keepalive_expiry=300.0),
+                    timeout=10.0,
+                )
+    return _CLIENT
+
+
+def reset_client() -> None:
+    """Đóng client dùng chung (dùng trong test, và khi đổi host lúc chạy)."""
+    global _CLIENT
+    with _CLIENT_LOCK:
+        if _CLIENT is not None:
+            _CLIENT.close()
+            _CLIENT = None
+
+
+def _auth_header() -> dict:
+    # Đọc token mỗi lượt chứ không nướng vào client: test đổi
+    # `config.VISIONCARE_CLIENT_TOKEN` bằng monkeypatch, và nếu token nằm trong
+    # header của client thì bản đổi đó không có tác dụng.
+    return {"Authorization": f"Bearer {config.VISIONCARE_CLIENT_TOKEN}"}
 
 
 class VisionCareAPIError(Exception):
@@ -32,39 +82,33 @@ def call_service_api(endpoint_path: str, payload: dict) -> dict:
     if "request_id" not in request_payload:
         request_payload["request_id"] = str(uuid.uuid4())
 
-    headers = {
-        "Authorization": f"Bearer {config.VISIONCARE_CLIENT_TOKEN}",
-        "Content-Type": "application/json",
-        "Accept": "application/json",
-        "User-Agent": "VisionCare-Glasses/1.0",
-    }
-
-    data = json.dumps(request_payload).encode("utf-8")
-    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-
     logger.info("Calling VisionCare API: POST %s with request_id=%s", url, request_payload.get("request_id"))
 
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            resp_body = resp.read().decode("utf-8")
-            response_json = json.loads(resp_body) if resp_body else {}
-            logger.info("VisionCare API response [%d]: %s", resp.status, response_json)
-            return response_json
-    except urllib.error.HTTPError as exc:
-        err_body = exc.read().decode("utf-8") if exc.fp else ""
-        logger.error("VisionCare API HTTPError [%d]: %s", exc.code, err_body)
-        try:
-            err_json = json.loads(err_body)
-        except Exception:
-            err_json = {"detail": err_body}
-        raise VisionCareAPIError(
-            f"VisionCare API returned status {exc.code}",
-            status_code=exc.code,
-            details=err_json,
-        ) from exc
-    except Exception as exc:
+        resp = _client().post(
+            url,
+            content=json.dumps(request_payload).encode("utf-8"),
+            headers={**_auth_header(), "Content-Type": "application/json"},
+        )
+    except Exception as exc:  # noqa: BLE001 - gộp mọi lỗi mạng thành một loại
         logger.error("VisionCare API connection error: %s", exc)
         raise VisionCareAPIError(f"Lỗi kết nối VisionCare API: {exc}") from exc
+
+    if resp.status_code >= 400:
+        logger.error("VisionCare API HTTPError [%d]: %s", resp.status_code, resp.text)
+        try:
+            err_json = resp.json()
+        except Exception:  # noqa: BLE001
+            err_json = {"detail": resp.text}
+        raise VisionCareAPIError(
+            f"VisionCare API returned status {resp.status_code}",
+            status_code=resp.status_code,
+            details=err_json,
+        )
+
+    response_json = resp.json() if resp.content else {}
+    logger.info("VisionCare API response [%d]: %s", resp.status_code, response_json)
+    return response_json
 
 
 def get_request_status(request_id: str) -> dict:
@@ -74,27 +118,19 @@ def get_request_status(request_id: str) -> dict:
     result, error, created_at, updated_at}`.
     """
     url = f"{config.VISIONCARE_HOST_URL.rstrip('/')}/api/v1/requests/{request_id}"
-    headers = {
-        "Authorization": f"Bearer {config.VISIONCARE_CLIENT_TOKEN}",
-        "Accept": "application/json",
-        # Bắt buộc: Cloudflare trước tunnel chặn user-agent mặc định của
-        # urllib bằng error 1010, request không bao giờ tới backend.
-        "User-Agent": "VisionCare-Glasses/1.0",
-    }
-    req = urllib.request.Request(url, headers=headers, method="GET")
 
     try:
-        with urllib.request.urlopen(req, timeout=10) as resp:
-            return json.loads(resp.read().decode("utf-8")).get("data", {})
-    except urllib.error.HTTPError as exc:
-        err_body = exc.read().decode("utf-8") if exc.fp else ""
-        logger.error("VisionCare status HTTPError [%d]: %s", exc.code, err_body)
-        raise VisionCareAPIError(
-            f"Không tra được trạng thái request {request_id}", status_code=exc.code
-        ) from exc
-    except Exception as exc:
+        resp = _client().get(url, headers=_auth_header())
+    except Exception as exc:  # noqa: BLE001
         logger.error("VisionCare status connection error: %s", exc)
         raise VisionCareAPIError(f"Lỗi kết nối khi tra trạng thái: {exc}") from exc
+
+    if resp.status_code >= 400:
+        logger.error("VisionCare status HTTPError [%d]: %s", resp.status_code, resp.text)
+        raise VisionCareAPIError(
+            f"Không tra được trạng thái request {request_id}", status_code=resp.status_code
+        )
+    return resp.json().get("data", {})
 
 
 def get_device_location(timeout_seconds: float = 12.0) -> dict | None:

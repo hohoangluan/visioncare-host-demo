@@ -12,12 +12,22 @@ logger = logging.getLogger("blind_assist")
 # nằm hết ở đây, mà handler của chúng vốn đã gọi Gemini kèm ảnh — lượt gọi phân
 # loại trước đó là chờ trắng chỉ để lấy một cái nhãn.
 #
+# `chat` VÀO ĐÂY từ khi bỏ hai cờ `needs_location`/`needs_web`. Trước đó nó là
+# nhãn phổ biến nhất mà LUÔN phải qua Gemini — đo trên 18 câu chat của tập eval:
+# 0/18 câu xong được ở bước cục bộ, vì hai head tham số chỉ nhận 20% và 3.3%, mà
+# cả hai phải cùng qua ngưỡng nên coverage thực tế nhân lại còn ~4%.
+#
+# Hai cờ đó giờ không còn ai sinh ra: vị trí do thread nền giữ nóng nên cứ nhét
+# vào prompt, còn có tra Google hay không thì chính model quyết lúc sinh chữ
+# (xem `handlers/chat.py` và `config.CHAT_ALWAYS_SEARCH`).
+#
 # Các nhãn còn lại (`nav_start` cần destination, `contact_call` cần
-# contact_name, `music_play` cần song, `chat` cần needs_location/needs_web...)
-# vẫn phải qua Gemini vì SetFit chỉ sinh ra nhãn, không trích được slot.
+# contact_name, `music_play` cần song...) vẫn phải qua Gemini vì SetFit chỉ sinh
+# ra nhãn, không trích được slot. Chi phí ~0.9s đó rơi đúng vào những nhãn sau
+# đó còn phải chờ điện thoại 5-20s, nên không nghe ra.
 _PARAM_FREE = frozenset({
     Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE, Intent.HAZARD,
-    Intent.NAV_STOP, Intent.MUSIC_STOP, Intent.UNKNOWN,
+    Intent.CHAT, Intent.NAV_STOP, Intent.MUSIC_STOP, Intent.UNKNOWN,
 })
 
 # Hai nhãn này phụ thuộc trạng thái thiết bị, mà bộ phân loại cục bộ chỉ đọc
@@ -25,16 +35,28 @@ _PARAM_FREE = frozenset({
 # định, không do câu chữ.
 _STATE_DEPENDENT = frozenset({Intent.NAV_STOP, Intent.MUSIC_STOP})
 
+# `unknown` KHÔNG còn là nhãn được chọn.
+#
+# Trước đây nó là một lựa chọn thật: câu nghe ra chữ nhưng không ra nghĩa thì
+# gán `unknown` và trả về một câu từ chối cứng. Bỏ vì nó bắt bộ phân loại quyết
+# một việc mà chính người nghe cũng không chắc — mà quyết sai theo chiều này thì
+# người dùng bị từ chối oan một câu hoàn toàn hợp lệ.
+#
+# Giờ những câu đó về `chat`, và chính Gemini nói "tôi chưa hiểu" khi nó không
+# đoán ra ý (ràng buộc nằm trong `_SYSTEM_PROMPT` của `handlers/chat.py`).
+# Gemini đọc được nguyên văn câu nói, bộ phân loại thì chỉ trả một cái nhãn —
+# nên nó phán được việc này chính xác hơn, và trả lời được đúng câu vừa nói
+# thay vì đọc một câu soạn sẵn.
+#
+# `Intent.UNKNOWN` vẫn còn trong `schemas.py` và vẫn dùng, nhưng chỉ còn hai
+# nguồn sinh, cả hai đều là trạng thái LỖI chứ không phải kết quả phân loại:
+# STT trả chuỗi rỗng, và lượt gọi Gemini phân loại hỏng.
 _LABELS = (
     Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE, Intent.HAZARD, Intent.CHAT,
     Intent.NAV_START, Intent.NAV_STOP,
     Intent.CONTACT_CALL, Intent.EMERGENCY_CALL,
     Intent.RIDE_QUOTE, Intent.RIDE_CONFIRM,
     Intent.MUSIC_PLAY, Intent.MUSIC_STOP, Intent.MUSIC_VOLUME,
-    # `unknown` là nhãn model được phép CHỌN, không chỉ là giá trị dự phòng khi
-    # gọi model hỏng. Không có nó thì mọi thứ STT nghe nhầm đều rơi vào `chat`,
-    # và Gemini lịch sự trả lời một câu hỏi chưa từng ai hỏi.
-    Intent.UNKNOWN,
 )
 
 _SCHEMA = {
@@ -152,7 +174,7 @@ _PROMPT_TEMPLATE = (
     "Phân loại ý định câu lệnh thoại của người khiếm thị dùng kính hỗ trợ.\n"
     "Chọn ĐÚNG MỘT nhãn, trích tham số vào 'params'.\n\n"
     "ocr: đọc chữ in/viết trong ảnh (sách, giấy tờ, nhãn, biển hiệu).\n"
-    "find: tìm một đồ vật cụ thể trong phòng.\n"
+    "find: tìm một ĐỒ VẬT cụ thể trong tầm tay, thường là đồ của người dùng.\n"
     "money: mệnh giá tờ tiền đang cầm.\n"
     "space: phía trước/xung quanh CÓ GÌ (tả khung cảnh).\n"
     "hazard: phía trước CÓ AN TOÀN không, vật cản cần tránh.\n"
@@ -168,23 +190,17 @@ _PROMPT_TEMPLATE = (
     "  song chính là nguyên câu vừa nói.\n"
     "music_stop: tắt nhạc.\n"
     "music_volume: chỉnh âm lượng (direction up/down, hoặc volume 0..100).\n"
-    "chat: câu CÓ nghĩa nhưng không thuộc nhóm trên — hỏi đáp, chào hỏi, than thở.\n"
-    "unknown: câu KHÔNG đọc ra nghĩa nào. Thường do nghe nhầm thành chuỗi từ rời\n"
-    "  rạc, hoặc mic chỉ thu được tiếng ồn. Ví dụ \"ờ à ừm\", \"xe xe xe xe\".\n\n"
-    "Ranh giới chat/unknown — chỗ dễ sai nhất:\n"
-    "- Câu ngắn, cụt, sai ngữ pháp mà VẪN đoán ra ý thì là chat, không phải\n"
-    "  unknown: \"mấy giờ rồi\", \"nóng quá\", \"ê\", \"buồn ngủ ghê\".\n"
-    "- Chỉ chọn unknown khi thật sự không nói được người dùng muốn gì. Người\n"
-    "  khiếm thị không đọc màn hình để sửa, hỏi lại còn hơn đoán bừa rồi lạc đề.\n"
-    "- Nhưng mơ hồ mà vẫn đoán được ý thì chọn chat.\n\n"
-    "RIÊNG nhãn chat, trả thêm hai cờ độc lập trong 'params':\n"
-    "- needs_location: true khi câu trả lời phụ thuộc người dùng đang ở đâu.\n"
-    "  Mọi cách nói nghĩa \"chỗ tôi đang đứng\" đều tính, không cần đọc địa chỉ:\n"
-    "  \"gần nhất\", \"gần đây\", \"quanh đây\", \"ở đây\", \"lân cận\". Thiếu cờ\n"
-    "  này thì model không có mốc nào để tính gần xa và tự chọn một thành phố.\n"
-    "- needs_web: true khi câu trả lời đổi theo ngày và phải tra mới biết —\n"
-    "  thời tiết, tin tức, tỉ số, giá cả, giờ mở cửa. false với kiến thức chung,\n"
-    "  tính toán, xã giao, hoặc hỏi về chính cuộc trò chuyện này.\n\n"
+    "chat: MỌI thứ còn lại — hỏi đáp, chào hỏi, than thở, hỏi giờ, hỏi thời\n"
+    "  tiết, hỏi mình đang ở đâu, nhờ kể chuyện. Kể cả câu nghe cụt, sai ngữ\n"
+    "  pháp, hay không đọc ra nghĩa gì: cứ chọn chat, đừng cố loại bỏ.\n"
+    "  Đây là nhãn mặc định, nhưng CHỈ khi câu không khớp nhãn nào ở trên —\n"
+    "  khớp rồi thì lấy nhãn đó, đừng rơi về chat cho chắc.\n\n"
+    "Mẫu \"X ở đâu\" thuộc nhãn nào là do X quyết định, không do mặt chữ:\n"
+    "- X là ĐỒ VẬT trong tầm tay -> find. \"gói bánh của tôi ở đâu\", \"cái\n"
+    "  điều khiển đâu rồi\", \"ly nước để đâu\".\n"
+    "- X là ĐỊA ĐIỂM, cơ sở, dịch vụ ngoài đời -> chat. \"nhà thuốc gần nhất ở\n"
+    "  đâu\", \"quanh đây có quán ăn không\", \"trạm xe buýt chỗ nào\".\n"
+    "- Người dùng nhờ DẪN ĐI tới đó -> nav_start, không phải hai nhãn trên.\n\n"
     "Câu lệnh: \"{command_text}\"\n\n"
     "Trả JSON có 'intent' và 'params'."
 )

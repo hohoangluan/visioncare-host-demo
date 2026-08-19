@@ -1,120 +1,385 @@
-{"text": "Bớt tiếng lại", "label": "down"}
-{"text": "Bớt to một chút", "label": "down"}
-{"text": "Bớt ồn đi làm nhỏ tiếng", "label": "down"}
+{"text": "Bé tiếng lại", "label": "down"}
+{"text": "Bé tiếng lại với", "label": "down"}
+{"text": "Bớt tiếng ồn", "label": "down"}
+{"text": "Bớt tiếng ồn đi", "label": "down"}
+{"text": "Cho bé tiếng", "label": "down"}
 {"text": "Cho bé tiếng đi", "label": "down"}
-{"text": "Cho bé âm thanh đi", "label": "down"}
-{"text": "Cho nghe to hơn", "label": "up"}
-{"text": "Cho nhỏ tiếng lại với", "label": "down"}
-{"text": "Cho nhỏ tiếng xuống", "label": "down"}
-{"text": "Cho nhỏ âm lượng", "label": "down"}
-{"text": "Cho tiếng nhỏ hơn", "label": "down"}
-{"text": "Cho tiếng nhỏ lại với", "label": "down"}
-{"text": "Cho to lên chút", "label": "up"}
-{"text": "Cho to nữa xem", "label": "up"}
-{"text": "Cho to tiếng hơn", "label": "up"}
-{"text": "Cho âm lượng bé lại", "label": "down"}
-{"text": "Cho âm lượng tăng lên", "label": "up"}
-{"text": "Cho âm thanh bé hơn", "label": "down"}
-{"text": "Cho âm thanh lớn lên", "label": "up"}
-{"text": "Cho âm thanh to đi", "label": "up"}
-{"text": "Chỉnh âm thanh to lên", "label": "up"}
-{"text": "Cái này ồn quá cho nhỏ lại", "label": "down"}
-{"text": "Cần giảm âm lượng", "label": "down"}
-{"text": "Cần nghe to hơn", "label": "up"}
-{"text": "Cần tăng âm lượng", "label": "up"}
-{"text": "Cần âm lượng lớn hơn", "label": "up"}
-{"text": "Cần âm lượng to hơn", "label": "up"}
-{"text": "Cần âm lượng to hơn nhé", "label": "up"}
-{"text": "Cần âm thanh lớn", "label": "up"}
-{"text": "Cần âm thanh nhỏ hơn", "label": "down"}
-{"text": "Giảm bớt mức âm lượng", "label": "down"}
+{"text": "Cho loa bé", "label": "down"}
+{"text": "Cho loa lớn", "label": "up"}
+{"text": "Cho loa nhỏ", "label": "down"}
+{"text": "Cho loa to", "label": "up"}
+{"text": "Cho lớn hết", "label": "up"}
+{"text": "Cho lớn lên", "label": "up"}
+{"text": "Cho mức nhỏ", "label": "down"}
+{"text": "Cho nhỏ loa", "label": "down"}
+{"text": "Cho nhỏ lại", "label": "down"}
+{"text": "Cho nhỏ lại nhé", "label": "down"}
+{"text": "Cho nhỏ đi", "label": "down"}
+{"text": "Cho nhỏ đi xem", "label": "down"}
+{"text": "Cho tiếng nhỏ", "label": "down"}
+{"text": "Cho to chút", "label": "up"}
+{"text": "Cho to hơn chút", "label": "up"}
+{"text": "Cho to hơn xíu", "label": "up"}
+{"text": "Cho to hết", "label": "up"}
+{"text": "Cho to hết cỡ", "label": "up"}
+{"text": "Cho to loa lên", "label": "up"}
+{"text": "Cho to một chút", "label": "up"}
+{"text": "Cho to nốt", "label": "up"}
+{"text": "Cho to nữa", "label": "up"}
+{"text": "Cho to thêm tí", "label": "up"}
+{"text": "Cho to thêm xíu", "label": "up"}
+{"text": "Cho âm lượng to lên", "label": "up"}
+{"text": "Cho âm nhỏ", "label": "down"}
+{"text": "Cho âm thanh to", "label": "up"}
+{"text": "Cho độ nhỏ", "label": "down"}
+{"text": "Chuyển loa nhỏ", "label": "down"}
+{"text": "Chuyển mức nhỏ", "label": "down"}
+{"text": "Chuyển nhỏ lại", "label": "down"}
+{"text": "Chuyển âm nhỏ", "label": "down"}
+{"text": "Chỉnh cho to", "label": "up"}
+{"text": "Chỉnh công suất", "label": "down"}
+{"text": "Chỉnh hết công suất", "label": "up"}
+{"text": "Chỉnh hết cỡ", "label": "up"}
+{"text": "Chỉnh loa hết cỡ", "label": "up"}
+{"text": "Chỉnh loa hết mức", "label": "up"}
+{"text": "Chỉnh loa hết tầm", "label": "up"}
+{"text": "Chỉnh loa lớn", "label": "up"}
+{"text": "Chỉnh loa to", "label": "up"}
+{"text": "Chỉnh loa tối đa", "label": "up"}
+{"text": "Chỉnh lớn lên", "label": "up"}
+{"text": "Chỉnh mức loa", "label": "down"}
+{"text": "Chỉnh nhỏ", "label": "down"}
+{"text": "Chỉnh nhỏ lại", "label": "down"}
+{"text": "Chỉnh nhỏ lại nha", "label": "down"}
+{"text": "Chỉnh to", "label": "up"}
+{"text": "Chỉnh to hết", "label": "up"}
+{"text": "Chỉnh to hết công suất", "label": "up"}
+{"text": "Chỉnh to hết mức có thể", "label": "up"}
+{"text": "Chỉnh to hết sức", "label": "up"}
+{"text": "Chỉnh to loa lên", "label": "up"}
+{"text": "Chỉnh to lên", "label": "up"}
+{"text": "Chỉnh to lên tí", "label": "up"}
+{"text": "Chỉnh to lên xíu", "label": "up"}
+{"text": "Chỉnh to lên đi", "label": "up"}
+{"text": "Chỉnh to thêm chút", "label": "up"}
+{"text": "Chỉnh to tối đa", "label": "up"}
+{"text": "Chỉnh to tột cùng", "label": "up"}
+{"text": "Chỉnh to xíu nữa", "label": "up"}
+{"text": "Chỉnh âm lượng lớn", "label": "up"}
+{"text": "Chỉnh âm lượng to", "label": "up"}
+{"text": "Chỉnh âm nhỏ", "label": "down"}
+{"text": "Chỉnh âm thanh", "label": "down"}
+{"text": "Chỉnh âm thanh to", "label": "up"}
+{"text": "Cài loa nhỏ", "label": "down"}
+{"text": "Cài âm nhỏ", "label": "down"}
+{"text": "Cài đặt nhỏ", "label": "down"}
+{"text": "Cài độ nhỏ", "label": "down"}
+{"text": "Giảm bớt", "label": "down"}
+{"text": "Giảm bớt loa", "label": "down"}
+{"text": "Giảm bớt tiếng", "label": "down"}
+{"text": "Giảm bớt tiếng đi", "label": "down"}
+{"text": "Giảm bớt to", "label": "down"}
+{"text": "Giảm bớt âm", "label": "down"}
+{"text": "Giảm bớt âm nhé", "label": "down"}
 {"text": "Giảm bớt âm thanh", "label": "down"}
-{"text": "Giảm mức tiếng xuống", "label": "down"}
+{"text": "Giảm bớt đi", "label": "down"}
+{"text": "Giảm chậm", "label": "down"}
+{"text": "Giảm cái loa", "label": "down"}
+{"text": "Giảm cường độ", "label": "down"}
+{"text": "Giảm cường độ nhé", "label": "down"}
+{"text": "Giảm lực", "label": "down"}
+{"text": "Giảm mức loa", "label": "down"}
 {"text": "Giảm mức âm thanh", "label": "down"}
-{"text": "Giảm tiếng lại chút", "label": "down"}
-{"text": "Giảm xuống mức thấp", "label": "down"}
+{"text": "Giảm mức âm thanh nhé", "label": "down"}
+{"text": "Giảm nhẹ", "label": "down"}
+{"text": "Giảm nhỏ", "label": "down"}
+{"text": "Giảm tiếng", "label": "down"}
+{"text": "Giảm tiếng loa", "label": "down"}
+{"text": "Giảm tiếng đi", "label": "down"}
+{"text": "Giảm tiếng đi cái", "label": "down"}
+{"text": "Giảm to", "label": "down"}
+{"text": "Giảm tần số", "label": "down"}
+{"text": "Giảm âm", "label": "down"}
 {"text": "Giảm âm lượng", "label": "down"}
-{"text": "Giảm âm lượng xuống đi", "label": "down"}
-{"text": "Giảm âm thanh xuống coi", "label": "down"}
-{"text": "Hạ bớt tiếng xuống", "label": "down"}
-{"text": "Hạ bớt âm lượng", "label": "down"}
-{"text": "Hạ bớt âm lượng lại", "label": "down"}
-{"text": "Hạ mức âm thanh xuống", "label": "down"}
-{"text": "Hạ thấp mức âm", "label": "down"}
-{"text": "Hạ thấp âm thanh", "label": "down"}
-{"text": "Hạ thấp âm thanh xuống", "label": "down"}
-{"text": "Hạ xuống một chút", "label": "down"}
-{"text": "Hạ âm lượng xuống", "label": "down"}
-{"text": "Hạ âm lượng xuống chút", "label": "down"}
-{"text": "Không nghe rõ tăng âm", "label": "up"}
-{"text": "Không nghe được tăng lên", "label": "up"}
-{"text": "Không rõ vặn to lên", "label": "up"}
-{"text": "Làm cho bé tiếng", "label": "down"}
-{"text": "Làm cho tiếng bé đi", "label": "down"}
-{"text": "Làm nhỏ âm lượng đi", "label": "down"}
-{"text": "Làm âm thanh to lên", "label": "up"}
+{"text": "Giảm âm lượng nhé", "label": "down"}
+{"text": "Giảm âm thanh to", "label": "down"}
+{"text": "Giảm đi", "label": "down"}
+{"text": "Giảm đi cái", "label": "down"}
+{"text": "Giảm độ", "label": "down"}
+{"text": "Giảm độ lớn", "label": "down"}
+{"text": "Giảm độ lớn nhé", "label": "down"}
+{"text": "Giảm độ vang", "label": "down"}
+{"text": "Giảm độ ồn", "label": "down"}
+{"text": "Giảm độ ồn với", "label": "down"}
+{"text": "Hơi chói", "label": "down"}
+{"text": "Hơi chói tai", "label": "down"}
+{"text": "Hơi inh", "label": "down"}
+{"text": "Hơi inh ỏi", "label": "down"}
+{"text": "Hơi khó chịu", "label": "down"}
+{"text": "Hơi lớn", "label": "down"}
+{"text": "Hơi lớn âm", "label": "down"}
+{"text": "Hơi nhức", "label": "down"}
+{"text": "Hơi nhức tai", "label": "down"}
+{"text": "Hơi nhức đầu", "label": "down"}
+{"text": "Hơi rát", "label": "down"}
+{"text": "Hơi rát tai", "label": "down"}
+{"text": "Hơi to", "label": "down"}
+{"text": "Hơi to tiếng", "label": "down"}
+{"text": "Hơi vang", "label": "down"}
+{"text": "Hơi vang tiếng", "label": "down"}
+{"text": "Hơi ù", "label": "down"}
+{"text": "Hơi ù tai", "label": "down"}
+{"text": "Hơi điếc", "label": "down"}
+{"text": "Hơi ồn", "label": "down"}
+{"text": "Hạ bớt loa", "label": "down"}
+{"text": "Hạ bớt tiếng", "label": "down"}
+{"text": "Hạ cường độ", "label": "down"}
+{"text": "Hạ dần", "label": "down"}
+{"text": "Hạ loa xuống", "label": "down"}
+{"text": "Hạ mức", "label": "down"}
+{"text": "Hạ mức âm", "label": "down"}
+{"text": "Hạ mức âm xem", "label": "down"}
+{"text": "Hạ nhẹ", "label": "down"}
+{"text": "Hạ nhỏ", "label": "down"}
+{"text": "Hạ nhỏ tiếng", "label": "down"}
+{"text": "Hạ nhỏ tiếng đi", "label": "down"}
+{"text": "Hạ nhỏ âm", "label": "down"}
+{"text": "Hạ thấp", "label": "down"}
+{"text": "Hạ thấp tiếng", "label": "down"}
+{"text": "Hạ thấp âm", "label": "down"}
+{"text": "Hạ thấp âm cái", "label": "down"}
+{"text": "Hạ tiếng", "label": "down"}
+{"text": "Hạ tiếng loa", "label": "down"}
+{"text": "Hạ tiếng xem", "label": "down"}
+{"text": "Hạ to", "label": "down"}
+{"text": "Hạ âm loa", "label": "down"}
+{"text": "Hạ âm lượng", "label": "down"}
+{"text": "Hạ âm lượng nha", "label": "down"}
+{"text": "Hạ âm thanh xuống", "label": "down"}
+{"text": "Hạ âm xuống", "label": "down"}
+{"text": "Hạ độ", "label": "down"}
+{"text": "Hết cỡ", "label": "up"}
+{"text": "Loa hết cỡ", "label": "up"}
+{"text": "Loa hết mức", "label": "up"}
+{"text": "Loa hết tầm", "label": "up"}
+{"text": "Loa lớn chút", "label": "up"}
+{"text": "Loa lớn lên", "label": "up"}
+{"text": "Loa nhỏ quá", "label": "up"}
+{"text": "Loa to chút", "label": "up"}
+{"text": "Loa to lên", "label": "up"}
+{"text": "Loa tối đa", "label": "up"}
+{"text": "Làm giảm tiếng", "label": "down"}
+{"text": "Làm giảm âm", "label": "down"}
+{"text": "Làm loa nhỏ", "label": "down"}
+{"text": "Làm lớn lên", "label": "up"}
+{"text": "Làm nhỏ", "label": "down"}
+{"text": "Làm nhỏ lại", "label": "down"}
+{"text": "Làm nhỏ tiếng", "label": "down"}
+{"text": "Làm to lên", "label": "up"}
+{"text": "Lớn hơn", "label": "up"}
+{"text": "Lớn hơn chút", "label": "up"}
+{"text": "Lớn hơn xíu", "label": "up"}
 {"text": "Lớn hơn đi", "label": "up"}
-{"text": "Nghe không rõ cần to", "label": "up"}
-{"text": "Nghe không rõ tăng lên", "label": "up"}
-{"text": "Tiếng lớn quá làm bé lại", "label": "down"}
-{"text": "Tiếng to quá hạ xuống", "label": "down"}
-{"text": "Tiếng to quá vặn nhỏ đi", "label": "down"}
-{"text": "Tiếng ồn hạ xuống nhanh", "label": "down"}
-{"text": "Tiếng ồn quá hạ xuống coi", "label": "down"}
+{"text": "Lớn hết công suất", "label": "up"}
+{"text": "Lớn hết cỡ", "label": "up"}
+{"text": "Lớn hết mức", "label": "up"}
+{"text": "Lớn lên", "label": "up"}
+{"text": "Lớn thêm", "label": "up"}
+{"text": "Lớn thêm chút", "label": "up"}
+{"text": "Lớn thêm tí", "label": "up"}
+{"text": "Lớn thêm xíu", "label": "up"}
+{"text": "Lớn tiếng", "label": "up"}
+{"text": "Lớn tiếng lên", "label": "up"}
+{"text": "Lớn tiếng nữa", "label": "up"}
+{"text": "Lớn tối đa", "label": "up"}
+{"text": "Nghe bé quá", "label": "up"}
+{"text": "Nghe không rõ to lên", "label": "up"}
+{"text": "Nghe loa nhỏ", "label": "up"}
+{"text": "Nghe nhỏ thế", "label": "up"}
+{"text": "Nhỏ chút nữa", "label": "down"}
+{"text": "Nhỏ lại chút", "label": "down"}
+{"text": "Nhỏ lại chút nha", "label": "down"}
+{"text": "Nhỏ lại đi", "label": "down"}
+{"text": "Nhỏ tiếng thôi", "label": "down"}
+{"text": "Nhỏ tiếng thôi nha", "label": "down"}
+{"text": "Nhỏ xíu thôi", "label": "down"}
+{"text": "Nhỏ xíu thôi cái", "label": "down"}
+{"text": "Nhỏ âm thanh", "label": "down"}
+{"text": "Quá ồn", "label": "down"}
+{"text": "To chút", "label": "up"}
+{"text": "To chút nữa", "label": "up"}
+{"text": "To chút nữa đi", "label": "up"}
+{"text": "To hơn", "label": "up"}
+{"text": "To hơn chút", "label": "up"}
+{"text": "To hơn xíu", "label": "up"}
+{"text": "To hơn đi", "label": "up"}
+{"text": "To hết", "label": "up"}
+{"text": "To hết công suất", "label": "up"}
+{"text": "To hết cỡ", "label": "up"}
+{"text": "To hết cỡ đi", "label": "up"}
+{"text": "To hết mức", "label": "up"}
+{"text": "To hết mức có thể", "label": "up"}
+{"text": "To hết sức", "label": "up"}
+{"text": "To hết tầm", "label": "up"}
+{"text": "To lên", "label": "up"}
+{"text": "To lên nào", "label": "up"}
+{"text": "To lên tí", "label": "up"}
+{"text": "To lên xem", "label": "up"}
+{"text": "To lên xíu", "label": "up"}
+{"text": "To một chút", "label": "up"}
+{"text": "To một tí", "label": "up"}
+{"text": "To một tí nữa", "label": "up"}
+{"text": "To nữa", "label": "up"}
+{"text": "To nữa đi", "label": "up"}
+{"text": "To quá đi", "label": "down"}
+{"text": "To rõ lên", "label": "up"}
+{"text": "To thêm", "label": "up"}
+{"text": "To thêm chút", "label": "up"}
 {"text": "To thêm chút nữa", "label": "up"}
-{"text": "Tăng cường âm lượng", "label": "up"}
-{"text": "Tăng cường độ âm thanh", "label": "up"}
-{"text": "Tăng mức âm thanh", "label": "up"}
-{"text": "Tăng mức âm thanh lên", "label": "up"}
-{"text": "Tăng mức độ nghe", "label": "up"}
+{"text": "To thêm chút đỉnh", "label": "up"}
+{"text": "To thêm tí", "label": "up"}
+{"text": "To thêm xíu", "label": "up"}
+{"text": "To tột cùng", "label": "up"}
+{"text": "To xíu nữa", "label": "up"}
+{"text": "Tăng công suất loa", "label": "up"}
+{"text": "Tăng hết công suất", "label": "up"}
+{"text": "Tăng hết cỡ", "label": "up"}
+{"text": "Tăng hết mức", "label": "up"}
+{"text": "Tăng loa", "label": "up"}
+{"text": "Tăng loa hết cỡ", "label": "up"}
+{"text": "Tăng loa hết mức", "label": "up"}
+{"text": "Tăng loa hết tầm", "label": "up"}
+{"text": "Tăng loa lớn", "label": "up"}
+{"text": "Tăng loa tối đa", "label": "up"}
+{"text": "Tăng lớn lên", "label": "up"}
+{"text": "Tăng mức to", "label": "up"}
+{"text": "Tăng thêm tiếng", "label": "up"}
 {"text": "Tăng thêm âm lượng", "label": "up"}
-{"text": "Tăng tiếng lên chút", "label": "up"}
-{"text": "Tăng volume lên", "label": "up"}
-{"text": "Tăng volume lên coi", "label": "up"}
+{"text": "Tăng tiếng", "label": "up"}
+{"text": "Tăng to", "label": "up"}
+{"text": "Tăng to chút", "label": "up"}
+{"text": "Tăng to hết", "label": "up"}
+{"text": "Tăng to hết công suất", "label": "up"}
+{"text": "Tăng to hết mức có thể", "label": "up"}
+{"text": "Tăng to hết sức", "label": "up"}
+{"text": "Tăng to loa", "label": "up"}
+{"text": "Tăng to loa lên", "label": "up"}
+{"text": "Tăng to lên", "label": "up"}
+{"text": "Tăng to lên tí", "label": "up"}
+{"text": "Tăng to lên xíu", "label": "up"}
+{"text": "Tăng to lên đi", "label": "up"}
+{"text": "Tăng to nữa", "label": "up"}
+{"text": "Tăng to thêm chút", "label": "up"}
+{"text": "Tăng to tột cùng", "label": "up"}
+{"text": "Tăng to xíu nữa", "label": "up"}
+{"text": "Tăng tối đa", "label": "up"}
 {"text": "Tăng âm lượng", "label": "up"}
-{"text": "Tăng âm lượng nghe", "label": "up"}
-{"text": "Tăng âm lượng thêm", "label": "up"}
-{"text": "Tăng âm ngay đi", "label": "up"}
-{"text": "Tăng âm thanh hiện tại", "label": "up"}
-{"text": "Tăng độ to âm thanh", "label": "up"}
-{"text": "Vặn bé tiếng lại", "label": "down"}
-{"text": "Vặn bớt tiếng lại nhé", "label": "down"}
-{"text": "Vặn cái này bé xuống", "label": "down"}
-{"text": "Vặn cái này nhỏ đi", "label": "down"}
+{"text": "Tăng âm lượng lên", "label": "up"}
+{"text": "Tăng âm thanh", "label": "up"}
+{"text": "Tăng độ lớn", "label": "up"}
+{"text": "Vặn bé", "label": "down"}
+{"text": "Vặn bé xuống", "label": "down"}
+{"text": "Vặn bé xuống coi", "label": "down"}
+{"text": "Vặn bớt", "label": "down"}
+{"text": "Vặn công suất loa", "label": "up"}
+{"text": "Vặn hết công suất", "label": "up"}
+{"text": "Vặn hết cỡ", "label": "up"}
+{"text": "Vặn hết tầm", "label": "up"}
+{"text": "Vặn loa", "label": "up"}
+{"text": "Vặn loa hết cỡ", "label": "up"}
+{"text": "Vặn loa hết mức", "label": "up"}
+{"text": "Vặn loa hết tầm", "label": "up"}
+{"text": "Vặn loa lớn", "label": "up"}
+{"text": "Vặn loa nhỏ lại", "label": "down"}
 {"text": "Vặn loa to lên", "label": "up"}
-{"text": "Vặn loa to lên coi", "label": "up"}
-{"text": "Vặn nhỏ hơn một chút", "label": "down"}
+{"text": "Vặn loa tối đa", "label": "up"}
+{"text": "Vặn lớn", "label": "up"}
+{"text": "Vặn lớn lên", "label": "up"}
+{"text": "Vặn nhẹ", "label": "down"}
+{"text": "Vặn nhẹ nhỏ lại", "label": "down"}
+{"text": "Vặn nhỏ", "label": "down"}
+{"text": "Vặn nhỏ bớt", "label": "down"}
+{"text": "Vặn nhỏ bớt nha", "label": "down"}
+{"text": "Vặn nhỏ chút", "label": "down"}
+{"text": "Vặn nhỏ coi", "label": "down"}
+{"text": "Vặn nhỏ hơn", "label": "down"}
+{"text": "Vặn nhỏ hết cỡ", "label": "down"}
+{"text": "Vặn nhỏ loa", "label": "down"}
+{"text": "Vặn nhỏ lại", "label": "down"}
 {"text": "Vặn nhỏ lại coi", "label": "down"}
-{"text": "Vặn nhỏ mức âm", "label": "down"}
-{"text": "Vặn nhỏ tiếng xuống coi", "label": "down"}
-{"text": "Vặn nhỏ tiếng đi", "label": "down"}
+{"text": "Vặn nhỏ lại nha", "label": "down"}
+{"text": "Vặn nhỏ lại với", "label": "down"}
+{"text": "Vặn nhỏ lại đi", "label": "down"}
+{"text": "Vặn nhỏ tiếng", "label": "down"}
 {"text": "Vặn nhỏ xuống", "label": "down"}
-{"text": "Vặn nhỏ xuống chút xíu", "label": "down"}
-{"text": "Vặn nhỏ âm lượng", "label": "down"}
-{"text": "Vặn nút âm lượng to lên", "label": "up"}
-{"text": "Vặn tiếng to thêm", "label": "up"}
-{"text": "Vặn to hơn nhé", "label": "up"}
-{"text": "Vặn to hơn đi xem", "label": "up"}
+{"text": "Vặn nhỏ xuống với", "label": "down"}
+{"text": "Vặn nhỏ âm", "label": "down"}
+{"text": "Vặn nhỏ đi", "label": "down"}
+{"text": "Vặn nút nhỏ", "label": "down"}
+{"text": "Vặn nút nhỏ với", "label": "down"}
+{"text": "Vặn nút to", "label": "up"}
+{"text": "Vặn nút âm lượng to", "label": "up"}
+{"text": "Vặn to", "label": "up"}
+{"text": "Vặn to cái", "label": "up"}
+{"text": "Vặn to hơn chút", "label": "up"}
+{"text": "Vặn to hơn xíu", "label": "up"}
+{"text": "Vặn to hết", "label": "up"}
+{"text": "Vặn to hết công suất", "label": "up"}
+{"text": "Vặn to hết mức", "label": "up"}
+{"text": "Vặn to hết mức có thể", "label": "up"}
+{"text": "Vặn to hết sức", "label": "up"}
+{"text": "Vặn to hết tầm", "label": "up"}
+{"text": "Vặn to loa", "label": "up"}
+{"text": "Vặn to loa lên", "label": "up"}
 {"text": "Vặn to lên", "label": "up"}
-{"text": "Vặn to tiếng thêm coi", "label": "up"}
-{"text": "Vặn to âm thanh ngay", "label": "up"}
-{"text": "Vặn âm lượng lớn hơn", "label": "up"}
-{"text": "Vặn âm lượng thấp lại", "label": "down"}
-{"text": "Vặn âm lượng thấp xuống", "label": "down"}
-{"text": "Vặn âm thanh cao lên", "label": "up"}
-{"text": "Vặn âm thanh to thêm", "label": "up"}
-{"text": "Âm lượng cao quá giảm đi", "label": "down"}
-{"text": "Âm lượng quá nhỏ tăng đi", "label": "up"}
-{"text": "Âm thanh chưa đủ to", "label": "up"}
-{"text": "Âm thanh cần to lên", "label": "up"}
-{"text": "Âm thanh lớn quá hạ đi", "label": "down"}
-{"text": "Âm thanh nhỏ quá", "label": "up"}
-{"text": "Âm thanh phải to lên", "label": "up"}
-{"text": "Đang ồn quá giảm tiếng đi", "label": "down"}
-{"text": "Đang ồn quá vặn nhỏ đi", "label": "down"}
-{"text": "Đẩy cao âm lượng", "label": "up"}
-{"text": "Đẩy mức âm lượng lên", "label": "up"}
-{"text": "Đẩy tiếng to lên", "label": "up"}
-{"text": "Đẩy âm lượng cao hơn", "label": "up"}
-{"text": "Đẩy âm lượng cao hơn nữa", "label": "up"}
-{"text": "Đẩy âm lượng lên", "label": "up"}
+{"text": "Vặn to lên tí", "label": "up"}
+{"text": "Vặn to lên xem", "label": "up"}
+{"text": "Vặn to lên xíu", "label": "up"}
+{"text": "Vặn to lên đi", "label": "up"}
+{"text": "Vặn to máy lên", "label": "up"}
+{"text": "Vặn to nha", "label": "up"}
+{"text": "Vặn to nốt", "label": "up"}
+{"text": "Vặn to thêm", "label": "up"}
+{"text": "Vặn to thêm chút", "label": "up"}
+{"text": "Vặn to thêm tí", "label": "up"}
+{"text": "Vặn to thêm xíu", "label": "up"}
+{"text": "Vặn to tối đa", "label": "up"}
+{"text": "Vặn to tột cùng", "label": "up"}
+{"text": "Vặn to với", "label": "up"}
+{"text": "Vặn to với xem", "label": "up"}
+{"text": "Vặn to xem", "label": "up"}
+{"text": "Vặn to xíu nữa", "label": "up"}
+{"text": "Vặn to đi", "label": "up"}
+{"text": "Vặn trầm", "label": "down"}
+{"text": "Vặn từ từ", "label": "down"}
+{"text": "Vặn volume nhỏ", "label": "down"}
+{"text": "Vặn volume nhỏ nha", "label": "down"}
+{"text": "Vặn xuống", "label": "down"}
+{"text": "Vặn âm lượng", "label": "up"}
+{"text": "Vặn âm lượng nhỏ", "label": "down"}
+{"text": "Âm lượng bé", "label": "up"}
+{"text": "Âm lượng nhỏ quá", "label": "up"}
+{"text": "Âm lượng to", "label": "up"}
+{"text": "Âm lượng to lên", "label": "up"}
+{"text": "Âm thanh chát tai", "label": "down"}
+{"text": "Âm thanh chói", "label": "down"}
+{"text": "Âm thanh nhỏ", "label": "up"}
+{"text": "Âm thanh to quá", "label": "down"}
+{"text": "Điều chỉnh loa", "label": "down"}
+{"text": "Điều chỉnh nhỏ", "label": "down"}
+{"text": "Điều chỉnh âm", "label": "down"}
+{"text": "Điều chỉnh độ", "label": "down"}
+{"text": "Đưa loa xuống", "label": "down"}
+{"text": "Đưa mức xuống", "label": "down"}
+{"text": "Đưa về nhỏ", "label": "down"}
+{"text": "Đưa âm xuống", "label": "down"}
+{"text": "Đặt loa nhỏ", "label": "down"}
+{"text": "Đặt nhỏ tiếng", "label": "down"}
+{"text": "Đặt âm nhỏ", "label": "down"}
+{"text": "Đặt độ nhỏ", "label": "down"}
+{"text": "Đổi mức âm", "label": "down"}
+{"text": "Đổi nhỏ tiếng", "label": "down"}
+{"text": "Đổi tiếng loa", "label": "down"}
+{"text": "Đổi âm lượng", "label": "down"}
+{"text": "Độ lớn tăng", "label": "up"}
+{"text": "Ồn quá rồi", "label": "down"}

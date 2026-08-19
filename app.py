@@ -3,16 +3,21 @@ import io
 import logging
 import os
 import re
+import hmac
+import ipaddress
 import time
 import wave
 from collections.abc import Callable, Iterable, Iterator
 from itertools import chain
 
-from fastapi import FastAPI, File, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile
 from fastapi.responses import Response, StreamingResponse
 
 import config
-from pipeline import intent_local, phrases, router, stt, tts
+from handlers import chat
+from models import vlm
+from pipeline import adpcm, intent_local, phrases, router, stt, tts
+from services.action_callbacks import action_callbacks
 
 logger = logging.getLogger("blind_assist")
 
@@ -28,6 +33,34 @@ _BYTES_PER_SAMPLE = 2
 
 MP3_FORMAT = f"mp3;bitrate={tts.MP3_BITRATE_KBPS}kbps;rate={tts.OUTPUT_SAMPLE_RATE};channels=1"
 
+# Chuỗi board đọc để tự cấu hình decoder ADPCM (`HUONG_DAN_SERVER.md` §2B).
+ADPCM_FORMAT = (
+    f"ima_adpcm;rate={adpcm.SAMPLE_RATE};channels=1;block={adpcm.BLOCK_ALIGN}"
+)
+
+# Định dạng board nuốt được, xếp theo thứ tự board khuyến nghị. Dùng khi
+# `RESPONSE_FORMAT=auto` để chọn theo `Accept` của chính client gửi tới.
+_ADPCM_FORMATS = ("adpcm_wav", "adpcm_stream")
+
+
+def _negotiate(accept: str) -> str:
+    """Chọn định dạng trả về theo `Accept` của client.
+
+    Board gửi `Accept: audio/wav;codec=ima_adpcm, audio/mpeg, audio/wav` — tức
+    nó tự khai đọc được ADPCM. Firmware cũ hơn không khai `codec=ima_adpcm`, và
+    trả ADPCM cho nó là ra nhiễu. Đọc `Accept` thay vì cấu hình cứng ở server
+    thì hai đời firmware chạy được cùng lúc trên cùng một endpoint.
+    """
+    accept = accept.lower()
+    if "ima_adpcm" in accept:
+        return "adpcm_wav"
+    if "audio/mpeg" in accept:
+        return "mp3_stream"
+    if "audio/wav" in accept:
+        return "wav"
+    # Không khai gì: theo hợp đồng hiện tại board đọc được ADPCM.
+    return "adpcm_wav"
+
 
 def _stream_headers(response_format: str) -> dict[str, str]:
     """Đủ thông tin để MCU tự cấu hình I2S/decoder và tính buffer, không hardcode gì.
@@ -38,6 +71,21 @@ def _stream_headers(response_format: str) -> dict[str, str]:
     # Số giây audio đã nằm sẵn trong mảnh đầu. MCU phát ngay khi nhận được
     # mảnh đó; đây là quãng an toàn nó có trước khi cần mảnh tiếp theo.
     preroll = str(config.AUDIO_PREROLL_SECONDS)
+
+    if response_format in _ADPCM_FORMATS:
+        return {
+            "X-Audio-Format": ADPCM_FORMAT,  # đúng chuỗi board mô tả trong hợp đồng
+            "X-Audio-Encoding": "ima_adpcm",
+            "X-Audio-Sample-Rate": str(adpcm.SAMPLE_RATE),
+            "X-Audio-Bits": "4",
+            "X-Audio-Channels": "1",
+            # Làm tròn xuống cho khớp `nAvgBytesPerSec` trong header WAV, để
+            # board đọc header hay đọc chỗ này cũng ra một con số.
+            "X-Audio-Byte-Rate": str(adpcm.AVG_BYTES_PER_SEC),
+            "X-Audio-Block-Align": str(adpcm.BLOCK_ALIGN),
+            "X-Audio-Samples-Per-Block": str(adpcm.SAMPLES_PER_BLOCK),
+            "X-Audio-Preroll-Seconds": preroll,
+        }
 
     if response_format == "mp3_stream":
         return {
@@ -79,7 +127,7 @@ _MISSING_AUDIO_MESSAGE = "Không nhận được âm thanh, vui lòng nói lại
 #
 # Chỉ nói được ngay vì audio của nó đã dựng sẵn (`pipeline/phrases.py`). Tổng
 # hợp lúc chạy thì chính nó lại là quãng chờ mới, đúng thứ nó sinh ra để xoá.
-_RECEIVED_MESSAGE = "Đã nhận yêu cầu của bạn, hệ thống đang xử lý."
+_RECEIVED_MESSAGE = "Đã tiếp nhận yêu cầu"
 
 STATIC_SPEECH: tuple[str, ...] = (
     _RECEIVED_MESSAGE,
@@ -113,16 +161,6 @@ def _pcm_to_wav(pcm_bytes: bytes) -> bytes:
         w.setframerate(tts.OUTPUT_SAMPLE_RATE)
         w.writeframes(pcm_bytes)
     return buf.getvalue()
-
-
-def _save_debug_pcm_as_wav(name: str, pcm_bytes: bytes) -> None:
-    """Ghi PCM ra WAV để mở được bằng player khi debug.
-
-    Ở chế độ stream, MCU nhận PCM trần; file trên đĩa mà thiếu header thì người
-    debug không phát được — nên bọc header ở riêng đường ghi file này.
-    """
-    with open(os.path.join(config.STORAGE_DIR, name), "wb") as f:
-        f.write(_pcm_to_wav(pcm_bytes))
 
 
 def _image_extension(image_bytes: bytes) -> str:
@@ -164,6 +202,19 @@ def preload_models() -> None:
     stt._load_asr()
     stt.transcribe(_dummy_wav())
     intent_local.warm()
+
+    # Dựng sẵn client Gemini + bắt tay TLS. Đo trong tiến trình sạch:
+    #   lượt 1 (client lạnh)  3.58s
+    #   lượt 2-5 (ấm)         0.50 - 0.62s
+    #   sau 30s idle          0.68s     <- kết nối sống, không cần keepalive
+    # Tức request THẬT đầu tiên của người dùng vốn phải gánh thêm ~3 giây chỉ để
+    # dựng client và bắt tay. Trả trước ở đây, giống cách STT/TTS đã làm.
+    vlm.warm()
+
+    # Vị trí điện thoại: lấy ở nền, không bao giờ trên đường request. Một vòng
+    # `location/get` là poll xuống điện thoại tới 12s — đặt nó trong request là
+    # bắt người dùng đứng chờ ngần ấy trước khi nghe được chữ nào.
+    chat.start_location_refresher()
     tts._load_tts()
     # Tiêu thụ hết generator: warm-up phải đi đúng đường stream mà /process
     # dùng, vì phiên giải mã theo frame của infer_stream có warm-up riêng.
@@ -194,28 +245,70 @@ def health():
     return {"status": "ok"}
 
 
+@app.post("/internal/action-results")
+async def receive_action_result(request: Request) -> dict:
+    """Accept an idempotent backend callback on loopback only."""
+    host = request.client.host if request.client else ""
+    try:
+        is_loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        is_loopback = False
+    if not is_loopback:
+        raise HTTPException(status_code=403, detail="Loopback callback only")
+
+    expected = config.VISIONCARE_CALLBACK_TOKEN
+    supplied = request.headers.get("authorization", "")
+    if not expected:
+        raise HTTPException(status_code=503, detail="Callback token is not configured")
+    if not hmac.compare_digest(supplied, f"Bearer {expected}"):
+        raise HTTPException(status_code=401, detail="Invalid callback token")
+
+    envelope = await request.json()
+    data = envelope.get("data") if isinstance(envelope, dict) else None
+    if not isinstance(data, dict) or not data.get("request_id"):
+        raise HTTPException(status_code=422, detail="Missing callback data/request_id")
+    request_id = str(data["request_id"])
+    idempotency_key = request.headers.get("idempotency-key", "")
+    if idempotency_key != request_id:
+        raise HTTPException(status_code=400, detail="Idempotency-Key must equal request_id")
+
+    matched = action_callbacks.resolve(request_id, data)
+    return {"status": "ok", "data": {"request_id": request_id, "matched": matched}}
+
+
 def _stream_audio(
     speech_pieces: Iterable[str],
     idx: int,
     started: float,
     processing: float,
     encode: Callable[[Iterator[bytes]], Iterator[bytes]] | None = None,
-    byte_rate: int | None = None,
+    byte_rate: float | None = None,
+    prelude: bytes = b"",
+    debug_name: str | None = None,
+    debug_wrap: Callable[[bytes], bytes] | None = None,
 ) -> Iterator[bytes]:
     """Đọc các mảnh text thành từng mảnh audio, vừa gửi vừa gom lại để ghi debug.
 
     `started` là mốc lúc request vào, `processing` là số giây STT/Gemini đã
     tiêu trước khi tới đây — cả hai chỉ dùng để ghi log đo thời gian.
 
-    `encode` (vd. `tts.encode_mp3`) bọc thêm quanh PCM để nén trước khi gửi;
+    `encode` (vd. `tts.encode_adpcm`) bọc thêm quanh PCM để nén trước khi gửi;
     bỏ trống thì gửi PCM trần như cũ. `byte_rate` phải khớp định dạng đã chọn
     để đệm preroll tính đúng số byte cần gom trước khi gửi mảnh đầu.
+
+    `prelude` (header WAV 60 byte của ADPCM) được nhả NGAY, trước cả khi gom
+    preroll: board đọc header ngay trên luồng để cấu hình decoder, giữ nó lại
+    chờ gom đủ đệm là bắt board chờ trắng đúng quãng đó. Nó không phải audio nên
+    cũng không tính vào đệm.
     """
     collected: list[bytes] = []
     first_chunk_at = None
     stream = tts.synthesize_text_stream(speech_pieces)
     if encode is not None:
         stream = encode(stream)
+
+    if prelude:
+        yield prelude
 
     rate = byte_rate if byte_rate is not None else tts.OUTPUT_SAMPLE_RATE * _BYTES_PER_SAMPLE
 
@@ -234,10 +327,13 @@ def _stream_audio(
         except StopIteration:
             break
         except Exception:  # noqa: BLE001
-            if first_chunk_at is None:
+            if first_chunk_at is None and not prelude:
                 # Chưa gửi byte nào -> để lỗi nổi lên cho endpoint đổi thành
                 # câu báo lỗi. Nuốt ở đây thì MCU nhận HTTP 200 rỗng và người
                 # khiếm thị không nghe gì, cũng không biết vì sao.
+                #
+                # Có `prelude` thì header WAV đã rời server rồi: không rút lại
+                # được nữa, nên phải tự phục hồi ngay dưới đây thay vì ném lên.
                 raise
 
             logger.exception("stream response%d đứt giữa chừng", idx)
@@ -276,8 +372,8 @@ def _stream_audio(
     # ttfb là con số người dùng cảm nhận được (lúc bắt đầu nghe thấy tiếng);
     # tổng chỉ nói khi nào câu nói kết thúc. audio dài hơn (tổng - ttfb) nghĩa
     # là MCU phát kịp, không bị hụt tiếng giữa chừng. `rate` là byte-rate của
-    # đúng định dạng đã gửi (PCM hoặc MP3 CBR) nên phép chia này luôn ra giây
-    # audio thật, không riêng gì PCM.
+    # đúng định dạng đã gửi (PCM, ADPCM hay MP3 — cả ba đều CBR) nên phép chia
+    # này luôn ra giây audio thật, không riêng gì PCM.
     logger.info(
         "request%d | xử lý=%.2fs ttfb=%.2fs tổng=%.2fs audio=%.2fs",
         idx,
@@ -287,24 +383,80 @@ def _stream_audio(
         len(payload) / rate,
     )
 
-    if payload:
-        if encode is None:
-            _save_debug_pcm_as_wav(f"response{idx}.wav", payload)
-        else:
-            _save_debug_audio(f"response{idx}.mp3", payload)
+    # Ghi ra file MỞ ĐƯỢC BẰNG PLAYER, không phải nguyên xi thứ đã gửi: luồng
+    # gửi đi cố tình không mang header (PCM trần) hoặc mang header độ dài giả
+    # (`0xFFFFFFFF` cho ADPCM đang stream). `debug_wrap` bọc lại header thật.
+    if payload and debug_name is not None:
+        _save_debug_audio(
+            debug_name, debug_wrap(payload) if debug_wrap is not None else payload
+        )
+
+
+class _Plan:
+    """Mọi thứ khác nhau giữa các định dạng trả về, gom vào một chỗ.
+
+    Trước đây chỉ có hai nhánh (PCM/MP3) nên một cặp `if/else` là đủ. Với ADPCM,
+    mỗi định dạng còn khác nhau ở header đi trước, ở media type và ở cách bọc
+    file debug — rải ba thứ đó ra ba chỗ trong endpoint là ba chỗ để quên.
+    """
+
+    __slots__ = ("encode", "byte_rate", "media_type", "prelude", "debug_name", "debug_wrap")
+
+    def __init__(self, encode, byte_rate, media_type, prelude, debug_name, debug_wrap):
+        self.encode = encode
+        self.byte_rate = byte_rate
+        self.media_type = media_type
+        self.prelude = prelude
+        self.debug_name = debug_name
+        self.debug_wrap = debug_wrap
+
+
+def _plan_for(response_format: str, idx: int) -> _Plan:
+    if response_format == "adpcm_wav":
+        # Định dạng board xếp hạng ưu tiên số 1: WAV IMA ADPCM. Header 60 byte
+        # đi trước với cỡ khối `data` = 0xFFFFFFFF ("chưa biết, đang stream").
+        return _Plan(
+            tts.encode_adpcm, adpcm.BYTE_RATE, "audio/wav",
+            adpcm.wav_header(None), f"response{idx}.wav",
+            lambda payload: adpcm.wav_header(len(payload)) + payload,
+        )
+
+    if response_format == "adpcm_stream":
+        # Chỉ các khối 256 byte, không header RIFF. Tiết kiệm 60 byte mỗi lượt
+        # và bỏ hẳn chuyện phải khai một độ dài chưa biết; board lấy tham số
+        # decoder từ `X-Audio-Format`.
+        return _Plan(
+            tts.encode_adpcm, adpcm.BYTE_RATE, "application/octet-stream",
+            b"", f"response{idx}.wav",
+            lambda payload: adpcm.wav_header(len(payload)) + payload,
+        )
+
+    if response_format == "mp3_stream":
+        # Nén MP3 CBR 32kbps trước khi gửi: 1/8 dung lượng so với PCM trần,
+        # đỡ tải WiFi/MCU. `wav` vẫn cần PCM trần (đóng gói WAV, không nén).
+        return _Plan(
+            tts.encode_mp3, float(tts.MP3_BYTE_RATE), "audio/mpeg",
+            b"", f"response{idx}.mp3", None,
+        )
+
+    return _Plan(
+        None, float(tts.OUTPUT_SAMPLE_RATE * _BYTES_PER_SAMPLE),
+        "application/octet-stream", b"", f"response{idx}.wav", _pcm_to_wav,
+    )
 
 
 @app.post("/process")
 def process(
+    request: Request,
     image: UploadFile | None = File(None),
     audio: UploadFile | None = File(None),
 ):
     """Xử lý một lệnh ảnh+audio, trả lời bằng audio stream phát dần được.
 
-    Toàn bộ STT/OCR/Gemini chạy xong trước khi byte đầu tiên rời server, nên
-    lỗi ở các bước đó vẫn đổi được thành câu báo lỗi bình thường. Chỉ bước TTS
-    được stream — đó cũng là bước tốn giây, và là lý do người dùng phải đứng
-    chờ trước khi nghe được gì.
+    Toàn bộ STT/OCR/Gemini chạy xong trước khi byte audio đầu tiên rời server,
+    nên lỗi ở các bước đó vẫn đổi được thành câu báo lỗi bình thường. Chỉ bước
+    TTS được stream — đó cũng là bước tốn giây, và là lý do người dùng phải
+    đứng chờ trước khi nghe được gì.
 
     Sync def (không async): FastAPI chạy nó trong threadpool riêng thay vì
     trên event loop chính, nên STT/OCR/gọi Gemini/TTS của một request không
@@ -313,21 +465,10 @@ def process(
     started = time.monotonic()
     idx = _next_debug_index()
     response_format = config.RESPONSE_FORMAT
-
-    if response_format == "mp3_stream":
-        # Nén MP3 CBR 32kbps trước khi gửi: 1/8 dung lượng so với PCM trần,
-        # đỡ tải WiFi/MCU. `wav` vẫn cần PCM trần (đóng gói WAV, không nén).
-        encode, byte_rate, media_type = (
-            tts.encode_mp3,
-            tts.MP3_BYTE_RATE,
-            "audio/mpeg",
-        )
-    else:
-        encode, byte_rate, media_type = (
-            None,
-            tts.OUTPUT_SAMPLE_RATE * _BYTES_PER_SAMPLE,
-            "application/octet-stream",
-        )
+    if response_format == "auto":
+        response_format = _negotiate(request.headers.get("accept", ""))
+    plan = _plan_for(response_format, idx)
+    encode, byte_rate = plan.encode, plan.byte_rate
 
     try:
         if audio is None:
@@ -336,7 +477,11 @@ def process(
             # Ảnh không bắt buộc: `resolve_speech` nhận `None` và chỉ than phiền
             # khi intent thật sự cần ảnh.
             image_bytes = image.file.read() if image is not None else None
-            audio_bytes = audio.file.read()
+            # Board gửi ADPCM thô để đẩy được ngay trong lúc còn đang thu;
+            # `ensure_wav` dựng lại header. File WAV thật vẫn đi qua nguyên vẹn.
+            audio_bytes = adpcm.ensure_wav(
+                audio.file.read(), audio.content_type,
+            )
             _save_debug_audio(f"request{idx}.wav", audio_bytes)
             if image_bytes:
                 _save_debug_image(idx, image_bytes)
@@ -361,16 +506,22 @@ def process(
         # đó — gọi Gemini, mất mạng giữa luồng text, TTS/encode lỗi — vẫn đổi
         # được thành câu báo lỗi nghe được. Sau mảnh này thì header 200 đã
         # gửi, không rút lại được nữa.
+        #
+        # Định dạng có `prelude` (ADPCM WAV) thì mảnh đầu chính là 60 byte
+        # header và nó ra ngay lập tức — đúng yêu cầu của board, đổi lại lỗi
+        # phía sau do `_stream_audio` tự nối câu báo lỗi vào luồng.
         audio_stream = _stream_audio(
             pieces, idx, started, time.monotonic() - started,
-            encode=encode, byte_rate=byte_rate,
+            encode=encode, byte_rate=byte_rate, prelude=plan.prelude,
+            debug_name=plan.debug_name, debug_wrap=plan.debug_wrap,
         )
         body: Iterator[bytes] = chain([next(audio_stream)], audio_stream)
     except Exception:  # noqa: BLE001 - MCU must receive audio, never a JSON error.
         logger.exception("process() request%d thất bại", idx)
         body = _stream_audio(
             [_ERROR_MESSAGE], idx, started, time.monotonic() - started,
-            encode=encode, byte_rate=byte_rate,
+            encode=encode, byte_rate=byte_rate, prelude=plan.prelude,
+            debug_name=plan.debug_name, debug_wrap=plan.debug_wrap,
         )
 
     if response_format == "wav":
@@ -384,6 +535,6 @@ def process(
 
     return StreamingResponse(
         body,
-        media_type=media_type,
+        media_type=plan.media_type,
         headers=_stream_headers(response_format),
     )

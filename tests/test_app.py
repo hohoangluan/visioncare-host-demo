@@ -9,7 +9,7 @@ from unittest.mock import patch
 import numpy as np
 import pytest
 
-from fastapi import UploadFile
+from fastapi import Request, UploadFile
 from fastapi.testclient import TestClient
 from fastapi.responses import StreamingResponse
 from PIL import Image
@@ -39,6 +39,17 @@ def _files():
         "image": ("i.jpg", b"fake img", "image/jpeg"),
         "audio": ("a.wav", _wav_bytes(), "audio/wav"),
     }
+
+
+def _request(accept: str = "") -> Request:
+    """Request tối thiểu để gọi thẳng endpoint, không qua TestClient.
+
+    `/process` đọc `Accept` để chọn định dạng trả về khi `RESPONSE_FORMAT=auto`,
+    nên chữ ký có thêm `request`. Các test dưới đây gọi hàm trực tiếp (TestClient
+    gom cả body nên che mất tính tuần tự của stream) và tự dựng lấy.
+    """
+    headers = [(b"accept", accept.encode())] if accept else []
+    return Request({"type": "http", "method": "POST", "path": "/process", "headers": headers})
 
 
 @pytest.fixture
@@ -168,7 +179,7 @@ def test_process_returns_streaming_response_not_buffered_body(stream_mode):
     with patch("pipeline.router.resolve_speech", return_value=iter(["xin chào"])), patch(
         "pipeline.tts.synthesize_text_stream", _fake_pcm_stream
     ):
-        response = process_endpoint(image=None, audio=None)
+        response = process_endpoint(_request(), image=None, audio=None)
 
     assert isinstance(response, StreamingResponse)
     # Starlette bọc sync generator bằng iterate_in_threadpool -> TTS chạy ở
@@ -503,6 +514,7 @@ def test_process_does_not_drain_gemini_before_streaming(stream_mode, tmp_path, m
         "pipeline.tts.synthesize_text_stream", one_sentence_then_stop
     ):
         process_endpoint(
+            _request(),
             image=UploadFile(file=io.BytesIO(b"fake img"), filename="i.jpg"),
             audio=UploadFile(file=io.BytesIO(_wav_bytes()), filename="a.wav"),
         )
@@ -622,8 +634,22 @@ def test_process_error_midstream_appends_error_speech(stream_mode, monkeypatch):
     assert response.content == b"\x01\x02" * 200
 
 
-def test_mp3_stream_is_the_default_response_format():
-    assert config.RESPONSE_FORMAT == "mp3_stream"
+def test_auto_is_the_default_response_format():
+    assert config.RESPONSE_FORMAT == "auto"
+
+
+@pytest.mark.parametrize(
+    "accept,expected",
+    [
+        # Đúng chuỗi board ESP32 gửi lên (`HUONG_DAN_SERVER.md` §1).
+        ("audio/wav;codec=ima_adpcm, audio/mpeg, audio/wav", "adpcm_wav"),
+        ("audio/mpeg", "mp3_stream"),
+        ("audio/wav", "wav"),
+        ("", "adpcm_wav"),
+    ],
+)
+def test_negotiate_picks_format_from_accept(accept, expected):
+    assert app_module._negotiate(accept) == expected
 
 
 def test_process_mp3_stream_sets_content_type_and_headers(mp3_mode, tmp_path, monkeypatch):

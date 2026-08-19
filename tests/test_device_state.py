@@ -61,16 +61,16 @@ def test_navigation_stop_clears_navigating():
     assert action_flow.device_state()["navigating"] is False
 
 
-def test_both_active_reports_which_started_last():
-    """Cả nhạc lẫn chỉ đường cùng chạy thì "tắt đi" vẫn mơ hồ — cần biết cái nào
-    vừa bật để còn chọn được cái gần nhất thay vì chọn bừa."""
+def test_starting_new_task_clears_previous_active_task():
+    """Quy tắc Single Active State: Bật tác vụ mới tự động tắt tác vụ cũ."""
     action_flow.note_result("music_play", {"request_state": "succeeded"})
     action_flow.note_result(
         "navigation_start",
         {"request_state": "succeeded", "result": {"navigation_id": "nav-1"}},
     )
     state = action_flow.device_state()
-    assert state["music_playing"] and state["navigating"]
+    assert state["music_playing"] is False
+    assert state["navigating"] is True
     assert state["most_recent"] == "navigating"
 
 
@@ -123,3 +123,51 @@ def test_detect_works_without_state(monkeypatch):
         lambda prompt, schema=None, model=None: {"intent": Intent.OCR, "params": {}},
     )
     assert intent_mod.detect_with_params("đọc chữ")[0] == Intent.OCR
+
+
+def test_single_active_state_mutual_exclusion():
+    action_flow.note_result("music_play", {"request_state": "succeeded"})
+    assert action_flow.device_state()["music_playing"] is True
+
+    # Khởi chạy navigation -> tự động ngắt music_playing (Single Active State)
+    action_flow.note_result("navigation_start", {"request_state": "succeeded", "result": {"navigation_id": "nav-10"}})
+    assert action_flow.device_state()["music_playing"] is False
+    assert action_flow.device_state()["navigating"] is True
+
+
+def test_router_fast_bypass_music(monkeypatch):
+    from pipeline import router
+
+    action_flow.note_result("music_play", {"request_state": "succeeded"})
+
+    stt_called = False
+    def fake_stt(_):
+        nonlocal stt_called
+        stt_called = True
+        return "không bao giờ gọi tới"
+
+    monkeypatch.setattr("pipeline.stt.transcribe", fake_stt)
+    monkeypatch.setattr("handlers.music.run_action", lambda *args, **kwargs: iter(["Đang dừng nhạc."]))
+
+    res = list(router.resolve_speech(None, b"dummy"))
+    assert not stt_called
+    assert any("Đang dừng nhạc" in s for s in res)
+
+
+def test_router_fast_bypass_navigation(monkeypatch):
+    from pipeline import router
+
+    action_flow.note_result("navigation_start", {"request_state": "succeeded", "result": {"navigation_id": "nav-10"}})
+
+    stt_called = False
+    def fake_stt(_):
+        nonlocal stt_called
+        stt_called = True
+        return "không bao giờ gọi tới"
+
+    monkeypatch.setattr("pipeline.stt.transcribe", fake_stt)
+    monkeypatch.setattr("handlers.navigation.run_action", lambda *args, **kwargs: iter(["Đang dừng chỉ đường."]))
+
+    res = list(router.resolve_speech(None, b"dummy"))
+    assert not stt_called
+    assert any("Đang dừng chỉ đường" in s for s in res)

@@ -2,7 +2,9 @@
 
 from collections.abc import Iterator, Sequence
 import logging
+import threading
 import time
+import uuid
 
 import config
 from pipeline import tts
@@ -13,6 +15,7 @@ from services.visioncare_client import (
     call_service_api,
     get_request_status,
 )
+from services.action_callbacks import action_callbacks
 
 logger = logging.getLogger("blind_assist")
 
@@ -128,6 +131,20 @@ def reset_state() -> None:
     _ACTIVE.clear()
 
 
+def mark_active(task: str) -> None:
+    """Đánh dấu tác vụ `task` ('music_playing' hoặc 'navigating') đang hoạt động duy nhất."""
+    _ACTIVE.clear()
+    _ACTIVE[task] = time.monotonic()
+
+
+def mark_inactive(task: str | None = None) -> None:
+    """Xóa tác vụ đang hoạt động."""
+    if task:
+        _ACTIVE.pop(task, None)
+    else:
+        _ACTIVE.clear()
+
+
 def note_result(operation: str, data: dict | None) -> None:
     """Cập nhật id và trạng thái đang chạy từ kết quả thật của một action."""
     if not data or data.get("request_state") != "succeeded":
@@ -142,7 +159,7 @@ def note_result(operation: str, data: dict | None) -> None:
 
     started = _STARTS.get(operation)
     if started:
-        _ACTIVE[started] = time.monotonic()
+        mark_active(started)
         logger.info("Bắt đầu: %s", started)
     ended = _ENDS.get(operation)
     if ended and _ACTIVE.pop(ended, None) is not None:
@@ -211,9 +228,19 @@ def run_action(
     không, và một quãng im lặng 30 giây thì không phân biệt được với hỏng hệ
     thống.
     """
+    started = time.monotonic()
+    generated_request_id = str(uuid.uuid4())
+    request_payload = {**payload, "request_id": generated_request_id}
+    action_callbacks.register(
+        generated_request_id,
+        operation,
+        lambda data: note_result(operation, data),
+        registered_at=started,
+    )
     try:
-        resp = call_service_api(endpoint, payload)
+        resp = call_service_api(endpoint, request_payload)
         request_id = resp.get("data", {}).get("request_id", "")
+        action_callbacks.move(generated_request_id, request_id)
         logger.info("%s requested, request_id=%s", operation, request_id)
     except VisionCareAPIError as exc:
         logger.error("%s error: %s", operation, exc)
@@ -228,14 +255,40 @@ def run_action(
     if not request_id:
         return
 
-    # `result_timeout` phải lớn hơn thời gian điện thoại tự chờ cho action đó,
-    # nếu không người dùng luôn nghe "điện thoại chưa phản hồi" thay vì lý do
-    # thật mà máy đã báo về (ví dụ `music_play` chờ tới 35s trên máy).
+    # Một GET tức thời là recovery probe cho backend cũ/test; critical path sau
+    # đó chỉ ngủ trên Event và được callback đánh thức ngay, không poll 0,5 giây.
+    try:
+        probe = get_request_status(request_id)
+        if probe.get("request_state") not in {None, "processing"}:
+            action_callbacks.resolve(request_id, probe)
+    except VisionCareAPIError:
+        pass
+
+    remaining = config.VISIONCARE_FAST_ACTION_SECONDS - (time.monotonic() - started)
+    final = action_callbacks.wait(request_id, remaining)
+    if final is not None:
+        yield speak_result(operation, final)
+        return
+
+    # Không hủy action ở mốc SLO. Polling chỉ còn là recovery nền nếu callback
+    # bị mất/restart; callback muộn vẫn cập nhật navigation_id/quote_id/state.
     budget = result_timeout if result_timeout is not None else config.VISIONCARE_RESULT_TIMEOUT_SECONDS
-    # Câu `ack` vừa đọc cũng là câu trấn an đầu tiên của action này, nên mốc
-    # trấn an kế tiếp đếm từ lúc nó đọc xong.
-    final = yield from _await_result(
-        request_id, budget, progress, opening_seconds=tts.speaking_seconds(ack)
-    )
-    note_result(operation, final)
-    yield speak_result(operation, final)
+
+    def reconcile_late() -> None:
+        deadline = time.monotonic() + budget
+        while time.monotonic() < deadline:
+            try:
+                data = get_request_status(request_id)
+            except VisionCareAPIError:
+                data = {}
+            if data.get("request_state") not in {None, "processing"}:
+                action_callbacks.resolve(request_id, data)
+                return
+            time.sleep(config.VISIONCARE_RESULT_POLL_SECONDS)
+
+    threading.Thread(
+        target=reconcile_late,
+        name=f"action-reconcile-{request_id[:8]}",
+        daemon=True,
+    ).start()
+    yield _utterance("Điện thoại vẫn đang thực hiện, tôi sẽ cập nhật khi có kết quả.")

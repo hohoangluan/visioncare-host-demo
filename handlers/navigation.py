@@ -55,6 +55,8 @@ def handle_stop(image: bytes, command_text: str, params: dict | None = None) -> 
     nav_id = params.get("navigation_id") or recall("navigation_id")
 
     if not nav_id:
+        from handlers.action_flow import mark_inactive
+        mark_inactive("navigating")
         yield _NOTHING_TO_STOP
         return
 

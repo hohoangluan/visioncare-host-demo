@@ -32,21 +32,20 @@ _HANDLERS = {
     Intent.MUSIC_VOLUME: music_volume,
 }
 
-# Hai tình huống khác nhau, hai câu khác nhau. Gộp làm một thì người dùng không
-# biết nên nói to hơn hay nói lại cho rõ nghĩa — hai cách sửa hoàn toàn khác.
+# Chỉ còn HAI câu, và cả hai đều nói về một trạng thái LỖI của hệ thống, không
+# phải về việc người dùng nói khó hiểu.
+#
+# Câu thứ ba ("tôi chưa hiểu bạn muốn gì") đã bỏ cùng với nhãn `unknown`: câu
+# nghe ra chữ mà không ra nghĩa giờ về `chat`, và chính Gemini nói mình chưa
+# hiểu — nó đọc được nguyên văn nên nói được câu sát tình huống, thay vì đọc một
+# câu soạn sẵn cho mọi trường hợp.
 _NO_SPEECH_MESSAGE = "Xin lỗi, tôi không nghe rõ, vui lòng nói lại."
-_NOT_UNDERSTOOD_MESSAGE = (
-    "Xin chào, tôi chưa hiểu bạn muốn gì. "
-    "Nếu cần hỗ trợ, bạn vui lòng gửi lại yêu cầu."
-)
 # Không nhận là "tôi chưa hiểu": lúc này hệ thống chưa hiểu được câu nào cả, kể
 # cả câu hoàn hảo. Nói đúng thứ đang xảy ra để người dùng biết cứ thử lại.
 _CLASSIFY_FAILED_MESSAGE = "Hệ thống đang bận, bạn vui lòng thử lại sau giây lát."
 
 # Câu cố định của module này, để `pipeline/phrases.py` dựng sẵn audio.
-STATIC_SPEECH: tuple[str, ...] = (
-    _NO_SPEECH_MESSAGE, _NOT_UNDERSTOOD_MESSAGE, _CLASSIFY_FAILED_MESSAGE,
-)
+STATIC_SPEECH: tuple[str, ...] = (_NO_SPEECH_MESSAGE, _CLASSIFY_FAILED_MESSAGE)
 
 
 def resolve_speech(
@@ -68,6 +67,19 @@ def resolve_speech(
 
 
 def _resolve(image: bytes | None, audio: bytes) -> Iterator[str]:
+    from handlers.action_flow import device_state
+    state = device_state()
+    if state.get("music_playing"):
+        logger.info("Fast-Bypass: đang nghe nhạc -> dừng nhạc ngắt STT/Intent")
+        from handlers import music
+        yield from music.handle_stop(image, "", {})
+        return
+    if state.get("navigating"):
+        logger.info("Fast-Bypass: đang chỉ đường -> dừng chỉ đường ngắt STT/Intent")
+        from handlers import navigation
+        yield from navigation.handle_stop(image, "", {})
+        return
+
     started = time.monotonic()
     command_text = stt.transcribe(audio)
     stt_seconds = time.monotonic() - started
@@ -84,19 +96,15 @@ def _resolve(image: bytes | None, audio: bytes) -> Iterator[str]:
         intent_name, params = res, {}
 
     if intent_name == Intent.UNKNOWN:
-        # Hai đường vào cùng một nhãn, nhưng người dùng phải sửa theo hai cách
-        # khác nhau: không nghe ra chữ nào thì nói to hơn / gần mic hơn, còn
-        # nghe ra chữ mà không ra nghĩa thì nói lại cho rõ ý.
+        # `unknown` không còn là kết quả phân loại — nó chỉ còn là trạng thái
+        # LỖI, và hai lỗi này người dùng phải xử lý theo hai cách khác nhau:
+        # không nghe ra chữ nào thì nói to hơn / gần mic hơn, còn hệ thống bận
+        # thì chỉ cần thử lại, không phải nói khác đi.
         logger.info(
             "nghe='%s' intent=%s | stt=%.2fs phân-loại=%.2fs handler=0.00s",
             command_text, intent_name, stt_seconds, intent_seconds,
         )
-        if params.get("classify_failed"):
-            yield _CLASSIFY_FAILED_MESSAGE
-        elif not command_text.strip():
-            yield _NO_SPEECH_MESSAGE
-        else:
-            yield _NOT_UNDERSTOOD_MESSAGE
+        yield _CLASSIFY_FAILED_MESSAGE if params.get("classify_failed") else _NO_SPEECH_MESSAGE
         return
 
     # Chất lượng ảnh chỉ xét được khi đã biết câu hỏi cần gì ở ảnh. Đặt trước

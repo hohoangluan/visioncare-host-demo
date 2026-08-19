@@ -140,78 +140,139 @@ def test_chat_does_not_remember_failed_turn(monkeypatch):
     assert "Câu bị" not in captured["prompt"]
 
 
-def test_chat_skips_location_and_search_when_neither_is_needed(monkeypatch):
-    """A joke costs nothing extra: no phone round-trip, no grounding round-trip."""
+def test_chat_never_fetches_location_on_the_request_path(monkeypatch):
+    """Lấy vị trí là vòng poll xuống điện thoại tới 12s — cấm nằm trong request.
+
+    Đây là tính chất thay cho cờ `needs_location` cũ: thay vì phân loại xem câu
+    nào đáng trả giá đó, không câu nào trả giá cả.
+    """
     called = []
     monkeypatch.setattr(
         visioncare_client,
         "get_device_location",
         lambda *a, **k: called.append("location") or None,
     )
-    captured = _capture(monkeypatch)
+    _capture(monkeypatch)
 
-    list(chat.handle(IMG, "kể chuyện cười đi", {}))
+    list(chat.handle(IMG, "kể chuyện cười đi"))
+    list(chat.handle(IMG, "quán cà phê gần đây"))
 
     assert called == []
-    assert captured["search"] is False
-    assert "Người dùng đang ở" not in captured["prompt"]
-    assert "tra được Google" not in captured["prompt"]
 
 
-def test_chat_fetches_location_only_when_the_question_needs_it(monkeypatch):
+def test_chat_uses_whatever_location_the_refresher_cached(monkeypatch):
+    """Cache nóng thì mọi lượt đều có vị trí, không cần biết câu hỏi cần hay không."""
     monkeypatch.setattr(
         visioncare_client,
         "get_device_location",
         lambda *a, **k: {"lat": 10.7769, "lng": 106.7009, "address": None},
     )
-    captured = _capture(monkeypatch)
+    assert chat.refresh_location_once() is True
 
-    list(chat.handle(IMG, "quán cà phê gần đây", {"needs_location": True}))
+    captured = _capture(monkeypatch)
+    list(chat.handle(IMG, "kể chuyện cười đi"))
 
     assert "10.7769" in captured["prompt"]
-    assert captured["search"] is False
 
 
-def test_chat_enables_search_only_when_the_answer_changes_daily(monkeypatch):
-    captured = _capture(monkeypatch)
-
-    list(chat.handle(IMG, "tin tức hôm nay", {"needs_web": True}))
-
-    assert captured["search"] is True
-    # The "you can search Google" line must not appear on turns without the
-    # tool, or the model is being told it did something it never did.
-    assert "tra được Google" in captured["prompt"]
-
-
-def test_chat_combines_location_and_search_when_both_are_needed(monkeypatch):
+def test_chat_drops_location_once_it_goes_stale(monkeypatch):
+    """Toạ độ cũ quá thì bỏ: người khiếm thị đi bộ, chỗ đứng đổi theo thời gian."""
     monkeypatch.setattr(
         visioncare_client,
         "get_device_location",
         lambda *a, **k: {"lat": 10.7769, "lng": 106.7009, "address": "Quận 1"},
     )
+    chat.refresh_location_once()
+    monkeypatch.setattr(config, "CHAT_LOCATION_TTL_SECONDS", 0.0)
+
+    captured = _capture(monkeypatch)
+    list(chat.handle(IMG, "quanh đây có gì"))
+
+    assert "Quận 1" not in captured["prompt"]
+
+
+def test_refresher_rejects_a_stale_fix_from_the_phone(monkeypatch):
+    """Điện thoại trả VỊ TRÍ CUỐI CÙNG NÓ BIẾT, không phải fix mới.
+
+    Đo thật trên máy này: gọi lúc 14:12 ngày 16/08 nhận về
+    captured_at=2026-08-15T19:22:58Z — bản định vị 12 tiếng tuổi. Chỉ kiểm
+    "server lấy về từ bao giờ" thì nó qua cửa mọi lần, vì server vừa lấy xong.
+    """
+    from datetime import UTC, datetime, timedelta
+
+    old = (datetime.now(UTC) - timedelta(hours=12)).isoformat().replace("+00:00", "Z")
+    monkeypatch.setattr(
+        visioncare_client,
+        "get_device_location",
+        lambda *a, **k: {"lat": 1.0, "lng": 2.0, "address": "Chỗ cũ", "captured_at": old},
+    )
+    assert chat.refresh_location_once() is False
+
+    captured = _capture(monkeypatch)
+    list(chat.handle(IMG, "quanh đây có gì"))
+    assert "Chỗ cũ" not in captured["prompt"]
+
+
+def test_refresher_accepts_a_fix_with_no_timestamp(monkeypatch):
+    """Thiếu `captured_at` thì cứ nhận: từ chối toạ độ vì thiếu metadata là mất
+    chức năng để đổi lấy không gì cả."""
+    monkeypatch.setattr(
+        visioncare_client,
+        "get_device_location",
+        lambda *a, **k: {"lat": 1.0, "lng": 2.0, "address": "Không mốc giờ"},
+    )
+    assert chat.refresh_location_once() is True
+
+
+def test_refresher_keeps_old_coordinates_when_a_poll_fails(monkeypatch):
+    """Mất mạng một nhịp không có nghĩa người dùng đã dịch đi đâu."""
+    monkeypatch.setattr(
+        visioncare_client,
+        "get_device_location",
+        lambda *a, **k: {"lat": 10.7769, "lng": 106.7009, "address": "Quận 1"},
+    )
+    chat.refresh_location_once()
+
+    monkeypatch.setattr(visioncare_client, "get_device_location", lambda *a, **k: None)
+    assert chat.refresh_location_once() is False
+
+    captured = _capture(monkeypatch)
+    list(chat.handle(IMG, "quanh đây có gì"))
+    assert "Quận 1" in captured["prompt"]
+
+
+def test_chat_lets_the_model_decide_whether_to_search(monkeypatch):
+    """Tool gắn vào MỌI lượt; model tự quyết có tra hay không lúc sinh chữ.
+
+    Thay cho cờ `needs_web`: "câu này có cần tra không" là tập mở vô hạn, không
+    bộ dữ liệu nào phủ hết, mà model đọc câu hỏi rồi tự quyết thì khỏi liệt kê.
+    """
+    captured = _capture(monkeypatch)
+    list(chat.handle(IMG, "kể chuyện cười đi"))
+
+    assert captured["search"] is True
+    assert "tự quyết định có tra hay không" in captured["prompt"]
+
+
+def test_chat_search_can_be_turned_off_when_grounding_quota_runs_out(monkeypatch):
+    """Van dự phòng: hạn mức grounding tính riêng và đã cạn thật một lần.
+
+    Tắt tra cứu thì PHẢI nói với model là nó không tra cứu được. Đo thật trên
+    nhánh này khi chưa nói: hỏi "quanh đây có quán ăn nào không" với vị trí thật
+    ở Tân Triều, model bịa ra "quán phở Thanh Bình trên đường ĐT768 cách bạn
+    khoảng hai trăm mét". Người khiếm thị không có cách nào kiểm lại một cái tên
+    quán đọc lên bằng giọng nói, và họ có thể đi bộ theo nó.
+    """
+    monkeypatch.setattr(config, "CHAT_ALWAYS_SEARCH", False)
     captured = _capture(monkeypatch)
 
-    list(chat.handle(IMG, "hôm nay trời thế nào", {"needs_location": True, "needs_web": True}))
+    list(chat.handle(IMG, "quanh đây có quán ăn nào không"))
 
-    assert "Quận 1" in captured["prompt"]
-    assert captured["search"] is True
-
-
-def test_chat_caches_a_failed_location_lookup(monkeypatch):
-    """A phone with location off must not cost a timeout on every single turn."""
-    attempts = []
-
-    def failing_location(*a, **k):
-        attempts.append(1)
-        return None
-
-    monkeypatch.setattr(visioncare_client, "get_device_location", failing_location)
-    _capture(monkeypatch)
-
-    list(chat.handle(IMG, "gần đây có gì", {"needs_location": True}))
-    list(chat.handle(IMG, "còn quán ăn thì sao", {"needs_location": True}))
-
-    assert len(attempts) == 1
+    assert captured["search"] is False
+    # Câu "bạn tra được Google" không được xuất hiện ở lượt KHÔNG có tool, nếu
+    # không là dạy model nói dối về thứ nó vừa làm.
+    assert "tra được Google" not in captured["prompt"]
+    assert "KHÔNG tra cứu được" in captured["prompt"]
 
 
 def test_chat_falls_back_to_a_plain_answer_when_search_fails(monkeypatch):
@@ -226,7 +287,7 @@ def test_chat_falls_back_to_a_plain_answer_when_search_fails(monkeypatch):
 
     monkeypatch.setattr(vlm, "generate_stream", flaky_stream)
 
-    out = "".join(chat.handle(IMG, "giá vàng hôm nay", {"needs_web": True}))
+    out = "".join(chat.handle(IMG, "giá vàng hôm nay"))
 
     assert [search for _, search in prompts] == [True, False]
     # The retry must tell the model it could not look anything up, so it says so

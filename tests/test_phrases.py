@@ -152,7 +152,6 @@ def _spoken_sentences(pieces) -> list[str]:
         f"{action_flow._utterance(music._STOP_ACK)}",
         f"{action_flow._utterance(phone._EMERGENCY_ACK)}",
         f"{action_flow._utterance(action_flow._DEFAULT_PROGRESS[0])}",
-        f"{waiting._DEFAULT_NOTICES[0]}\n",
         f"{result_speech._NAV_OPENED_WITH_TAP}\n",
         f"{result_speech._RIDE_APP_OPENED}\n",
     ],

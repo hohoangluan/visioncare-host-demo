@@ -124,6 +124,62 @@ def _prune(keep: set[str]) -> None:
         logger.info("Dọn %d câu dựng sẵn không còn dùng", len(stale))
 
 
+def generate_chime_pcm(duration: float = 1.5, sample_rate: int = 16000) -> bytes:
+    """Sinh âm thanh tiếng đàn Piano đệm êm dịu, ấm áp ("Bính Boong" Piano Earcon, 16kHz PCM)."""
+    import numpy as np
+    t = np.linspace(0, duration, int(sample_rate * duration), False)
+
+    def piano_note(freq: float, start_time: float, decay: float = 2.2) -> np.ndarray:
+        t_note = t - start_time
+        mask = (t_note >= 0)
+        tn = np.maximum(0, t_note)
+        # Bội âm dây đàn Piano tự nhiên (f0, 2f0, 3f0, 4f0, 5f0)
+        harms = (
+            1.00 * np.sin(2 * np.pi * freq * 1.0 * tn) +
+            0.45 * np.sin(2 * np.pi * freq * 2.0 * tn) +
+            0.20 * np.sin(2 * np.pi * freq * 3.0 * tn) +
+            0.10 * np.sin(2 * np.pi * freq * 4.0 * tn) +
+            0.04 * np.sin(2 * np.pi * freq * 5.0 * tn)
+        )
+        env = np.exp(-decay * tn)
+        attack = np.minimum(tn / 0.005, 1.0)
+        return harms * env * attack * mask
+
+    # Rải phím đàn Piano: C4 (261.6Hz), G4 (392Hz), C5 (523.25Hz), E5 (659.25Hz)
+    n1 = piano_note(261.63, 0.00, decay=1.8)
+    n2 = piano_note(392.00, 0.08, decay=2.2)
+    n3 = piano_note(523.25, 0.16, decay=2.6)
+    n4 = piano_note(659.25, 0.24, decay=3.2)
+    signal = (n1 * 0.38 + n2 * 0.30 + n3 * 0.20 + n4 * 0.12)
+    max_val = np.max(np.abs(signal))
+    if max_val > 0:
+        signal = signal / max_val * 0.40
+    return (signal * 32767).astype(np.int16).tobytes()
+
+
+def generate_warm_melodic_pcm() -> bytes:
+    """Đọc warm_melodic.wav và resample về 16kHz PCM mono."""
+    wav_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "warm_melodic.wav")
+    if not os.path.exists(wav_path):
+        return generate_chime_pcm()
+    try:
+        import wave
+        import numpy as np
+        with wave.open(wav_path, "rb") as w:
+            sr_in = w.getframerate()
+            frames = w.readframes(w.getnframes())
+        pcm_in = np.frombuffer(frames, dtype=np.int16)
+        if sr_in != 16000:
+            from scipy import signal
+            num_samples = int(len(pcm_in) * 16000 / sr_in)
+            pcm_16k = signal.resample(pcm_in, num_samples).astype(np.int16)
+            return pcm_16k.tobytes()
+        return pcm_in.tobytes()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("Không đọc được warm_melodic.wav: %s", exc)
+        return generate_chime_pcm()
+
+
 def warm(extra: Iterable[str] = ()) -> int:
     """Nạp audio dựng sẵn vào bộ nhớ, tổng hợp những câu chưa có trên đĩa.
 
@@ -150,7 +206,13 @@ def warm(extra: Iterable[str] = ()) -> int:
         paths.add(path)
 
         pcm = b""
-        if os.path.exists(path):
+        mode = getattr(config, "AUDIO_PREROLL_MODE", "warm_melodic")
+        if sentence == "Đã tiếp nhận yêu cầu" and mode != "voice":
+            if mode == "warm_melodic":
+                pcm = generate_warm_melodic_pcm()
+            elif mode == "chime":
+                pcm = generate_chime_pcm()
+        elif os.path.exists(path):
             try:
                 with open(path, "rb") as f:
                     pcm = f.read()

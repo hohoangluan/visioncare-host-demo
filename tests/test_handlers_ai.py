@@ -49,29 +49,11 @@ def test_ocr_specialized_mode_when_chuyen_nganh(monkeypatch):
     assert captured["mode"] == ocr.ocr.Mode.SPECIALIZED
 
 
-def test_find_and_space_stream_text_pieces(monkeypatch):
-    """read_money không nằm đây: nó không streaming, xem tests/test_read_money.py."""
+def test_find_and_space_and_money_stream_text_pieces(monkeypatch):
     monkeypatch.setattr(
         vlm, "generate_stream", lambda prompt, image=None: iter(["kết ", "quả"])
     )
-    for h in (find_object, describe_space, describe_hazard):
+    for h in (find_object, describe_space, describe_hazard, read_money):
         pieces = list(h.handle(IMG, "lệnh bất kỳ"))
         assert pieces == ["kết ", "quả"], f"{h.__name__} không stream từng mảnh"
 
-
-def test_read_money_calls_vlm_directly_no_ocr(monkeypatch):
-    """read_money dùng thẳng Gemini API, không qua OCR (OCR hay đọc sai số tiền)."""
-    captured = {}
-
-    def fake_generate_json(prompt, image=None, schema=None):
-        captured["image"] = image
-        return {"anh_du_ro": True, "cac_to": [
-            {"so_in_doc_duoc": "50000", "menh_gia": 50000}
-        ]}
-
-    monkeypatch.setattr(vlm, "generate_json", fake_generate_json)
-
-    speech = "".join(read_money.handle(IMG, "mệnh giá bao nhiêu"))
-
-    assert speech == "Đây là tờ 50 nghìn đồng."
-    assert captured["image"] == IMG

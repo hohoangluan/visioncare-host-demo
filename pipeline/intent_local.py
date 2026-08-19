@@ -44,8 +44,15 @@ class LocalPrediction:
 # `song`, `emergency_number` là TRÍCH SPAN — tên riêng, địa danh, tên bài hát —
 # nên ở lại với Gemini. Đó cũng là chỗ đoán sai thì hậu quả thật: dẫn nhầm
 # đường, gọi nhầm người.
+# `chat` ĐÃ RỜI bảng này. Hai head `chat_location`/`chat_web` bị bỏ vì cả hai cờ
+# chúng phục vụ đều không còn: vị trí do thread nền giữ nóng nên luôn nhét vào
+# prompt, còn tra Google hay không thì model tự quyết lúc sinh chữ.
+#
+# Chúng cũng là hai head yếu nhất — nhận 20.0% và 3.3% ở ngưỡng 0.80 — và vì
+# `read_params` bắt MỌI trường phải qua ngưỡng nên hai tỉ lệ đó NHÂN với nhau:
+# đo trên 18 câu chat của tập eval, 0/18 câu xong được ở bước cục bộ. Bài học
+# giữ lại: đừng bắt một nhãn phụ thuộc nhiều head độc lập cùng lúc.
 _PARAM_HEADS: dict[str, dict[str, str]] = {
-    "chat": {"needs_location": "chat_location", "needs_web": "chat_web"},
     "music_volume": {"direction": "volume_direction"},
     "ride_confirm": {"confirm": "ride_confirm"},
 }

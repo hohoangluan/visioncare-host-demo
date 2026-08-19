@@ -20,6 +20,42 @@ def _get_client():
     return _client
 
 
+def warm() -> None:
+    """Dựng client và bắt tay TLS trước cho cả VLM Vision và Intent models cùng lúc."""
+    import concurrent.futures
+    import logging
+
+    log = logging.getLogger("blind_assist")
+    dummy_jpeg = b"\xff\xd8\xff\xe0\x00\x10JFIF\x00\x01\x01\x01\x00`\x00`\x00\x00\xff\xdb\x00C\x00\x08\x06\x06\x07\x06\x05\x08\x07\x07\x07\t\t\x08\n\x0c\x14\r\x0c\x0b\x0b\x0c\x19\x12\x13\x0f\x14\x1d\x1a\x1f\x1e\x1d\x1a\x1c\x1c $.' \",#\x1c\x1c(7),01444\x1f'9=82<.342\xff\xc0\x00\x0b\x08\x00\x01\x00\x01\x01\x01\x11\x00\xff\xc4\x00\x1f\x10\x00\x01\x05\x01\x01\x01\x01\x01\x01\x00\x00\x00\x00\x00\x00\x00\x00\x01\x02\x03\x04\x05\x06\x07\x08\t\n\x0b\xff\xda\x00\x08\x01\x01\x00\x00?\x00\xbf\x00\xff\xd9"
+
+    def _warm_vlm():
+        try:
+            from google.genai import types
+            parts = ["ok", types.Part.from_bytes(data=dummy_jpeg, mime_type="image/jpeg")]
+            stream = _get_client().models.generate_content_stream(
+                model=config.GEMINI_MODEL, contents=parts
+            )
+            for _ in stream:
+                pass
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Không warm được Gemini VLM: %s", exc)
+
+    def _warm_intent():
+        try:
+            stream = _get_client().models.generate_content_stream(
+                model=config.GEMINI_INTENT_MODEL, contents=["ok"]
+            )
+            for _ in stream:
+                pass
+        except Exception as exc:  # noqa: BLE001
+            log.warning("Không warm được Gemini Intent: %s", exc)
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+        f1 = executor.submit(_warm_vlm)
+        f2 = executor.submit(_warm_intent)
+        concurrent.futures.wait([f1, f2], timeout=10.0)
+
+
 def _guess_mime(image: bytes) -> str:
     if image[:2] == b"\xff\xd8":
         return "image/jpeg"

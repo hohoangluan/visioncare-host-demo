@@ -23,7 +23,15 @@ _ERROR_SPEECH = {
     "SONG_NOT_FOUND": "Không tìm thấy bài hát này, vui lòng nói lại tên bài.",
     "PLAYBACK_STOP_FAILED": "Chưa dừng được nhạc, vui lòng thử lại.",
     "MUSIC_ACCOUNT_NOT_CONNECTED": "Chưa liên kết tài khoản nghe nhạc.",
-    "SUBSCRIPTION_INACTIVE": "Gói nghe nhạc đã hết hạn.",
+    # Không nói "hết hạn": đo trên máy thật, mã này về khi tài khoản là gói MIỄN
+    # PHÍ, chứ không phải gói trả phí vừa hết hạn. Ứng dụng nhạc mở lên bình
+    # thường nhưng từ chối nạp đúng bài được yêu cầu, vì gói miễn phí không cho
+    # phát một bài chỉ định. Nói "hết hạn" khiến người dùng đi gia hạn một thứ họ
+    # chưa từng mua; nói rõ nguyên nhân thì họ biết phải nâng cấp.
+    "SUBSCRIPTION_INACTIVE": (
+        "Tài khoản nghe nhạc đang dùng gói miễn phí nên không phát được bài chỉ định. "
+        "Cần nâng cấp gói trả phí để nghe đúng bài."
+    ),
     "CURRENT_LOCATION_UNAVAILABLE": "Không lấy được vị trí hiện tại.",
     "LOCATION_PERMISSION_DENIED": "Ứng dụng chưa được cấp quyền vị trí.",
     # Không đoán hộ một địa điểm gần đúng: nói thẳng là không tìm thấy để người

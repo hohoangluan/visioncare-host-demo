@@ -1,11 +1,10 @@
-import io
 import os
-import wave
 from functools import lru_cache
 
 import numpy as np
 
 import config
+from pipeline import adpcm
 
 
 @lru_cache(maxsize=1)
@@ -35,11 +34,15 @@ _TARGET_SAMPLE_RATE = 16000
 
 
 def _decode_wav(audio: bytes) -> tuple[np.ndarray, int]:
-    with wave.open(io.BytesIO(audio), "rb") as w:
-        channels = w.getnchannels()
-        sample_rate = w.getframerate()
-        raw = w.readframes(w.getnframes())
-    samples = np.frombuffer(raw, dtype=np.int16).astype(np.float32) / 32768.0
+    """WAV từ board -> mẫu float32 mono trong [-1, 1], kèm tần số lấy mẫu.
+
+    Board gửi lên WAV **IMA ADPCM 4-bit** (fmt tag 0x0011), không phải PCM trần.
+    Module `wave` của Python chỉ mở được `WAVE_FORMAT_PCM` — đưa file board vào
+    là `wave.Error: unknown format: 17`, tức mọi request thật đều rơi xuống câu
+    báo lỗi. `pipeline/adpcm.py` đọc được cả hai dạng.
+    """
+    raw, sample_rate, channels = adpcm.decode_wav(audio)
+    samples = raw.astype(np.float32) / 32768.0
     if channels > 1:
         # Model cần mono; audio stereo/đa kênh bị đọc raw thẳng sẽ ra
         # mảng interleaved sai độ dài -> gộp về mono bằng cách lấy trung bình.

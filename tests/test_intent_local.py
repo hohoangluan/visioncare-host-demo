@@ -211,16 +211,47 @@ def test_multiclass_head_uses_softmax():
 
 def test_read_params_returns_none_when_any_field_unsure(monkeypatch):
     """Nửa bộ tham số còn tệ hơn không trả: handler không phân biệt được
-    "thiếu cờ" với "cờ bằng false"."""
+    "thiếu cờ" với "cờ bằng false".
+
+    Không nhãn nào ĐANG dùng nhiều head cùng lúc — `chat` là nhãn cuối cùng như
+    vậy và đã bỏ hai head của nó. Nên test này dựng một nhãn hai head giả để giữ
+    cái chốt sống: ai thêm nhãn nhiều head sau này vẫn được nó bảo vệ.
+
+    Chính vì luật "một trường không chắc là cả nhãn đi Gemini" mà `chat` từng
+    chết: hai head nhận 20.0% và 3.3%, nhân lại còn ~4%, đo ra 0/18 câu chat
+    xong được ở bước cục bộ.
+    """
     sure = (np.array([[50.0]], dtype=np.float32), np.array([0.0], dtype=np.float32),
             np.array(["false", "true"]))
     unsure = (np.zeros((1, 1), dtype=np.float32), np.array([0.0], dtype=np.float32),
               np.array(["false", "true"]))
-    monkeypatch.setattr(intent_local, "_load", lambda: {
-        "param_heads": {"chat_location": sure, "chat_web": unsure}
+    monkeypatch.setattr(intent_local, "_PARAM_HEADS", {
+        "hai_head": {"a": "head_chac", "b": "head_khong_chac"}
     })
-    pred = intent_local.LocalPrediction(Intent.CHAT, 0.9, 0.8, np.array([1.0], dtype=np.float32))
-    assert intent_local.read_params(Intent.CHAT, pred) is None
+    monkeypatch.setattr(intent_local, "_load", lambda: {
+        "param_heads": {"head_chac": sure, "head_khong_chac": unsure}
+    })
+    pred = intent_local.LocalPrediction("hai_head", 0.9, 0.8, np.array([1.0], dtype=np.float32))
+    assert intent_local.read_params("hai_head", pred) is None
+
+
+def test_chat_finishes_locally_without_gemini(monkeypatch):
+    """`chat` là nhãn phổ biến nhất; nó phải xong ở bước cục bộ.
+
+    Trước khi bỏ hai cờ `needs_location`/`needs_web`, mọi câu chat đều rơi xuống
+    Gemini để lấy đúng hai giá trị boolean — đo trên tập eval: 0/18 câu thoát
+    được. Đó là ~0.9s chờ trắng trên nhãn dùng nhiều nhất.
+    """
+    called = []
+    monkeypatch.setattr(intent_local, "classify", lambda t: _fake_local(Intent.CHAT))
+    monkeypatch.setattr(intent_mod.vlm, "generate_json",
+                        lambda *a, **k: called.append(1) or {"intent": "chat"})
+
+    name, params = intent_mod.detect_with_params("xin chào")
+
+    assert name == Intent.CHAT
+    assert params == {}
+    assert called == [], "chat không được gọi Gemini để phân loại nữa"
 
 
 def test_read_params_none_for_span_labels(monkeypatch):

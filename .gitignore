@@ -16,3 +16,7 @@ logs/
 # Ảnh thật (chứa mặt người) dùng cho test_bang_am_thanh.py — không commit.
 tests/fixtures/*
 !tests/fixtures/.gitkeep
+# Audio thử do `tools/make_board_audio.py` dựng lại được bất cứ lúc nào.
+tools/board_audio/
+# Ảnh checkpoint 1.5GB, không thuộc mã nguồn.
+checkpoints.zip
