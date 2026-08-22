@@ -143,7 +143,7 @@ task khác.**
 
 ### Đợt 5 — phụ thuộc đợt 4
 
-- [ ] **T13** Chat & lịch sử *(cần T14 cho E4)*
+- [x] **T13** Chat & lịch sử *(PARTIAL: code xong, chờ đo Gemini/prefix thật)*
 - [ ] **T11** Đặt xe *(cần T07; R1-R3/R5 ⛔ BLOCKED)*
 - [ ] **T23** Quyền & cấu hình *(độc lập, chèn đâu cũng được)*
 
@@ -300,7 +300,7 @@ C2/P9 đã xong một phần, số dòng của `ride.py`/`music.py`/`navigation.
 - [x] T16 Không gian & vật cản
 
 ### Đợt 5
-- [ ] T13 Chat & lịch sử
+- [x] T13 Chat & lịch sử *(PARTIAL: chờ đo Gemini/prefix thật)*
 - [ ] T11 Đặt xe
 - [ ] T23 Quyền & cấu hình
 
