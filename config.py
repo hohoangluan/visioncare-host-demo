@@ -246,6 +246,43 @@ CHAT_ALWAYS_SEARCH = get("CHAT_ALWAYS_SEARCH", "1") != "0"
 # nhiều agent chạy song song không cùng tranh dòng cuối file.
 
 # === T01 ===
+# `X-Device-Id` / `X-Turn-Id` trên `POST /process` (CONTRACTS.md mục 2.1).
+#
+# Giai đoạn chuyển: nhiều board ngoài hiện trường có thể chưa lên firmware mới
+# (chưa gửi `X-Device-Id`). Mặc định CHO PHÉP rơi về `VISIONCARE_DEVICE_ID`
+# nhưng `logger.warning` mỗi lần — không được im lặng, vì im lặng biến lỗi cấu
+# hình firmware thành trộn session giữa hai người dùng thật.
+#
+# Bật `REQUIRE_DEVICE_ID=1` để chặn hẳn (400) khi thiếu header — làm vậy khi
+# mọi board ngoài hiện trường đã lên firmware mới. 🔴 Chưa chốt: giai đoạn
+# chuyển này kéo dài bao lâu — xem CONTRACTS.md mục 7 câu hỏi #12 và
+# docs/tasks/reports/T01.md.
+REQUIRE_DEVICE_ID = get("REQUIRE_DEVICE_ID", "0") == "1"
+
+# Cửa sổ chống gửi lặp theo `X-Turn-Id`: hai `POST /process` cùng
+# (device_id, turn_id) trong cửa sổ này -> KHÔNG chạy lại pipeline (không gọi
+# STT/Gemini/handler lần hai), chỉ phát lại đúng audio đã tổng hợp lần đầu.
+#
+# 60s là ĐỀ XUẤT TẠM, chưa chốt (CONTRACTS.md mục 7 câu hỏi #12): dài quá thì
+# người dùng lặp lại đúng câu bị nuốt mất; ngắn quá thì board retry sau khi
+# mất gói vẫn gọi trùng ra ngoài (Gemini/VisionCare host).
+#
+# CÙNG một con số này còn dùng làm hạn "bỏ hoang" cho một lượt đang CHẠY DỞ
+# (chưa kịp ghi kết quả) — quá ngần ấy giây kể từ lúc giữ quyền mà vẫn chưa
+# xong (crash, treo) thì coi là bỏ hoang, lượt trùng turn_id sau được chiếm
+# lại quyền chạy. Một config duy nhất cho cả hai nghĩa, đơn giản hơn hai biến
+# riêng — xem docs/tasks/contract-deltas/T01.md.
+PROCESS_IDEMPOTENCY_WINDOW_SECONDS = float(get("PROCESS_IDEMPOTENCY_WINDOW_SECONDS", "60"))
+
+# Chặn trên: cache idempotency không được phình vô hạn. Sweep (dọn entry hết
+# hạn) chạy ở mọi lần ghi nên bình thường cache luôn nhỏ; cái cap FIFO này chỉ
+# là lưới an toàn khi có rất nhiều thiết bị/lượt cùng lúc.
+PROCESS_IDEMPOTENCY_MAX_ENTRIES = int(get("PROCESS_IDEMPOTENCY_MAX_ENTRIES", "64"))
+
+# Thân audio lớn hơn ngần này (byte) thì KHÔNG cache — đơn giản hơn bo tổng
+# dung lượng cache cho chính xác. ~4 MB rộng rãi hơn hẳn một câu trả lời PCM
+# trần 60s (~1.92 MB ở 32 000 B/s), thứ đã là câu dài bất thường.
+PROCESS_IDEMPOTENCY_MAX_BODY_BYTES = int(get("PROCESS_IDEMPOTENCY_MAX_BODY_BYTES", str(4_000_000)))
 # === T03 ===
 # === T07 ===
 # === T15 ===

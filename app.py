@@ -1,3 +1,4 @@
+import contextvars
 import glob
 import io
 import logging
@@ -5,6 +6,7 @@ import os
 import re
 import hmac
 import ipaddress
+import threading
 import time
 import wave
 from collections.abc import Callable, Iterable, Iterator
@@ -26,6 +28,251 @@ logger = logging.getLogger("blind_assist")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 app = FastAPI(title="Blind-Assist Audio Server")
+
+# ─── T01: định danh thiết bị & lượt (CONTRACTS.md mục 2.1) ────────────────
+#
+# `device_id`/`turn_id` xuống tới handler/pipeline bằng ContextVar, KHÔNG
+# thêm tham số vào chữ ký handler — có 15 handler, thêm tham số là 15 chỗ
+# sửa và 15 chỗ quên (T01-protocol-ids.md mục 2.2). T03/T17/T18/T19 và các
+# handler đọc qua `app.DEVICE_ID_CTX.get()` / `app.TURN_ID_CTX.get()`.
+#
+# Đặt Ở ĐÂY (module level) chỉ để KHAI BÁO ContextVar — bản thân ContextVar là
+# một "khe" toàn cục vô hại khi rỗng. Giá trị THẬT chỉ được `.set()` bên trong
+# scope của từng request (trong `process()`), không bao giờ set ở module
+# level — set ở module level mới là thứ rò giữa các request.
+DEVICE_ID_CTX: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "device_id_ctx", default=None
+)
+TURN_ID_CTX: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "turn_id_ctx", default=None
+)
+
+
+def _resolve_device_turn(request: Request) -> tuple[str, str | None]:
+    """Đọc `X-Device-Id`/`X-Turn-Id` từ HEADER (không phải form field) — server
+    phải đọc được các id này TRƯỚC khi body ảnh/audio upload xong.
+
+    Thiếu `X-Device-Id`:
+      - `config.REQUIRE_DEVICE_ID=1` -> từ chối rõ ràng (400).
+      - `config.REQUIRE_DEVICE_ID=0` (**mặc định hiện tại**, giai đoạn
+        chuyển): CHO PHÉP rơi về `config.VISIONCARE_DEVICE_ID` nhưng
+        `logger.warning` MỖI LẦN — cấm im lặng, xem T01-protocol-ids.md mục
+        2.2. `1` là đích cuối, chờ chốt mốc chuyển (CONTRACTS mục 7 câu #3).
+
+    Thiếu `X-Turn-Id`: KHÔNG bị chặn (CONTRACTS mục 2.1 liệt kê BẮT BUỘC
+    nhưng chưa có ai enforce phần này — xem `docs/tasks/contract-deltas/T01.md`),
+    chỉ mất đi hai thứ dựa vào nó (idempotency ở đây, barge-in ở T04) —
+    `logger.warning` để lộ ra ngoài, không âm thầm.
+    """
+    device_id = request.headers.get("x-device-id")
+    turn_id = request.headers.get("x-turn-id")
+
+    if not device_id:
+        if config.REQUIRE_DEVICE_ID:
+            raise HTTPException(
+                status_code=400,
+                detail="Thiếu header X-Device-Id bắt buộc (CONTRACTS.md mục 2.1)",
+            )
+        logger.warning(
+            "Thiếu X-Device-Id, dùng tạm VISIONCARE_DEVICE_ID=%s "
+            "(giai đoạn chuyển, REQUIRE_DEVICE_ID=0) — board cần lên firmware mới",
+            config.VISIONCARE_DEVICE_ID,
+        )
+        device_id = config.VISIONCARE_DEVICE_ID
+
+    if not turn_id:
+        logger.warning(
+            "Thiếu X-Turn-Id (device=%s) — KHÔNG bị chặn, nhưng lượt này mất "
+            "idempotency (có thể gọi trùng pipeline nếu board tự thử lại) và "
+            "sẽ mất luôn barge-in (T04) khi task đó chạy tới",
+            device_id,
+        )
+
+    return device_id, turn_id
+
+
+# ─── T01: chống gửi lặp theo X-Turn-Id (idempotency) ──────────────────────
+#
+# Hai `POST /process` cùng (device_id, turn_id) trong cửa sổ
+# `config.PROCESS_IDEMPOTENCY_WINDOW_SECONDS` -> KHÔNG chạy lại pipeline (STT/
+# Gemini/handler không bị gọi lần hai), chỉ phát lại đúng audio đã tổng hợp ở
+# lượt đầu. Board có thể gửi trùng khi mất ACK giữa chừng rồi tự động thử lại
+# — CẢ KHI lượt đầu còn đang chạy dở (chưa xong), không chỉ sau khi đã xong.
+#
+# Khoá theo CẢ device_id lẫn turn_id (không chỉ turn_id) — hai kính khác nhau
+# lỡ trùng turn_id (bug firmware, hoặc test) không được ăn nhầm kết quả của
+# nhau.
+#
+# Mỗi entry có `state`:
+#   "pending" — một lượt đang CHẠY DỞ pipeline cho key này, chưa có body.
+#               Mang theo `event` (threading.Event) để lượt trùng đợi.
+#   "done"    — pipeline đã xong, có body sẵn để phát lại nguyên xi.
+#
+# Một entry "pending" bị bỏ hoang (crash giữa chừng, hoặc client rớt kết nối
+# nên `_tee_and_cache` không bao giờ chạy hết vòng `for` — xem ghi chú ở đó)
+# thì KHÔNG treo vĩnh viễn: quá `config.PROCESS_IDEMPOTENCY_WINDOW_SECONDS`
+# kể từ lúc "reserved_at", nó bị coi là bỏ hoang và lượt sau chiếm lại được
+# quyền chạy — dùng CHUNG một con số với TTL của entry "done" cho đơn giản
+# (một config duy nhất, thay vì hai), xem `docs/tasks/contract-deltas/T01.md`.
+_IDEMPOTENCY_LOCK = threading.Lock()
+_IDEMPOTENCY_CACHE: dict[tuple[str, str], dict] = {}
+
+
+def _idempotent_sweep_locked(now: float) -> None:
+    """PHẢI gọi trong `_IDEMPOTENCY_LOCK`. Dọn entry "done" đã hết hạn VÀ entry
+    "pending" bị bỏ hoang quá lâu — chạy ở MỌI điểm ghi (không chỉ lúc tra một
+    key cụ thể) để cache không phình vô hạn dù `turn_id` luôn là uuid mới,
+    không bao giờ được tra lại lần hai để tự dọn theo đường cũ.
+    """
+    expired = [
+        key for key, entry in _IDEMPOTENCY_CACHE.items()
+        if (entry["state"] == "done" and entry["expires_at"] < now)
+        or (
+            entry["state"] == "pending"
+            and now - entry["reserved_at"] >= config.PROCESS_IDEMPOTENCY_WINDOW_SECONDS
+        )
+    ]
+    for key in expired:
+        del _IDEMPOTENCY_CACHE[key]
+
+
+def _idempotent_enforce_cap_locked() -> None:
+    """Chặn trên số entry — FIFO, đơn giản hơn là bo tổng dung lượng byte cho
+    chính xác. Chỉ chạm tới khi sweep ở trên không đủ (vd. rất nhiều thiết bị
+    cùng lúc) — bình thường sweep đã giữ cache nhỏ."""
+    while len(_IDEMPOTENCY_CACHE) > config.PROCESS_IDEMPOTENCY_MAX_ENTRIES:
+        oldest_key = next(iter(_IDEMPOTENCY_CACHE))
+        _IDEMPOTENCY_CACHE.pop(oldest_key, None)
+
+
+def _idempotent_begin(device_id: str, turn_id: str | None):
+    """Xin quyền chạy pipeline cho `(device_id, turn_id)`, hoặc lấy kết quả có sẵn.
+
+    Trả về một cặp `(kind, payload)`:
+      ("hit", entry)   — đã có kết quả XONG ("done") — dùng lại, không chạy
+                         pipeline.
+      ("wait", event)  — CÙNG key đang có lượt khác chạy DỞ ("pending") —
+                         đợi `event` (có giới hạn) rồi gọi lại hàm này.
+      ("own", None)    — không ai đang giữ key này (hoặc lượt cũ đã bỏ hoang
+                         quá lâu, vừa bị sweep) — người gọi CHIẾM quyền chạy,
+                         và PHẢI gọi `_idempotent_finish()` khi xong (dù
+                         thành công hay đã đổi thành câu báo lỗi).
+    """
+    if not turn_id:
+        return "own", None
+    key = (device_id, turn_id)
+    now = time.monotonic()
+    with _IDEMPOTENCY_LOCK:
+        _idempotent_sweep_locked(now)
+        entry = _IDEMPOTENCY_CACHE.get(key)
+        if entry is not None:
+            if entry["state"] == "done":
+                return "hit", entry
+            return "wait", entry["event"]
+        _IDEMPOTENCY_CACHE[key] = {
+            "state": "pending",
+            "reserved_at": now,
+            "event": threading.Event(),
+        }
+        return "own", None
+
+
+def _idempotent_finish(
+    device_id: str,
+    turn_id: str | None,
+    response_format: str,
+    media_type: str,
+    headers: dict[str, str],
+    body: bytes,
+) -> None:
+    """Đóng lượt đã CHIẾM quyền ở `_idempotent_begin` (kind == "own"): ghi kết
+    quả "done" rồi đánh thức mọi lượt đang đợi ở nhánh "wait".
+
+    Thân quá lớn (`config.PROCESS_IDEMPOTENCY_MAX_BODY_BYTES`) thì KHÔNG cache
+    — đơn giản hơn là bo tổng dung lượng cache cho chính xác; lượt trùng
+    turn_id hiếm hoi cỡ này (nếu có) sẽ tự chạy lại pipeline, chấp nhận được.
+    """
+    if not turn_id:
+        return
+    key = (device_id, turn_id)
+    now = time.monotonic()
+    event: threading.Event | None = None
+    with _IDEMPOTENCY_LOCK:
+        entry = _IDEMPOTENCY_CACHE.get(key)
+        event = entry.get("event") if entry is not None else None
+        _idempotent_sweep_locked(now)
+        if len(body) > config.PROCESS_IDEMPOTENCY_MAX_BODY_BYTES:
+            _IDEMPOTENCY_CACHE.pop(key, None)
+        else:
+            _IDEMPOTENCY_CACHE[key] = {
+                "state": "done",
+                "expires_at": now + config.PROCESS_IDEMPOTENCY_WINDOW_SECONDS,
+                "response_format": response_format,
+                "media_type": media_type,
+                "headers": dict(headers),
+                "body": body,
+            }
+            _idempotent_enforce_cap_locked()
+    if event is not None:
+        event.set()
+
+
+def _bind_context(iterator: Iterator[bytes]) -> Iterator[bytes]:
+    """Đóng băng Context HIỆN TẠI (mang device_id/turn_id đã `.set()`) rồi chạy
+    mọi lần kéo tiếp theo của `iterator` trong đúng Context đó.
+
+    `StreamingResponse` được Starlette tiêu thụ SAU KHI `process()` đã
+    return — có thể ở thread/task khác, nơi ContextVar đã bị `.reset()` hoặc
+    rỗng. Không có lớp này thì handler ở downstream (T03/T17) đọc
+    `device_id`/`turn_id` ra `None` ngay khi phần audio sinh sau mảnh đầu tiên
+    chạy, dù mảnh đầu vẫn thấy đúng giá trị (nó được kéo TRONG lúc còn ở
+    `process()`).
+
+    `contextvars.copy_context()` chạy NGAY ở đây — tức trong lời gọi hàm này,
+    còn trong scope request — không phải lúc thân generator `_gen()` bắt đầu
+    chạy (đó là lúc `next()` đầu tiên được gọi, có thể đã ra khỏi request).
+    """
+    ctx = contextvars.copy_context()
+    it = iter(iterator)
+
+    def _gen() -> Iterator[bytes]:
+        while True:
+            try:
+                chunk = ctx.run(next, it)
+            except StopIteration:
+                return
+            yield chunk
+
+    return _gen()
+
+
+def _tee_and_cache(
+    iterator: Iterator[bytes],
+    device_id: str,
+    turn_id: str | None,
+    response_format: str,
+    media_type: str,
+    headers: dict[str, str],
+) -> Iterator[bytes]:
+    """Vừa phát từng mảnh cho client, vừa gom lại để lưu vào cache idempotency
+    SAU KHI phát xong — không trì hoãn mảnh đầu để chờ gom trọn trước.
+
+    CHỈ gọi hàm này khi người gọi đã CHIẾM quyền ở `_idempotent_begin` (kind
+    == "own") — xem `process()`. Nếu client rớt kết nối giữa chừng,
+    `GeneratorExit` ném vào ngay tại `yield chunk` bên dưới, thoát khỏi vòng
+    `for` TRƯỚC khi chạy tới `_idempotent_finish` — CỐ Ý: thân đã thu chỉ là
+    một phần, cache một phần là SAI, nên bỏ nguyên chứ không cache thiếu.
+    Entry "pending" sẽ tự hết hạn theo `_idempotent_sweep_locked` như mọi lượt
+    bỏ hoang khác, không cần dọn riêng ở đây.
+    """
+    chunks: list[bytes] = []
+    for chunk in iterator:
+        chunks.append(chunk)
+        yield chunk
+    _idempotent_finish(
+        device_id, turn_id, response_format, media_type, headers, b"".join(chunks)
+    )
+
 
 PCM_FORMAT = f"pcm_s16le;rate={tts.OUTPUT_SAMPLE_RATE};channels=1"
 _BYTES_PER_SAMPLE = 2
@@ -461,80 +708,166 @@ def process(
     Sync def (không async): FastAPI chạy nó trong threadpool riêng thay vì
     trên event loop chính, nên STT/OCR/gọi Gemini/TTS của một request không
     chặn các request khác đang xử lý song song.
+
+    T01: `device_id`/`turn_id` đọc từ header `X-Device-Id`/`X-Turn-Id`
+    (CONTRACTS.md mục 2.1), xuống tới pipeline/handler qua `DEVICE_ID_CTX`/
+    `TURN_ID_CTX` — KHÔNG qua tham số. Trùng `X-Turn-Id` trong cửa sổ
+    idempotency thì trả lại đúng audio đã tổng hợp lần trước, không chạy lại
+    pipeline.
     """
-    started = time.monotonic()
-    idx = _next_debug_index()
-    response_format = config.RESPONSE_FORMAT
-    if response_format == "auto":
-        response_format = _negotiate(request.headers.get("accept", ""))
-    plan = _plan_for(response_format, idx)
-    encode, byte_rate = plan.encode, plan.byte_rate
-
-    try:
-        if audio is None:
-            pieces: Iterable[str] = [_MISSING_AUDIO_MESSAGE]
-        else:
-            # Ảnh không bắt buộc: `resolve_speech` nhận `None` và chỉ than phiền
-            # khi intent thật sự cần ảnh.
-            image_bytes = image.file.read() if image is not None else None
-            # Board gửi ADPCM thô để đẩy được ngay trong lúc còn đang thu;
-            # `ensure_wav` dựng lại header. File WAV thật vẫn đi qua nguyên vẹn.
-            audio_bytes = adpcm.ensure_wav(
-                audio.file.read(), audio.content_type,
-            )
-            _save_debug_audio(f"request{idx}.wav", audio_bytes)
-            if image_bytes:
-                _save_debug_image(idx, image_bytes)
-
-            # Câu chào đi TRƯỚC, và `chain` giữ nó lười: `resolve_speech`
-            # (kéo theo STT) chỉ chạy khi TTS đã lấy xong câu chào, nên
-            # người dùng nghe thấy tiếng trong lúc STT còn đang chạy.
-            # Xuống dòng ở cuối là dấu "câu trọn vẹn, đọc ngay" cho
-            # `tts._sentences()`; thiếu nó thì câu chào nằm chờ mảnh text
-            # sau, tức là chờ đúng STT mà nó sinh ra để khỏi phải chờ.
-            # Câu chào này CŨNG là câu trấn an đầu tiên, nên câu kế tiếp phải
-            # đếm từ lúc nó đọc xong. Đo chính xác vì audio của nó đã dựng sẵn.
-            pieces = chain(
-                [_RECEIVED_MESSAGE + "\n"],
-                router.resolve_speech(
-                    image_bytes, audio_bytes,
-                    opening_seconds=tts.speaking_seconds(_RECEIVED_MESSAGE),
-                ),
-            )
-
-        # Kéo tới MẢNH ĐẦU TIÊN ở đây, còn trong try. Mọi thứ trên đường tới
-        # đó — gọi Gemini, mất mạng giữa luồng text, TTS/encode lỗi — vẫn đổi
-        # được thành câu báo lỗi nghe được. Sau mảnh này thì header 200 đã
-        # gửi, không rút lại được nữa.
-        #
-        # Định dạng có `prelude` (ADPCM WAV) thì mảnh đầu chính là 60 byte
-        # header và nó ra ngay lập tức — đúng yêu cầu của board, đổi lại lỗi
-        # phía sau do `_stream_audio` tự nối câu báo lỗi vào luồng.
-        audio_stream = _stream_audio(
-            pieces, idx, started, time.monotonic() - started,
-            encode=encode, byte_rate=byte_rate, prelude=plan.prelude,
-            debug_name=plan.debug_name, debug_wrap=plan.debug_wrap,
-        )
-        body: Iterator[bytes] = chain([next(audio_stream)], audio_stream)
-    except Exception:  # noqa: BLE001 - MCU must receive audio, never a JSON error.
-        logger.exception("process() request%d thất bại", idx)
-        body = _stream_audio(
-            [_ERROR_MESSAGE], idx, started, time.monotonic() - started,
-            encode=encode, byte_rate=byte_rate, prelude=plan.prelude,
-            debug_name=plan.debug_name, debug_wrap=plan.debug_wrap,
-        )
-
-    if response_format == "wav":
-        # Gom trọn rồi mới gửi: mất thời gian chờ, đổi lại MCU nhận một file
-        # hoàn chỉnh có Content-Length, không phụ thuộc việc đường truyền có
-        # giữ đều 32 KB/s hay không.
-        return Response(
-            content=_pcm_to_wav(b"".join(body)),
-            media_type="audio/wav",
-        )
-
-    return StreamingResponse(
-        body,
-        media_type=plan.media_type,
-        headers=_stream_headers(response_format),
+    device_id, turn_id = _resolve_device_turn(request)
+    device_token = DEVICE_ID_CTX.set(device_id)
+    turn_token = TURN_ID_CTX.set(turn_id)
+    logger.info(
+        "process() nhận X-Device-Id=%s X-Turn-Id=%s X-Capture-Ts=%s",
+        device_id, turn_id, request.headers.get("x-capture-ts"),
     )
+    try:
+        # T01: xin quyền chạy pipeline cho (device_id, turn_id) — KHÔNG chỉ
+        # tra "đã xong chưa", vì lượt trùng có thể tới trong lúc lượt đầu
+        # CÒN ĐANG CHẠY DỞ (đúng ca "mất ACK giữa chừng, board tự thử lại"
+        # nêu ở comment của `_IDEMPOTENCY_CACHE`) — đó là lúc `entry` mới
+        # "pending", chưa có body nào để mà trả cả.
+        kind, payload = _idempotent_begin(device_id, turn_id)
+        if kind == "wait":
+            # Lượt khác CÙNG (device_id, turn_id) đang chạy dở — đợi nó xong
+            # rồi DÙNG LẠI kết quả, không tự chạy pipeline lần hai. Giới hạn
+            # đợi bằng đúng cửa sổ idempotency: quá đó thì coi lượt kia là bỏ
+            # hoang (crash/treo) và tự nhận quyền chạy — chấp nhận đợi tối đa
+            # ngần ấy giây (đơn giản hơn tính phần thời gian còn lại của lượt
+            # kia), xem docs/tasks/contract-deltas/T01.md.
+            payload.wait(timeout=config.PROCESS_IDEMPOTENCY_WINDOW_SECONDS)
+            kind, payload = _idempotent_begin(device_id, turn_id)
+
+        if kind == "hit":
+            cached = payload
+            logger.info(
+                "process() device=%s turn=%s trùng trong cửa sổ idempotency "
+                "%.0fs — trả lại kết quả cũ, KHÔNG chạy lại pipeline",
+                device_id, turn_id, config.PROCESS_IDEMPOTENCY_WINDOW_SECONDS,
+            )
+            if cached["response_format"] == "wav":
+                return Response(
+                    content=cached["body"], media_type=cached["media_type"]
+                )
+            return StreamingResponse(
+                iter([cached["body"]]),
+                media_type=cached["media_type"],
+                headers=cached["headers"],
+            )
+
+        # kind == "own": chiếm được quyền chạy bình thường.
+        # kind == "wait" (VẪN, sau khi đã đợi hết hạn): cực hiếm — một lượt
+        # THỨ BA chen vào giữa, hoặc lượt đầu treo đúng lúc hết hạn đợi. Không
+        # đợi thêm nữa (tránh treo người dùng), tự chạy pipeline luôn — NHƯNG
+        # không tự nhận là chủ, để không ghi đè cache của người đang thật sự
+        # giữ quyền.
+        own_reservation = kind == "own"
+        if not own_reservation:
+            logger.warning(
+                "process() device=%s turn=%s: đợi hết %.0fs mà lượt giữ "
+                "quyền vẫn chưa xong — tự chạy pipeline, KHÔNG ghi cache "
+                "(hiếm, xem docs/tasks/contract-deltas/T01.md)",
+                device_id, turn_id, config.PROCESS_IDEMPOTENCY_WINDOW_SECONDS,
+            )
+
+        started = time.monotonic()
+        idx = _next_debug_index()
+        response_format = config.RESPONSE_FORMAT
+        if response_format == "auto":
+            response_format = _negotiate(request.headers.get("accept", ""))
+        plan = _plan_for(response_format, idx)
+        encode, byte_rate = plan.encode, plan.byte_rate
+
+        try:
+            if audio is None:
+                pieces: Iterable[str] = [_MISSING_AUDIO_MESSAGE]
+            else:
+                # Ảnh không bắt buộc: `resolve_speech` nhận `None` và chỉ than
+                # phiền khi intent thật sự cần ảnh.
+                image_bytes = image.file.read() if image is not None else None
+                # Board gửi ADPCM thô để đẩy được ngay trong lúc còn đang thu;
+                # `ensure_wav` dựng lại header. File WAV thật vẫn đi qua nguyên vẹn.
+                audio_bytes = adpcm.ensure_wav(
+                    audio.file.read(), audio.content_type,
+                )
+                _save_debug_audio(f"request{idx}.wav", audio_bytes)
+                if image_bytes:
+                    _save_debug_image(idx, image_bytes)
+
+                # Câu chào đi TRƯỚC, và `chain` giữ nó lười: `resolve_speech`
+                # (kéo theo STT) chỉ chạy khi TTS đã lấy xong câu chào, nên
+                # người dùng nghe thấy tiếng trong lúc STT còn đang chạy.
+                # Xuống dòng ở cuối là dấu "câu trọn vẹn, đọc ngay" cho
+                # `tts._sentences()`; thiếu nó thì câu chào nằm chờ mảnh text
+                # sau, tức là chờ đúng STT mà nó sinh ra để khỏi phải chờ.
+                # Câu chào này CŨNG là câu trấn an đầu tiên, nên câu kế tiếp phải
+                # đếm từ lúc nó đọc xong. Đo chính xác vì audio của nó đã dựng sẵn.
+                pieces = chain(
+                    [_RECEIVED_MESSAGE + "\n"],
+                    router.resolve_speech(
+                        image_bytes, audio_bytes,
+                        opening_seconds=tts.speaking_seconds(_RECEIVED_MESSAGE),
+                    ),
+                )
+
+            # Kéo tới MẢNH ĐẦU TIÊN ở đây, còn trong try. Mọi thứ trên đường
+            # tới đó — gọi Gemini, mất mạng giữa luồng text, TTS/encode lỗi —
+            # vẫn đổi được thành câu báo lỗi nghe được. Sau mảnh này thì header
+            # 200 đã gửi, không rút lại được nữa.
+            #
+            # Định dạng có `prelude` (ADPCM WAV) thì mảnh đầu chính là 60 byte
+            # header và nó ra ngay lập tức — đúng yêu cầu của board, đổi lại lỗi
+            # phía sau do `_stream_audio` tự nối câu báo lỗi vào luồng.
+            audio_stream = _stream_audio(
+                pieces, idx, started, time.monotonic() - started,
+                encode=encode, byte_rate=byte_rate, prelude=plan.prelude,
+                debug_name=plan.debug_name, debug_wrap=plan.debug_wrap,
+            )
+            body: Iterator[bytes] = chain([next(audio_stream)], audio_stream)
+        except Exception:  # noqa: BLE001 - MCU must receive audio, never a JSON error.
+            logger.exception("process() request%d thất bại", idx)
+            body = _stream_audio(
+                [_ERROR_MESSAGE], idx, started, time.monotonic() - started,
+                encode=encode, byte_rate=byte_rate, prelude=plan.prelude,
+                debug_name=plan.debug_name, debug_wrap=plan.debug_wrap,
+            )
+
+        if response_format == "wav":
+            # Gom trọn rồi mới gửi: mất thời gian chờ, đổi lại MCU nhận một
+            # file hoàn chỉnh có Content-Length, không phụ thuộc việc đường
+            # truyền có giữ đều 32 KB/s hay không. Đã gom trọn sẵn nên lưu
+            # thẳng vào cache idempotency, không cần tee — CHỈ khi mình thật
+            # sự giữ quyền (`own_reservation`), xem nhánh "wait" ở trên.
+            content = _pcm_to_wav(b"".join(body))
+            if own_reservation:
+                _idempotent_finish(
+                    device_id, turn_id, "wav", "audio/wav", {}, content
+                )
+            return Response(content=content, media_type="audio/wav")
+
+        stream_headers = _stream_headers(response_format)
+        # `_bind_context`: giữ device_id/turn_id đúng cho phần audio sinh ra
+        # SAU KHI process() đã return (Starlette kéo tiếp generator ở
+        # thread/task khác). `_tee_and_cache`: gom lại đúng những gì đã gửi
+        # để lượt gọi lặp `X-Turn-Id` kế tiếp có gì mà trả, không phải tính
+        # toán lại — CHỈ gọi khi mình giữ quyền, xem nhánh "wait" ở trên;
+        # không thì chỉ cần `_bind_context` (context vẫn phải đúng cho pipeline
+        # chạy hộ), không ghi vào cache chung của người khác.
+        bound_body = _bind_context(body)
+        cached_body = (
+            _tee_and_cache(
+                bound_body, device_id, turn_id,
+                response_format, plan.media_type, stream_headers,
+            )
+            if own_reservation
+            else bound_body
+        )
+        return StreamingResponse(
+            cached_body,
+            media_type=plan.media_type,
+            headers=stream_headers,
+        )
+    finally:
+        DEVICE_ID_CTX.reset(device_token)
+        TURN_ID_CTX.reset(turn_token)

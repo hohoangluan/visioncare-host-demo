@@ -42,18 +42,39 @@ task file tương ứng **trước khi** code.
 
 ```
 X-Device-Id   BẮT BUỘC   string, ổn định theo board
-X-Turn-Id     BẮT BUỘC   uuid v4, MỚI mỗi lần bấm nút
-X-Capture-Ts  nên có     epoch ms lúc chụp
+X-Turn-Id     BẮT BUỘC*  uuid v4, MỚI mỗi lần bấm nút
+X-Capture-Ts  nên có     🔴 KHÔNG PHẢI epoch ms — xem ghi chú dưới
 ```
 
 Header **chứ không phải form field**: server đọc được trước khi body upload xong.
 
 `X-Turn-Id` có **hai** vai trò:
-1. chống gửi lặp (idempotency) — cửa sổ **60 s** *(chưa chốt, xem mục 6)*
+1. chống gửi lặp (idempotency) — cửa sổ **60 s** *(TẠM, chưa chốt, xem mục 7
+   câu #12 — dùng CHUNG một con số làm cả TTL kết quả xong lẫn hạn "bỏ hoang"
+   của một lượt đang chạy dở, xem mục 4.4)*
 2. ngắt lượt cũ (barge-in) — T04/G4
 
-Thiếu `X-Device-Id` → **từ chối rõ ràng**, KHÔNG im lặng rơi về
-`config.VISIONCARE_DEVICE_ID`.
+Thiếu `X-Device-Id` → **từ chối rõ ràng** (`config.REQUIRE_DEVICE_ID=1`) hoặc
+cảnh báo mỗi lần rồi rơi về `config.VISIONCARE_DEVICE_ID`
+(`REQUIRE_DEVICE_ID=0`, **mặc định hiện tại** — giai đoạn chuyển, KHÔNG im
+lặng). KHÔNG có nhánh nào rơi về hằng số mà không log.
+
+🔴 **`X-Turn-Id` "BẮT BUỘC" nhưng chưa bị enforce** (khác `X-Device-Id`): server
+hiện KHÔNG từ chối và KHÔNG có cờ tương đương `REQUIRE_DEVICE_ID` cho
+`X-Turn-Id` — thiếu nó chỉ `logger.warning` rồi đi tiếp với `turn_id=None`.
+Hệ quả: idempotency (mục 4.4) và barge-in (T04/G4) **lặng lẽ vô hiệu** cho
+đúng request đó, không phải lỗi cứng. Chưa enforce ngay vì risk phá board cũ
+lớn hơn `X-Device-Id`: mọi board đã gửi `X-Device-Id` một thời gian, còn
+`X-Turn-Id` là header hoàn toàn mới, chưa board thật nào gửi tính tới lúc
+viết mục này. Xem câu hỏi #14.
+
+🔴 **`X-Capture-Ts` không phải "epoch ms lúc chụp" trên firmware hiện tại**:
+board (không NTP, không RTC) gửi `millis()` — **uptime từ lúc boot**, không
+phải epoch thật. Chỉ dùng được để so sánh TƯƠNG ĐỐI trong cùng một phiên
+chạy của board — **không** suy ra được thời điểm thực hay so sánh giữa hai
+lần reboot khác nhau. T17 (ghép `/frame` với `/process` cùng lượt) **không**
+được dùng `X-Capture-Ts` để ghép tuyệt đối giữa hai board hoặc qua reboot —
+dùng `X-Turn-Id` (ổn định xuyên suốt một lượt) làm khoá ghép.
 
 ### 2.2 `POST /frame` — ảnh, fire-and-forget (T17/F3)
 
@@ -164,6 +185,41 @@ Số cụ thể của từng tầng: **chưa điền**, chờ T15/H0 quy về th
 
 **Đây là thứ dễ bị viết lại sai nhất trong cả spec.** Bước 3 nằm **giữa** hai
 pha pending, không phải trên hay dưới cả hai.
+
+### 4.4 Idempotency `POST /process` theo (device_id, turn_id) (T01)
+
+Khoá theo **CẶP** `(device_id, turn_id)`, không phải riêng `turn_id` — hai
+thiết bị lỡ trùng `turn_id` không ăn nhầm kết quả của nhau.
+
+Trạng thái mỗi lượt đang giữ trong cache:
+
+```
+"pending"  đang chạy pipeline, CHƯA có body. Lượt trùng khoá tới trong lúc
+           này phải ĐỢI (không tự chạy lại pipeline), dùng lại kết quả khi
+           lượt giữ quyền xong — kể cả khi lượt đầu CHƯA XONG. Đây là ca hay
+           bị bỏ sót: "board mất ACK, tự gửi lại trong lúc lượt trước còn
+           đang chạy dở", KHÔNG chỉ ca "gửi lại sau khi lượt trước đã xong".
+"done"     đã có body, phát lại y nguyên cho mọi lượt trùng khoá.
+```
+
+Một lượt "pending" bị bỏ hoang (crash, client rớt giữa chừng) tự hết hạn sau
+CÙNG cửa sổ 60s (TẠM) dùng cho TTL của "done" — một con số cho cả hai ý
+nghĩa. Sau khi hết hạn, lượt trùng khoá kế tiếp CHIẾM lại quyền chạy pipeline.
+
+🔴 **Race hiếm, chưa xử lý:** nếu pipeline chạy LÂU HƠN cửa sổ 60s, lượt đang
+chạy dở bị quét là "bỏ hoang" và một lượt trùng khoá khác được phép chiếm
+quyền chạy — không có generation token nào chặn việc lượt cũ, khi xong sau
+cùng, ghi đè kết quả lên lượt mới hơn. Vì hai lượt xử lý cùng input nên nội
+dung trả về thường tương đương, nhưng đây là lỗ hổng thật trong tính loại trừ
+của cơ chế reservation. Chưa cần vá ngay (chỉ lộ khi pipeline > 60s), nhưng
+task nào rút ngắn/kéo dài cửa sổ này phải biết race này tồn tại.
+
+Cache có chặn trên số entry (FIFO, mặc định 64) và bỏ qua cache cho thân
+audio quá lớn (mặc định > 4 MB).
+
+Lỗi (pipeline nổ, đổi thành câu báo lỗi TTS) VẪN được cache như kết quả
+"done" bình thường — lượt trùng khoá trong cửa sổ nhận lại đúng câu báo lỗi,
+không thử gọi lại API ngoài lần nữa.
 
 ---
 
@@ -372,8 +428,10 @@ sinh xong cả câu.
 | 9 | **Cache vị trí toàn cục hay theo device?** | T03 · T07 |
 | 10 | **`max_age_ms` cho frame là bao nhiêu?** (800 ms gần như chắc chắn sai) | T17 |
 | 11 | **RTT thật qua Cloudflare tunnel?** (> 400 ms thì phương án (b) mất giá) | T17/F4 |
-| 12 | **Cửa sổ idempotency 60 s?** | T01 |
+| 12 | **Cửa sổ idempotency 60 s?** Cùng con số này còn dùng làm hạn "bỏ hoang" cho một lượt đang chạy dở (mục 4.4) — chốt một lần cho cả hai nghĩa, hay tách riêng? | T01 |
 | 13 | **Ngưỡng so khớp danh bạ 88/70/margin 8** — cần danh bạ thật để đo lại | T08 |
+| 14 | 🔴 **`X-Turn-Id` thiếu có nên có cờ `REQUIRE_TURN_ID`** (như `REQUIRE_DEVICE_ID`) để tới lúc nào đó ép buộc, hay mãi mãi chỉ cảnh báo? Hiện KHÔNG enforce — mọi board đã có sẽ gửi thiếu header này cho tới khi lên firmware mới. | T01 · T04 (barge-in phụ thuộc) |
+| 15 | **`device_id` firmware lấy từ MAC WiFi hay NVS?** Đang dùng MAC WiFi làm TẠM (ổn định, không cần cấu hình) — không đổi được lúc ghép kính↔tài khoản nếu sau này cần. | T01 |
 
 ---
 

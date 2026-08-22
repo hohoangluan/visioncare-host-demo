@@ -278,7 +278,7 @@ C2/P9 đã xong một phần, số dòng của `ride.py`/`music.py`/`navigation.
 - [x] P7 bảng mã lỗi *(T20)* → `measurements/P7-error-matrix.md` — 10 orphan/8 mute (không phải 9/7)
 
 ### Đợt 1 — nền tảng
-- [ ] T01 Định danh thiết bị & lượt
+- [x] T01 Định danh thiết bị & lượt
 - [ ] T03 Phiên & pending
 - [ ] T04 Router & ngắt lời
 
