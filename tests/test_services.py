@@ -349,7 +349,10 @@ def test_music_play_reports_silence_as_a_failure(monkeypatch):
 
     # The whole point of polling: "sent the request" used to be the only thing
     # the user ever heard, whether or not a single note came out.
-    assert "chưa phát được" in out
+    # T20 gave PLAYBACK_FAILED its own sentence in _ERROR_SPEECH; it starts a
+    # new sentence after "\n" nên viết hoa chữ đầu — so sánh không phân biệt
+    # hoa/thường thay vì khoá cứng theo chữ thường cũ.
+    assert "chưa phát được" in out.lower()
     assert "nhấn vào thông báo" in out
 
 
