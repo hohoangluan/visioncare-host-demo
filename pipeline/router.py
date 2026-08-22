@@ -4,6 +4,7 @@ import re
 import time
 from collections.abc import Callable, Iterator
 
+import config
 from schemas import Intent
 from pipeline import image_quality, intent_local, stt, intent as intent_mod
 from handlers import (
@@ -13,6 +14,7 @@ from handlers import (
 )
 from handlers.waiting import with_progress_notice
 from services import capabilities
+from services.frame_buffer import frames
 
 logger = logging.getLogger("blind_assist")
 
@@ -33,6 +35,10 @@ _HANDLERS = {
     Intent.MUSIC_STOP: music_stop,
     Intent.MUSIC_VOLUME: music_volume,
 }
+
+_IMAGE_REQUIRED_INTENTS = frozenset(
+    {Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE, Intent.HAZARD}
+)
 
 # Chỉ còn HAI câu, và cả hai đều nói về một trạng thái LỖI của hệ thống, không
 # phải về việc người dùng nói khó hiểu.
@@ -264,6 +270,15 @@ def _capture_device_key() -> str:
     return device_id or action_flow._NO_DEVICE_CONTEXT_KEY
 
 
+def _capture_turn_id() -> str | None:
+    """Capture turn identity before resolve work moves to a raw worker thread."""
+    try:
+        import app as _app_module
+    except ImportError:
+        return None
+    return _app_module.TURN_ID_CTX.get()
+
+
 def resolve_speech(
     image: bytes | None, audio: bytes, opening_seconds: float = 0.0
 ) -> Iterator[str]:
@@ -283,8 +298,9 @@ def resolve_speech(
     # thật, TRƯỚC khi `with_progress_notice` có cơ hội giao việc kéo mảnh đầu
     # sang một thread trần khác. Xem `_capture_device_key()`.
     device_key = _capture_device_key()
+    turn_id = _capture_turn_id()
     return with_progress_notice(
-        _resolve(image, audio, device_key), opening_seconds=opening_seconds
+        _resolve(image, audio, device_key, turn_id), opening_seconds=opening_seconds
     )
 
 
@@ -597,7 +613,10 @@ def _try_global_cancel_repeat(
 
 
 def _resolve(
-    image: bytes | None, audio: bytes, device_key: str | None = None
+    image: bytes | None,
+    audio: bytes,
+    device_key: str | None = None,
+    turn_id: str | None = None,
 ) -> Iterator[str]:
     # Nhập trễ (không phải đầu file): `handlers.action_flow` transitively kéo
     # theo `handlers.music`/`handlers.navigation`/`handlers.phone`, và bản
@@ -774,6 +793,17 @@ def _resolve(
             ocr.OCR_CACHE_TTL_SECONDS, device_key=device_key
         ) is not None
     )
+    if (
+        image is None
+        and intent_name in _IMAGE_REQUIRED_INTENTS
+        and not ocr_text_only
+    ):
+        image = frames.latest(
+            device_key,
+            config.FRAME_MAX_AGE_MS,
+            turn_id=turn_id,
+            wait_ms=config.FRAME_WAIT_MS,
+        )
     reject_reason = None if ocr_text_only else image_quality.reject_reason(intent_name, image)
     if reject_reason is not None:
         logger.info(

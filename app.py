@@ -21,6 +21,7 @@ from models import vlm
 from pipeline import adpcm, intent_local, phrases, router, stt, tts
 from services.action_callbacks import action_callbacks
 from services import capabilities
+from services.frame_buffer import frames
 
 logger = logging.getLogger("blind_assist")
 
@@ -692,6 +693,34 @@ def _plan_for(response_format: str, idx: int) -> _Plan:
         None, float(tts.OUTPUT_SAMPLE_RATE * _BYTES_PER_SAMPLE),
         "application/octet-stream", b"", f"response{idx}.wav", _pcm_to_wav,
     )
+
+
+@app.post("/frame", status_code=204)
+async def receive_frame(request: Request) -> Response:
+    """Receive one JPEG on the independent fire-and-forget frame channel."""
+    device_id = request.headers.get("x-device-id", "").strip()
+    turn_id = request.headers.get("x-turn-id", "").strip()
+    if not device_id:
+        raise HTTPException(status_code=400, detail="Missing X-Device-Id")
+    if not turn_id:
+        raise HTTPException(status_code=400, detail="Missing X-Turn-Id")
+    frame_bytes = await request.body()
+    if not frame_bytes:
+        raise HTTPException(status_code=400, detail="Empty frame body")
+    frames.put(
+        device_id,
+        turn_id,
+        frame_bytes,
+        capture_ts=request.headers.get("x-capture-ts"),
+    )
+    logger.info(
+        "frame() nhận device=%s turn=%s bytes=%d capture_ts=%s",
+        device_id,
+        turn_id,
+        len(frame_bytes),
+        request.headers.get("x-capture-ts"),
+    )
+    return Response(status_code=204)
 
 
 @app.post("/process")

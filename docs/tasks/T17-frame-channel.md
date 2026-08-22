@@ -5,7 +5,7 @@
 | **Mã spec** | F3 F4 F5 · ~~F2 (HUỶ)~~ · 27.1 27.5 |
 | **SPEC gốc** | mục 19 (F3–F5), 27.1, 27.5 |
 | **Repo đụng** | Server kính · **Firmware** |
-| **Trạng thái** | READY (F5 chờ T15/H0 quy lại thang số) |
+| **Trạng thái** | PARTIAL — F3/F4 code + test xanh; F5 và số board thật còn chờ |
 | **Chặn bởi** | **T01** (`X-Turn-Id` để ghép ảnh với lượt) |
 | **Chặn** | T18 (F6 dùng chung hạ tầng downlink) |
 
@@ -63,7 +63,7 @@ Server giữ **FrameBuffer theo device** (ring 1–3 frame + timestamp). Handler
 **không đọc bytes trực tiếp từ request nữa**:
 
 ```python
-frames.latest(device_id, max_age_ms=800)
+frames.latest(device_id, max_age_ms=6000)  # PROVISIONAL, đo board thật rồi chốt
 ```
 
 🔴 **Đây là chỗ quan trọng nhất của cả phần II: handler không cần biết frame tới
@@ -240,25 +240,32 @@ multipart cũ vẫn chạy           → giai đoạn chuyển
 pytest tests/test_frame_buffer.py -q
 ```
 
-- [ ] **F2 KHÔNG được thi công** — có comment trong repo firmware ghi rõ lý do (27.1)
-- [ ] `POST /frame` chạy, fire-and-forget, 204
-- [ ] `frames.latest(device_id, max_age_ms)` là API **duy nhất** handler dùng
-- [ ] Bốn ca thời điểm frame (4.1) xanh
-- [ ] 10 intent không ảnh **không chờ frame một ms nào**
-- [ ] Bảng F4 điền **số thật từ T15/H0**, không còn `1600x1200`/`q8`/`q15`
+- [x] **F2 KHÔNG được thi công** — có comment trong repo firmware ghi rõ lý do (27.1)
+- [x] `POST /frame` chạy, fire-and-forget, 204
+- [x] `frames.latest(device_id, max_age_ms)` là API **duy nhất** handler dùng
+- [x] Bốn ca thời điểm frame (4.1) xanh
+- [x] 10 intent không ảnh **không chờ frame một ms nào**; có ca riêng emergency,
+      cancel/repeat, pending và OCR follow-up
+- [x] Bảng F4 ghi đúng cấu hình hiện tại **1280×720/q18** từ H0; không coi đó
+      là số phân tầng đã chốt
 - [ ] Ngưỡng blur đo riêng cho từng tầng, có bảng số trong repo
-- [ ] Đường multipart cũ vẫn chạy được trong giai đoạn chuyển
+- [x] Đường multipart cũ vẫn chạy được trong giai đoạn chuyển
+
+Build firmware (chưa nạp): **1 295 623 B (41%)**, RAM tĩnh **77 520 B (23%)**.
+Test server: xem `reports/T17.md`.
 
 ---
 
 ## 6. Câu hỏi phải chốt
 
-1. 🔴 **(a) song song hay (b) hai pha cho tầng ảnh lớn?** Đang đề xuất (a) cho
+1. 🔴 **(a) song song hay (b) hai pha cho tầng ảnh lớn?** Firmware hiện chạy
+   (a) một tầng 1280×720/q18; vẫn đề xuất (a) cho
    tầng thấp và (b) cho tầng cao. **Cần đo RTT thật qua Cloudflare tunnel để
    chốt: nếu RTT > 400 ms thì (b) mất giá.** Chưa đo.
 2. **Ngưỡng blur cho từng tầng** — chưa đo. Phải chụp mẫu ở từng tầng **native**
    rồi tính lại phân bố Laplacian, **không suy ra từ số của tầng khác**.
-3. **`max_age_ms` là bao nhiêu?** Spec đề xuất 800 ms. Board chụp lúc bấm nút,
+3. **`max_age_ms` là bao nhiêu?** Đang dùng tạm **6000 ms** (wait race tối đa
+   800 ms). Spec đề xuất freshness 800 ms, nhưng board chụp lúc bấm nút,
    người dùng nói 2–4 giây → frame sẽ **luôn** già hơn 800 ms khi handler chạy.
    **Con số này gần như chắc chắn sai, phải đo lại.**
 4. **Có nâng tầng cao lên 1600×1200 không?** Xem câu 3 của T15 — đổi sang 4:3 là

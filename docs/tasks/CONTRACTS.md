@@ -48,6 +48,10 @@ X-Capture-Ts  nên có     🔴 KHÔNG PHẢI epoch ms — xem ghi chú dưới
 
 Header **chứ không phải form field**: server đọc được trước khi body upload xong.
 
+Firmware T17 gửi multipart chunked **chỉ có part `audio`**. Server vẫn nhận
+multipart cũ có cả `image` + `audio` trong giai đoạn chuyển. 🔴 Không đảo thứ
+tự part F2; ảnh mới đi trên socket `/frame` độc lập.
+
 `X-Turn-Id` có **hai** vai trò:
 1. chống gửi lặp (idempotency) — cửa sổ **60 s** *(TẠM, chưa chốt, xem mục 7
    câu #12 — dùng CHUNG một con số làm cả TTL kết quả xong lẫn hạn "bỏ hoang"
@@ -89,6 +93,10 @@ body: JPEG
 Handler đọc qua **một API duy nhất**: `frames.latest(device_id, max_age_ms)`.
 Handler **không được biết** frame tới từ đâu.
 
+Giá trị đang chạy: `FRAME_MAX_AGE_MS=6000`, `FRAME_WAIT_MS=800` — **PROVISIONAL**.
+Con số 800 ms cũ không thể làm freshness vì board chụp lúc bấm nút còn người
+dùng thường nói 2–4 giây. Phải thay bằng số đo board thật trước release.
+
 ### 2.3 `GET /events` — downlink SSE (T18/F6)
 
 ```
@@ -120,29 +128,31 @@ và thân phải khớp tuyệt đối.
 
 ## 3. Kính gửi gì cho lượt nào (T17/F4)
 
-| Chức năng | Audio | Ảnh | Tầng | Ghi chú |
-|---|---|---|---|---|
-| `chat` | ✅ | ❌ | — | |
-| `ocr` | ✅ | ✅ | **cao** | chữ nhỏ cần nét |
-| `ocr` follow-up | ✅ | ❌ | — | dùng `last_ocr` (T14/E3) |
-| `describe_space` | ✅ | ✅ | thấp | |
-| `describe_hazard` | ✅ | ✅ | thấp | theo lượt |
-| `find_object` | ✅ | ✅ | giữa | |
-| `read_money` | ✅ | ✅ | giữa | |
-| `contact_call` | ✅ | ❌ | — | |
-| `emergency_call` | ✅ | ❌ | — | 🔴 **không được chờ ảnh** |
-| `nav_start` / `nav_stop` | ✅ | ❌ | — | |
-| `ride_quote` / `ride_confirm` | ✅ | ❌ | — | |
-| `music_*` | ✅ | ❌ | — | |
-| `cancel` / `repeat` | ✅ | ❌ | — | không mạng ngoài, không LLM |
-| trả lời pending | ✅ | ❌ | — | **không chụp lại ảnh** |
+| Chức năng | Audio | Ảnh cần dùng | Tầng đích | Độ phân giải/quality hiện tại | Ghi chú |
+|---|---|---|---|---|---|
+| `chat` | ✅ | ❌ | — | — | không chờ frame |
+| `ocr` | ✅ | ✅ | **cao** | **1280×720 / q18** | chữ nhỏ cần nét; tầng cao riêng chờ T18 |
+| `ocr` follow-up | ✅ | ❌ | — | — | dùng `last_ocr` (T14/E3) |
+| `describe_space` | ✅ | ✅ | thấp | **1280×720 / q18** | fallback một tầng hiện tại |
+| `describe_hazard` | ✅ | ✅ | thấp | **1280×720 / q18** | theo lượt; fallback một tầng hiện tại |
+| `find_object` | ✅ | ✅ | giữa | **1280×720 / q18** | fallback một tầng hiện tại |
+| `read_money` | ✅ | ✅ | giữa | **1280×720 / q18** | fallback một tầng hiện tại |
+| `contact_call` | ✅ | ❌ | — | — | không chờ frame |
+| `emergency_call` | ✅ | ❌ | — | — | 🔴 **không được chờ ảnh** |
+| `nav_start` / `nav_stop` | ✅ | ❌ | — | — | không chờ frame |
+| `ride_quote` / `ride_confirm` | ✅ | ❌ | — | — | không chờ frame |
+| `music_*` | ✅ | ❌ | — | — | không chờ frame |
+| `cancel` / `repeat` | ✅ | ❌ | — | — | không mạng ngoài, không LLM, không chờ frame |
+| trả lời pending | ✅ | ❌ | — | — | **không chụp lại/không chờ ảnh** |
 
 **10/15 intent không đọc ảnh.**
 
-Cách gửi: **(a) song song cho tầng thấp, (b) hai pha cho tầng cao.**
-*(cần đo RTT tunnel để chốt — mục 6)*
-
-Số cụ thể của từng tầng: **chưa điền**, chờ T15/H0 quy về thang 0–63.
+Firmware T17 hiện dùng **(a) song song** và gửi frame 1280×720/q18 mỗi lượt;
+server chỉ chờ/đọc frame cho 5 intent ảnh, nên 10 intent không ảnh không bị
+chậm nhưng chưa tiết kiệm băng thông. **(b) hai pha cho tầng cao OCR** chờ T18
+downlink + số RTT thật. H0 chỉ đủ xác nhận cấu hình hiện tại và dải blur
+provisional 4–6; chưa có capture phần cứng để chốt độ phân giải/q/blur riêng
+cho từng tầng F5.
 
 ---
 

@@ -259,6 +259,13 @@ CHAT_ALWAYS_SEARCH = get("CHAT_ALWAYS_SEARCH", "1") != "0"
 # docs/tasks/reports/T01.md.
 REQUIRE_DEVICE_ID = get("REQUIRE_DEVICE_ID", "0") == "1"
 
+# T17/F3 — provisional until firmware RTT/capture-age measurements are recorded.
+# 800 ms from the old spec is impossible when capture happens at button-down and
+# speech commonly lasts 2–4 seconds, so keep a conservative 6-second freshness
+# window while waiting at most 800 ms for the rare frame-after-process race.
+FRAME_MAX_AGE_MS = float(get("FRAME_MAX_AGE_MS", "6000"))
+FRAME_WAIT_MS = float(get("FRAME_WAIT_MS", "800"))
+
 # Cửa sổ chống gửi lặp theo `X-Turn-Id`: hai `POST /process` cùng
 # (device_id, turn_id) trong cửa sổ này -> KHÔNG chạy lại pipeline (không gọi
 # STT/Gemini/handler lần hai), chỉ phát lại đúng audio đã tổng hợp lần đầu.
