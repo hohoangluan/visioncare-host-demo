@@ -23,7 +23,12 @@ from services.action_callbacks import action_callbacks
 from services import capabilities
 from services.frame_buffer import frames
 from services.events_channel import events
-from services.incoming_calls import announcement_for, incoming_calls, sanitize_caller
+from services.incoming_calls import (
+    announcement_for,
+    incoming_call_audio,
+    incoming_calls,
+    sanitize_caller,
+)
 
 logger = logging.getLogger("blind_assist")
 
@@ -292,6 +297,7 @@ ADPCM_FORMAT = (
 # Định dạng board nuốt được, xếp theo thứ tự board khuyến nghị. Dùng khi
 # `RESPONSE_FORMAT=auto` để chọn theo `Accept` của chính client gửi tới.
 _ADPCM_FORMATS = ("adpcm_wav", "adpcm_stream")
+INCOMING_CALL_AUDIO_PATH = "/incoming-call/audio"
 
 
 def _negotiate(accept: str) -> str:
@@ -575,7 +581,16 @@ async def receive_device_event(request: Request) -> dict:
         action_flow.bump_generation(device_id)
         interruption_ms = (time.monotonic() - started) * 1000
         incoming_calls.open(device_id, caller)
-        subscribers = events.call_incoming(device_id, caller)
+        subscribers = events.publish(
+            device_id,
+            {
+                "type": "call_incoming",
+                "caller": caller,
+                # Firmware receives one small SSE event, then pulls audio with
+                # X-Device-Id and its normal Accept capability declaration.
+                "audio_url": INCOMING_CALL_AUDIO_PATH,
+            },
+        )
         return {
             "status": "ok",
             "data": {
@@ -762,6 +777,74 @@ def _plan_for(response_format: str, idx: int) -> _Plan:
     return _Plan(
         None, float(tts.OUTPUT_SAMPLE_RATE * _BYTES_PER_SAMPLE),
         "application/octet-stream", b"", f"response{idx}.wav", _pcm_to_wav,
+    )
+
+
+def _render_incoming_call_pcm(announcement: str) -> bytes:
+    """Render one complete sentence so the caller-name prosody stays intact."""
+    return b"".join(tts.synthesize_text_stream([announcement]))
+
+
+def _incoming_call_audio_stream(caller: dict[str, object], plan: _Plan) -> Iterator[bytes]:
+    """Encode cached mono/16 kHz PCM according to the normal board plan.
+
+    For ADPCM WAV the 60-byte prelude is deliberately yielded before touching
+    the dynamic TTS cache.  The board can configure its decoder while a first-
+    time caller announcement is still being synthesized.
+    """
+    if plan.prelude:
+        yield plan.prelude
+
+    pcm = incoming_call_audio.get_or_create(caller, _render_incoming_call_pcm)
+    if pcm is None:
+        return
+    encoded: Iterator[bytes] = iter([pcm])
+    if plan.encode is not None:
+        encoded = plan.encode(encoded)
+    yield from encoded
+
+
+@app.get(INCOMING_CALL_AUDIO_PATH)
+def get_incoming_call_audio(request: Request):
+    """Return the current device's caller announcement using /process audio.
+
+    Contract for firmware: after a ``call_incoming`` SSE event, GET the event's
+    ``audio_url`` with the same ``X-Device-Id`` and ``Accept`` headers used by
+    the normal audio path.  A missing/expired call is 404; ``ring_only`` is 204.
+    """
+    device_id = request.headers.get("x-device-id", "").strip()
+    if not device_id:
+        raise HTTPException(status_code=400, detail="Missing X-Device-Id")
+    call = incoming_calls.current(device_id)
+    if call is None:
+        raise HTTPException(status_code=404, detail="No active incoming call")
+    if announcement_for(call.caller) is None:
+        return Response(status_code=204, headers={"Cache-Control": "no-store"})
+
+    response_format = config.RESPONSE_FORMAT
+    if response_format == "auto":
+        response_format = _negotiate(request.headers.get("accept", ""))
+    plan = _plan_for(response_format, 0)
+
+    # Debug/curl mode keeps the same complete PCM WAV behavior as /process.
+    if response_format == "wav":
+        pcm = incoming_call_audio.get_or_create(call.caller, _render_incoming_call_pcm)
+        if pcm is None:  # guarded above; protects against a future policy race
+            return Response(status_code=204, headers={"Cache-Control": "no-store"})
+        return Response(
+            content=_pcm_to_wav(pcm),
+            media_type="audio/wav",
+            headers={"Cache-Control": "no-store"},
+        )
+
+    headers = _stream_headers(response_format)
+    # This URL is intentionally stable; intermediaries must never replay a
+    # previous caller's bytes for a later call on the same device.
+    headers["Cache-Control"] = "no-store"
+    return StreamingResponse(
+        _incoming_call_audio_stream(call.caller, plan),
+        media_type=plan.media_type,
+        headers=headers,
     )
 
 

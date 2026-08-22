@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 import re
 import threading
 import time
-from collections.abc import Mapping
 
 import config
 
@@ -26,6 +27,15 @@ _DIGIT_WORDS = {
     "9": "chín",
 }
 _CALLER_KEYS = frozenset({"contact_id", "name", "number_tail", "duplicate_name"})
+
+# Keep the reusable text explicit, but do not synthesize and concatenate these
+# fragments independently.  The current TTS cache is sentence-granular and
+# joining separately spoken fragments changes the pause and intonation around
+# the caller name.  ``IncomingCallAudioCache`` therefore caches the complete,
+# naturally spoken announcement after its first use.
+_KNOWN_CALL_PREFIX = "Có cuộc gọi từ "
+_KNOWN_CALL_SUFFIX = " đang gọi."
+INCOMING_CALL_STATIC_PARTS = (_KNOWN_CALL_PREFIX, _KNOWN_CALL_SUFFIX)
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,6 +101,55 @@ class IncomingCallRegistry:
             self._calls.clear()
 
 
+class IncomingCallAudioCache:
+    """Bounded PCM cache keyed by caller identity and the safe spoken phrase.
+
+    Including both fields is intentional: ``contact_id`` prevents two caller
+    records from sharing an entry, while the complete announcement separates
+    privacy policies and later name/tail changes for the same contact.
+    """
+
+    def __init__(self, *, max_entries: int = 128) -> None:
+        if max_entries <= 0:
+            raise ValueError("max_entries must be positive")
+        self._max_entries = max_entries
+        self._lock = threading.Lock()
+        self._pcm: OrderedDict[tuple[str, str], bytes] = OrderedDict()
+
+    def get_or_create(
+        self,
+        caller: Mapping[str, object],
+        render: Callable[[str], bytes],
+    ) -> bytes | None:
+        announcement = announcement_for(caller)
+        if announcement is None:
+            return None
+        key = (str(caller.get("contact_id") or ""), announcement)
+
+        # VieNeu uses one shared inference session and the normal TTS pipeline
+        # already serializes its work.  Keeping the lock through this rare,
+        # short announcement also prevents simultaneous pulls from rendering
+        # the same contact twice before either can populate the cache.
+        with self._lock:
+            cached = self._pcm.get(key)
+            if cached is not None:
+                self._pcm.move_to_end(key)
+                return cached
+
+            pcm = render(announcement)
+            if not pcm:
+                raise ValueError("incoming-call TTS returned no audio")
+            self._pcm[key] = pcm
+            self._pcm.move_to_end(key)
+            while len(self._pcm) > self._max_entries:
+                self._pcm.popitem(last=False)
+            return pcm
+
+    def clear(self) -> None:
+        with self._lock:
+            self._pcm.clear()
+
+
 def sanitize_caller(raw: Mapping[str, object]) -> dict[str, object]:
     """Return only caller fields safe to leave the phone.
 
@@ -148,8 +207,8 @@ def announcement_for(caller: Mapping[str, object]) -> str | None:
 
     if name:
         if caller.get("duplicate_name") and spoken_tail:
-            return f"Có cuộc gọi từ {name}, đuôi {spoken_tail}, đang gọi."
-        return f"Có cuộc gọi từ {name} đang gọi."
+            return f"{_KNOWN_CALL_PREFIX}{name}, đuôi {spoken_tail}, đang gọi."
+        return f"{_KNOWN_CALL_PREFIX}{name}{_KNOWN_CALL_SUFFIX}"
     if spoken_tail:
         label = "Số gọi đến" if caller.get("contact_id") else "Số lạ"
         return f"{label}, đuôi {spoken_tail}."
@@ -157,3 +216,4 @@ def announcement_for(caller: Mapping[str, object]) -> str | None:
 
 
 incoming_calls = IncomingCallRegistry(window_seconds=config.INCOMING_CALL_WINDOW_SECONDS)
+incoming_call_audio = IncomingCallAudioCache()
