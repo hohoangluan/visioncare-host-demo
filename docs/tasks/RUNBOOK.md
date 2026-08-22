@@ -155,7 +155,7 @@ task khác.**
 | 7 | **T18** Downlink SSE | 🟠 server xanh; firmware/đo RAM sau T22 chờ COM8 |
 | 8 | **T19** Cuộc gọi đến | cả 4 repo, từ số không |
 
-- [x] T17 *(PARTIAL: code/build xanh; chờ board + F5)* · [x] T18 *(PARTIAL: server xanh; chờ board)* · [ ] T19
+- [x] T17 *(PARTIAL: code/build xanh; chờ board + F5)* · [x] T18 *(PARTIAL: server xanh; chờ board)* · [x] T19 *(PARTIAL: 3 tầng xanh; firmware/audio chủ động chờ T18 + COM8)*
 
 ### Đợt 7 — chốt số
 
@@ -307,7 +307,7 @@ C2/P9 đã xong một phần, số dòng của `ride.py`/`music.py`/`navigation.
 ### Đợt 6 — đường truyền
 - [x] T17 Tách `/frame` *(PARTIAL: chờ board + số phân tầng F5)*
 - [x] T18 Downlink SSE *(PARTIAL: server xanh; firmware/đo RAM chờ COM8)*
-- [ ] T19 Cuộc gọi đến
+- [x] T19 Cuộc gọi đến *(PARTIAL: server/host/Android + AVD xanh; firmware chờ board)*
 
 ### Đợt 7
 - [ ] T21 Ngân sách độ trễ

@@ -103,7 +103,7 @@ dùng thường nói 2–4 giây. Phải thay bằng số đo board thật trư�
 X-Device-Id   BẮT BUỘC
 → text/event-stream, board mở và giữ
 heartbeat mỗi 15 giây (PROVISIONAL, chờ đo tunnel 10 phút)
-event types: frame_request | call_incoming | ping
+event types: frame_request | call_incoming | call_ended | ping
 ```
 
 **Một kênh, hai mục đích.** Không đẻ ra kênh thứ hai.
@@ -281,17 +281,37 @@ provider tương lai.
 // App → Server app  (MỚI, TÁCH khỏi luồng request_id)
 POST /api/v1/device/event
 { "device_id", "type": "call_incoming",
-  "caller": { "contact_id", "name", "number_tail" } }
+  "caller": { "contact_id", "name", "number_tail", "duplicate_name" } }
+
+POST /api/v1/device/event
+{ "device_id", "type": "call_ended" }
 
 // Server app → Server kính  (MỚI, KHÔNG qua /internal/action-results)
 POST /internal/device-events
+
+// Server kính → firmware, trên đúng kênh SSE mục 2.3
+{ "type": "call_incoming", "caller": { ... } }
+{ "type": "call_ended" }
 
 // Preferences (host) — MỞ RỘNG
 { "announce_caller": "name" | "number_only" | "ring_only" }   // mặc định "name"
 ```
 
-⚠️ `services/action_callbacks.py` hiện **từ chối** callback không có `request_id`
-đã đăng ký → event tự phát **cần đường riêng**.
+Số đầy đủ chỉ được dùng cục bộ trên Android để tra `PhoneLookup`; không có trong
+schema, request mạng hoặc log. `number_tail` đúng 3–4 chữ số. `duplicate_name`
+chỉ báo server đọc thêm đuôi khi có nhiều liên hệ trùng tên.
+
+Điều khiển bằng giọng trong cửa sổ chuông 15 giây dùng pipeline operation bình
+thường của host:
+
+```text
+POST /api/v1/service/call/answer  → action call_answer
+POST /api/v1/service/call/reject  → action call_reject
+```
+
+Event tự phát không có `request_id` và **không** đi qua
+`services/action_callbacks.py`; hai operation answer/reject vẫn có `request_id`
+như mọi action bình thường.
 
 ### 5.4 `capabilities_get` (T23)
 

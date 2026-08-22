@@ -1,6 +1,6 @@
 # HANDOFF — để Codex (hoặc bất kỳ agent nào khác) tiếp tục chương trình 23-task
 
-Viết ngày 2026-08-22; Codex cập nhật sau T17 cùng ngày. Claude Code ban đầu dùng
+Viết ngày 2026-08-22; Codex cập nhật sau checkpoint T19 cùng ngày. Claude Code ban đầu dùng
 `superpowers:subagent-driven-development`; người dùng sau đó chốt **không cần
 Superpowers**, ưu tiên hoàn tất chức năng chạy đúng và batch test để tiết kiệm thời
 gian. Tài liệu này là checkpoint sống qua compaction.
@@ -42,7 +42,8 @@ Firmware đang trên branch `net-stream-adpcm` sẵn có (không phải branch t
 Xem bảng đầy đủ ở `docs/tasks/PROGRESS.md` (đã commit). Đợt 0-3 xong hoàn toàn;
 Codex đã làm tiếp T08-T23 theo các task đã ghi ở bảng dưới. Hiện **21/23 task có
 code xong hoặc PARTIAL đúng dự kiến**. Android AVD `test_pixel` đã build/test/cài
-và khởi động app thành công; T18 server đã checkpoint, tiếp theo **T19**.
+và khởi động app thành công; T19 đã checkpoint PARTIAL, tiếp theo **T21** và
+quay lại firmware T18/T19 khi COM8 xuất hiện.
 Tóm tắt:
 
 | Đợt | Task | Trạng thái | Commit |
@@ -71,9 +72,13 @@ Tóm tắt:
 | 5 | T23 Quyền & cấu hình | 🟠 code/AVD xong; chờ điện thoại thật | `2520017` |
 | 6 | T17 Tách `/frame` | 🟠 F3/F4 code/build xanh; chờ board + F5 | server `50b53e8`, firmware `61f81e7` |
 | 6 | T18 Downlink SSE | 🟠 server 10 test xanh; firmware/đo RAM chờ COM8 | `84dcd40` |
-| 6-7 | T19/T21 còn lại | ⬜ **BẮT ĐẦU TỪ T19** |
+| 6 | T19 Cuộc gọi đến | 🟠 server/host/Android + AVD xanh; firmware chờ COM8 | code checkpoint hiện tại |
+| 7 | T21 ngân sách độ trễ | ⬜ **BẮT ĐẦU TỪ T21** | |
 
-**HEAD code chức năng hiện tại của branch `feat/hoi-thoai-23-task`: `84dcd40`.**
+**HEAD code chức năng hiện tại của branch `feat/hoi-thoai-23-task`: `4797112`
+(T19 server kính).** Phần host/Android T19 nằm trong working tree repo
+`app_demo_backend` rất bẩn có sẵn, chưa commit rộng để tránh gom nhầm thay đổi
+của người dùng.
 T17: **19 DoD + 114 regression pass**; firmware compile
 **1 295 623 B (41%) / RAM tĩnh 77 520 B (23%)**.
 Regression T14/T16: **94 pass**. T12 có **16 DoD + 35 services + 109 regression
@@ -345,8 +350,16 @@ firmware hai socket, 19 test/114 regression/build xanh; 🔴 F2 không thi công
 Chưa nạp board, chưa chốt F5/RTT/max-age. Tiếp theo theo thứ tự:
 T18 server đã xong 10 test + 133 regression; firmware bị chặn đúng luật vì
 `arduino-cli board list` trả `No boards found`, chưa được phép viết trước số RAM
-TLS baseline. T19 có thể xây tiếp server/app trên chính EventHub này; firmware
-T18/T19 quay lại khi COM8 xuất hiện.
+TLS baseline. T19 đã xây xong phần server kính, host và Android trên chính
+EventHub này: event tự phát không có `request_id`, policy riêng tư đủ 3 mức,
+answer/reject dùng operation bình thường, `TelephonyCallback` + `PhoneLookup`
+đã chạy thật trên AVD. Firmware T18/T19 quay lại khi COM8 xuất hiện; hiện chưa
+có đường SSE → kéo/phát audio chủ động nên T19 giữ PARTIAL.
+
+AVD `emulator-5554` đã mô phỏng `gsm call 5559876`: số chưa lưu cho
+`contact=false`; sau khi thêm liên hệ thử cùng số, log cho `contact=true` và
+`tailDigits=4`. Không log tên/số đầy đủ. Event dừng đúng ở bước gửi vì AVD chưa
+có bộ đăng ký `base_url/device_id/bearer_token`; đây không phải lỗi tra danh bạ.
 
 **Đợt 7:** T21 (ngân sách độ trễ — 🔴 PHẢI SAU T02+T22, và phải đo TRÊN BẢN TLS=1
 thật, nghĩa là làm số đo phần cứng T22 CÒN TREO ở đây trước).
