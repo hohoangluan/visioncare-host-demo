@@ -11,7 +11,9 @@ models/*
 !models/ocr/
 !models/vlm/
 storage/
-docs/
+docs/*
+!docs/tasks/
+!docs/superpowers/
 logs/
 # Ảnh thật (chứa mặt người) dùng cho test_bang_am_thanh.py — không commit.
 tests/fixtures/*

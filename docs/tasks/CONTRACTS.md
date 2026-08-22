@@ -1,0 +1,316 @@
+# CONTRACTS — hợp đồng liên repo & quyết định đã chốt
+
+Ngày lập: 2026-08-22 · Nguồn: `SPEC_CAI_THIEN_HOI_THOAI.md`
+
+**Đây là nguồn sự thật cho mọi task.** Task file mô tả *việc phải làm*; file này
+mô tả *thứ hai bên phải đồng ý với nhau*. Đổi bất cứ thứ gì ở đây thì phải sửa
+task file tương ứng **trước khi** code.
+
+---
+
+## 0. Ba nguyên tắc xuyên suốt
+
+1. **Trạng thái là gợi ý cho bộ phân loại, không phải hàng rào ở router.**
+   Người dùng phải nói được bất cứ gì, bất cứ lúc nào. → T04
+2. **Cache thứ đứng yên (chữ trên giấy), không bao giờ cache thứ di chuyển
+   (không gian, vật cản).** → T14 (cache) vs T16 (không cache)
+3. 🔴 **`emergency_call` không đi qua bất kỳ bước xác minh nào.** Ngoại lệ tuyệt
+   đối, phải viết **tường minh trong code** chứ không để rơi vào mặc định.
+   → T06/D5, T09
+
+---
+
+## 1. Quyết định đã chốt
+
+| # | Quyết định | Nguồn |
+|---|---|---|
+| 1 | **TTL pending mặc định 120 s** (tầng `fill`) | spec mục 17.3 — người dùng đã chốt "lên 120s đi" |
+| 2 | **`readback` cho `contact_name` = `low_conf`** (không phải `always`) | spec mục 17.4 |
+| 3 | **P1 (`contact_list`) làm trước P2 (`contact_id` trong candidates)** | spec 26.q1 — làm được P1 thì P2 thành thừa |
+| 4 | **F2 (đảo thứ tự part multipart) BỊ HUỶ** | 27.1 — thi công sẽ làm chậm đi |
+| 5 | **G8: không thêm earcon phía server** | 27.7 — board đã có `cueSent()` ở 0 ms |
+| 6 | **Camera thật = 1280×720, quality 18** (thang esp32-camera 0–63, **nhỏ = nét**) | 27.5 / H0 |
+| 7 | **HTTPS bắt buộc trước khi phát hành**; mọi số đo độ trễ chỉ có giá trị khi `API_USE_TLS 1` | 27.3 / F9 F10 |
+| 8 | **Số điện thoại đầy đủ không rời khỏi điện thoại** — chỉ 3–4 chữ số cuối, và chỉ khi cần phân biệt | D7, 26.2, 21.8 |
+| 9 | **Một pending / device. Không stack, không lồng.** | 21.4 |
+
+---
+
+## 2. Giao thức kính ↔ server kính
+
+### 2.1 `POST /process` — headers (T01/F1)
+
+```
+X-Device-Id   BẮT BUỘC   string, ổn định theo board
+X-Turn-Id     BẮT BUỘC   uuid v4, MỚI mỗi lần bấm nút
+X-Capture-Ts  nên có     epoch ms lúc chụp
+```
+
+Header **chứ không phải form field**: server đọc được trước khi body upload xong.
+
+`X-Turn-Id` có **hai** vai trò:
+1. chống gửi lặp (idempotency) — cửa sổ **60 s** *(chưa chốt, xem mục 6)*
+2. ngắt lượt cũ (barge-in) — T04/G4
+
+Thiếu `X-Device-Id` → **từ chối rõ ràng**, KHÔNG im lặng rơi về
+`config.VISIONCARE_DEVICE_ID`.
+
+### 2.2 `POST /frame` — ảnh, fire-and-forget (T17/F3)
+
+```
+X-Device-Id   BẮT BUỘC
+X-Turn-Id     BẮT BUỘC   (ghép với lượt audio tương ứng)
+X-Capture-Ts  nên có
+body: JPEG
+→ 204, KHÔNG trả gì cho board đợi
+```
+
+Handler đọc qua **một API duy nhất**: `frames.latest(device_id, max_age_ms)`.
+Handler **không được biết** frame tới từ đâu.
+
+### 2.3 `GET /events` — downlink SSE (T18/F6)
+
+```
+X-Device-Id   BẮT BUỘC
+→ text/event-stream, board mở và giữ
+heartbeat mỗi N giây
+event types: frame_request | call_incoming | ping
+```
+
+**Một kênh, hai mục đích.** Không đẻ ra kênh thứ hai.
+
+### 2.4 Đầu ra audio cho board — ràng buộc CỨNG (T02/F8)
+
+```
+mono BẮT BUỘC              — ADPCM stereo board từ chối thẳng
+16 000 Hz BẮT BUỘC         — khác đi thì mỗi lượt board đổi sample rate I2S 2 lần
+prelude 60 byte ra TRƯỚC   — board đọc header WAV trên luồng (app.py:286, :310)
+chưa biết độ dài           → ghi size 0 hoặc 0xFFFFFFFF
+keep-alive                 → thân trả về phải được đọc HẾT
+```
+
+🔴 Board tin **4 byte đầu của thân**, không tin header HTTP. Đi nhầm nhánh
+ADPCM/PCM → SNR **−11 dB** ("loa rè"), **không có log nào báo**. `x-audio-format`
+và thân phải khớp tuyệt đối.
+
+`RESPONSE_FORMAT == "wav"` (`app.py:467`) gom trọn body → **không dùng cho board**.
+
+---
+
+## 3. Kính gửi gì cho lượt nào (T17/F4)
+
+| Chức năng | Audio | Ảnh | Tầng | Ghi chú |
+|---|---|---|---|---|
+| `chat` | ✅ | ❌ | — | |
+| `ocr` | ✅ | ✅ | **cao** | chữ nhỏ cần nét |
+| `ocr` follow-up | ✅ | ❌ | — | dùng `last_ocr` (T14/E3) |
+| `describe_space` | ✅ | ✅ | thấp | |
+| `describe_hazard` | ✅ | ✅ | thấp | theo lượt |
+| `find_object` | ✅ | ✅ | giữa | |
+| `read_money` | ✅ | ✅ | giữa | |
+| `contact_call` | ✅ | ❌ | — | |
+| `emergency_call` | ✅ | ❌ | — | 🔴 **không được chờ ảnh** |
+| `nav_start` / `nav_stop` | ✅ | ❌ | — | |
+| `ride_quote` / `ride_confirm` | ✅ | ❌ | — | |
+| `music_*` | ✅ | ❌ | — | |
+| `cancel` / `repeat` | ✅ | ❌ | — | không mạng ngoài, không LLM |
+| trả lời pending | ✅ | ❌ | — | **không chụp lại ảnh** |
+
+**10/15 intent không đọc ảnh.**
+
+Cách gửi: **(a) song song cho tầng thấp, (b) hai pha cho tầng cao.**
+*(cần đo RTT tunnel để chốt — mục 6)*
+
+Số cụ thể của từng tầng: **chưa điền**, chờ T15/H0 quy về thang 0–63.
+
+---
+
+## 4. Session & pending
+
+### 4.1 TTL theo `kind` (T03/21.3)
+
+| `kind` | TTL | Vì sao |
+|---|---|---|
+| `confirm` | **25 s** | để lâu nguy hiểm: người dùng quên ngữ cảnh rồi "ừ" cho việc khác |
+| `select` | **45 s** | |
+| `select` bảng giá xe | **45 s** | giá có surge; quá hạn phải gọi lại, **cấm** đọc lại giá cũ |
+| `fill` | **120 s** | quyết định #1 |
+
+**`asked_at` tính từ lúc TTS phát xong**, không phải lúc server tạo pending.
+
+### 4.2 Bảng SLOTS (T06/D1)
+
+| Slot | `ask` | `readback` | `risk` | `kind` |
+|---|---|---|---|---|
+| `contact_name` | Bạn muốn gọi cho ai? | `low_conf` | high | fill |
+| `destination` | Bạn muốn đi đâu? | `low_conf` | high | fill |
+| `ride_destination` | Bạn muốn đi đâu? | `always` | high | fill |
+| `song_title` | Bạn muốn nghe bài hát nào? | `never` | low | fill |
+| `artist` | Bạn muốn nghe của ca sĩ nào? | `never` | low | fill |
+| `volume_direction` | Bạn muốn tăng hay giảm âm lượng? | `never` | low | fill |
+
+🔴 **`emergency_number` KHÔNG có mặt. Cố ý.** Có assert trong code.
+
+### 4.3 Thứ tự ưu tiên router (T04/21.1)
+
+```
+1. EMERGENCY                 ← tuyệt đối
+2. PENDING TẤT ĐỊNH          ← ừ/không/số thứ tự/thôi/nói lại
+3. STOP / LỆNH TOÀN CỤC      ← chèn vào ĐÂY
+4. PENDING ĐIỀN SLOT         ← qua slot validator
+5. CANCEL / REPEAT
+6. INTENT DETECT
+```
+
+**Đây là thứ dễ bị viết lại sai nhất trong cả spec.** Bước 3 nằm **giữa** hai
+pha pending, không phải trên hay dưới cả hai.
+
+---
+
+## 5. Hợp đồng với server app (8001) & app Android
+
+### 5.1 `contact_call` (T08)
+
+```jsonc
+// HIỆN CÓ — endpoint.md:248-270
+{ "device_id", "request_id", "name",
+  "contact_id": "tuỳ chọn — bỏ qua tìm mờ" }
+
+// MỚI (P1): action contact_list
+{ "contacts": [
+    { "contact_id": "...", "name": "...", "phone_tail": "456" } ] }
+
+// ĐỔI (P2): candidates[] thêm contact_id
+{ "details": { "candidates": [
+    { "name": "Mẹ", "phone_number": "***456", "contact_id": "..." } ] } }
+```
+
+⚠️ App hiện **so khớp tên bằng nhau tuyệt đối** (`ActionRegistry.kt:110`) — không
+có tìm mờ nào. Fuzzy phải nằm ở server kính (T08/D7).
+
+### 5.2 `ride/quote` + `ride/confirm` (T11) — ⛔ chờ Farefeed
+
+```jsonc
+// ride/quote trả thêm:
+{ "services": [
+    { "provider": "grab", "service_id": 1, "service_name": "GrabBike",
+      "min_fare": 32000, "max_fare": 38000, "currency": "VND",
+      "eta_minutes": 3, "surge": "NONE",
+      "deep_link": "...", "direct_deep_link": "..." } ] }
+
+// ride/confirm KHÔNG đặt xe nữa — nhận service_id, trả deeplink
+```
+
+`RIDE_ACCOUNT_NOT_CONNECTED` **không dùng** cho đường Grab/Farefeed; giữ cho
+provider tương lai.
+
+🔴 **Geocode `address → lat/lng`: hiện KHÔNG AI LÀM.** Đề xuất server app 8001.
+**Chưa chốt — chặn cả R lẫn P4/P5.**
+
+### 5.3 Event tự phát — cuộc gọi đến (T19)
+
+```jsonc
+// App → Server app  (MỚI, TÁCH khỏi luồng request_id)
+POST /api/v1/device/event
+{ "device_id", "type": "call_incoming",
+  "caller": { "contact_id", "name", "number_tail" } }
+
+// Server app → Server kính  (MỚI, KHÔNG qua /internal/action-results)
+POST /internal/device-events
+
+// Preferences (host) — MỞ RỘNG
+{ "announce_caller": "name" | "number_only" | "ring_only" }   // mặc định "name"
+```
+
+⚠️ `services/action_callbacks.py` hiện **từ chối** callback không có `request_id`
+đã đăng ký → event tự phát **cần đường riêng**.
+
+### 5.4 `capabilities_get` (T23)
+
+Enum **đóng**, không phải dict tự do:
+
+```
+notification_listener · system_alert_window · battery_optimization_off
+background_location (never|while_using|always) · fine_location
+read_contacts · read_phone_state · call_phone · send_sms
+emergency_contact_set
+```
+
+### 5.5 Mã lỗi — 🔴 **chưa chốt, xem T20**
+
+Kết quả của T20 sẽ điền vào đây:
+- mã nào app **thật sự** phát
+- mã nào server kính có câu
+- retryable / terminal
+- fallback mặc định
+
+Hiện có **9 mã mồ côi** (server có câu, app không phát) và **7 mã không câu**
+(app phát, server không có). Chi tiết ở T20.
+
+---
+
+## 6. Ngân sách độ trễ (T21/G1)
+
+⚠️ **Mọi số dưới đây phải đo lại trên bản `API_USE_TLS 1`** (quyết định #7).
+
+| Đường | Mục tiêu |
+|---|---|
+| `emergency_call` ack | **< 300 ms** |
+| `cancel` / `repeat` / stop | **< 300 ms** |
+| trả lời pending tất định | **< 400 ms** |
+| `contact_call` ack | **< 600 ms** |
+| `hazard` | < 800 ms |
+| `chat` | < 1.0 s |
+| `ocr` / `space` / `find` / `money` | < 1.2 s · 🔴 `ocr` **chưa chốt riêng** |
+
+**Dòng thứ hai, đo khác hẳn (T02/G11):**
+
+```
+tỉ lệ (giây tiếng)/(giây đồng hồ) ≥ 1.30×
+```
+
+TTFB đạt mà tỉ lệ này không đạt thì người dùng **vẫn không nghe gì** cho tới khi
+sinh xong cả câu.
+
+**Mọi lời gọi ngoài có deadline.** Quá deadline → câu dựng sẵn, không treo im lặng.
+
+---
+
+## 7. Câu hỏi CHƯA CHỐT — chặn task nào
+
+| # | Câu hỏi | Chặn |
+|---|---|---|
+| 1 | 🔴 **Quyền partner Farefeed** — đã liên hệ Grab chưa? | T11 (R1 R2 R3 R5) |
+| 2 | 🔴 **Ai geocode `address → lat/lng`?** | T11 · P4 P5 |
+| 3 | 🔴 **Ngân sách `ocr` là bao nhiêu?** | T15 nghiệm thu · T21 |
+| 4 | 🔴 **Miếng kết thúc chunked có tới board không?** | T21 — **đo trước, 1 lệnh curl** |
+| 5 | 🔴 **Bật TLS rồi p95 bao nhiêu?** | T21 · T18 |
+| 6 | 🔴 **RAM đủ cho socket SSE thứ hai không?** (đo **sau** khi bật TLS) | T18 · T19 |
+| 7 | **App có kiểm được địa điểm** (để `INVALID_DESTINATION` có nguồn)? | T20 · T10/D4 |
+| 8 | **P1 (`contact_list`) có làm được không?** | T08 chạy đủ hay nửa vời |
+| 9 | **Cache vị trí toàn cục hay theo device?** | T03 · T07 |
+| 10 | **`max_age_ms` cho frame là bao nhiêu?** (800 ms gần như chắc chắn sai) | T17 |
+| 11 | **RTT thật qua Cloudflare tunnel?** (> 400 ms thì phương án (b) mất giá) | T17/F4 |
+| 12 | **Cửa sổ idempotency 60 s?** | T01 |
+| 13 | **Ngưỡng so khớp danh bạ 88/70/margin 8** — cần danh bạ thật để đo lại | T08 |
+
+---
+
+## 8. Bảng đo phải có trong repo
+
+Nguyên tắc của repo: **có bảng số thì mới được chốt**
+(giống `config.py:104-121` và ngưỡng blur).
+
+| File | Nội dung | Task |
+|---|---|---|
+| `measurements/G10.md` | miếng kết thúc chunked, localhost vs tunnel | T02 |
+| `measurements/G11.md` | tỉ lệ nhả TTS | T02 |
+| `measurements/A2.md` | bảng ca STT sai → slot trích được | T05 |
+| `measurements/H0-blur-720p.md` | ngưỡng Laplacian trên 1280×720 | T15 |
+| `measurements/H4.md` | ma trận 3 model × 3 biến thể OCR | T15 |
+| `measurements/P7-error-matrix.md` | đối chiếu mã lỗi hai chiều | T20 |
+| `measurements/F9.md` | p50/p95 có TLS, lượt nóng và nguội | T22 |
+| `measurements/F6-ram.md` | RAM với 2 socket + TLS | T18 |
+| `measurements/G1.md` | ngân sách đo trên bản TLS | T21 |
+| `measurements/G7.md` | prefix cache có ăn theo tiền tố không | T13 |
+| `measurements/D7-thresholds.md` | ngưỡng danh bạ trên danh bạ thật | T08 |

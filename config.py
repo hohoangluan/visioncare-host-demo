@@ -239,3 +239,13 @@ CHAT_LOCATION_TTL_SECONDS = float(get("CHAT_LOCATION_TTL_SECONDS", "600.0"))
 CHAT_ALWAYS_SEARCH = get("CHAT_ALWAYS_SEARCH", "1") != "0"
 
 
+
+
+# ─── Vùng cấu hình theo task (docs/tasks/) ────────────────────────────────
+# Mỗi task chỉ thay marker của chính nó. Marker là mỏ neo Edit duy nhất, để
+# nhiều agent chạy song song không cùng tranh dòng cuối file.
+
+# === T01 ===
+# === T03 ===
+# === T07 ===
+# === T15 ===
