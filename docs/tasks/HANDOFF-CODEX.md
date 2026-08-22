@@ -156,6 +156,51 @@ quan code):
   nghiêm ngặt emergency). Giữ nguyên xfail, chờ T09/21.5b (cửa sổ abort) trước
   khi cân nhắc lại.
 
+### 2e. Checkpoint 2026-08-23 — tiếp tục sau T19, trước khi vào T21
+
+Tiếp nhận từ trạng thái `b473791` (HEAD lúc đó). Working tree có sẵn 4 file
+sửa dở chưa commit (app.py, services/incoming_calls.py, tests/test_incoming_call.py,
+start-demo.ps1) — đây LÀ phần audio-pull còn thiếu của T19 (mục 6 nói "chưa có
+đường SSE → kéo/phát audio chủ động"), 33/33 test file đó xanh khi verify. Đã
+commit tách theo Ruling 10 (mỗi việc một commit):
+
+- `72afc12` fix(image-quality): T19 (`4797112`) thêm `Intent.CALL_ANSWER`/
+  `CALL_REJECT` nhưng quên khai vào `_NO_IMAGE_INTENTS` trong
+  `tests/test_image_quality.py` → `test_every_intent_is_classified` đỏ. Hành
+  vi runtime không sai (cổng `image_quality` chỉ chặn intent trong
+  `_READS_IMAGE`), chỉ là guard classification thiếu.
+- `7758a65` feat(incoming-call): `GET /incoming-call/audio` — SSE
+  `call_incoming` nay mang `audio_url`; kính GET lại với cùng
+  `X-Device-Id`/`Accept` như `/process`, nhận đúng format board thương lượng.
+  Cache PCM khoá theo `(contact_id, câu thông báo)`, giữ lock qua lúc synth để
+  không render trùng khi có pull đồng thời. Việc CÒN LẠI: phía firmware kính
+  (repo `your-eyes-esp32-firmware`) phải GỌI `audio_url` này — chưa có, chờ
+  COM8. T19 vẫn PARTIAL.
+- `08ffbfb` chore(demo): `start-demo.ps1` — `docker compose up --wait` thay
+  poll TCP port (port publish sớm hơn Postgres sẵn sàng, gây 500 lần đầu), và
+  thêm `-Stop`. Không liên quan pipeline chính, nhưng đụng cùng nhánh.
+
+**Môi trường bị hỏng, đã tự vá:** `models/stt/` rỗng trên máy này (chỉ có
+`.gitkeep`, thư mục gitignore) khiến 10 test `test_bang_am_thanh.py` lỗi
+`RuntimeError: Load model ... failed` thay vì pass/flaky như baseline Task 0.
+Tải lại đúng lệnh ở README.md (`sherpa-onnx-zipformer-vi-30M-int8-2026-02-09`).
+Sau khi vá: full suite `pytest tests -q -m "not llm"` = **709 pass, 4 fail (tất
+cả trong `test_bang_am_thanh.py`, đều pass khi chạy riêng lẻ — flaky quota
+Gemini đã biết ở mục 2c), 1 skip, 17 xfail**. Nếu gặp lại lỗi model-not-found
+trên máy khác, đây KHÔNG phải regression code, chạy lại lệnh download.
+
+**Ba file KHÔNG đụng, KHÔNG thuộc phạm vi 23-task, để nguyên chờ người dùng
+quyết định** (untracked, không phải của Codex/HANDOFF):
+`CLAUDE.md` (doc topology 3-repo), `SPEC_CAI_THIEN_HOI_THOAI.md` (spec cải
+thiện hội thoại 2216 dòng, chủ đề khác), `.artifacts/*.png` (ảnh chụp AVD cũ
+từ phiên trước, có thể là rác của lệnh `run`).
+
+**Việc tiếp theo đúng thứ tự mục 6:** vẫn kẹt ở phần cứng — T22 F9.md (đo TLS
+RAM trên board thật) phải xong trước T21; T18/T19 firmware cũng chờ COM8.
+Board ESP32-S3 vật lý có sẵn (mục 5) — bước kế tiếp cần nạp/đo qua COM8, đây
+là việc CHẠM firmware repo khác + phần cứng thật, nên hỏi người dùng trước khi
+tự ý nạp board.
+
 Ngoài hai cái trên: phần lớn "Chưa làm" của các report đã tự hết hạn (T13 gộp
 lịch sử chat+action giải quyết nợ T03/T04 nêu; T12 dọn `_ASK_SONG`/`_ASK_VOLUME`
 giải quyết nợ T06 phần music) hoặc bị chặn thật (app Android, phần cứng, quyết

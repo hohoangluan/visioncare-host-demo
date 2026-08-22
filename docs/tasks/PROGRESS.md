@@ -58,7 +58,7 @@ FAILED tests/test_bang_am_thanh.py::test_chat_follow_up_question_uses_previous_t
 | T23 | 5 | 🟠 | Codex | reports/T23.md | code 3 lớp xong; 9 DoD/90 regression/Android build+AVD xanh; chờ nạp & manual trên điện thoại thật |
 | T17 | 6 | 🟠 | Codex | reports/T17.md | F3/F4 server+firmware code xanh; 19 DoD/114 regression/build xanh; chờ nạp board + F5 số tầng thật |
 | T18 | 6 | 🟠 | Codex | reports/T18.md | server SSE 10 DoD/133 regression xanh; firmware/đo RAM bị chặn vì COM8 vắng |
-| T19 | 6 | 🟠 | Codex | reports/T19.md | server/host/Android code xanh; AVD TelephonyCallback + PhoneLookup xác nhận; firmware phát audio chủ động chờ T18/COM8 |
+| T19 | 6 | 🟠 | Codex | reports/T19.md | server/host/Android code xanh; AVD TelephonyCallback + PhoneLookup xác nhận; SSE nay mang `audio_url`, server có `GET /incoming-call/audio` phát PCM cache theo contact (commit `7758a65`); firmware phía kính (pull audio_url) vẫn chờ COM8 |
 | T21 | 7 | ⬜ | | | |
 
 Ký hiệu: ⬜ chưa · 🟡 đang chạy · ✅ DONE · 🟠 PARTIAL · ⛔ BLOCKED
