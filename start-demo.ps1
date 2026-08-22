@@ -9,11 +9,13 @@
     .\start-demo.ps1
     .\start-demo.ps1 -SkipGlasses     # backend only, when testing the local API
     .\start-demo.ps1 -SkipPhone       # when the handset is not on USB
+    .\start-demo.ps1 -Stop            # tear the whole stack back down
 #>
 [CmdletBinding()]
 param(
     [switch] $SkipGlasses,
-    [switch] $SkipPhone
+    [switch] $SkipPhone,
+    [switch] $Stop
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,6 +26,37 @@ $AppServerUrl = 'http://127.0.0.1:8001'
 $LogDir      = Join-Path $GlassesRoot 'logs'
 $Adb         = 'D:\tmp\app-demo-android-toolchain\android-sdk\platform-tools\adb.exe'
 $AppPackage  = 'com.youreyes.app'
+$ComposeFile = Join-Path $BackendRoot 'infra\compose.yaml'
+
+# The running container was created with this password, and `docker compose up`
+# recreates the container whenever the resolved environment differs from what it
+# was created with. infra/compose.yaml has no .env next to it, so without this
+# the default (app_demo_dev_only) would churn the container on every start.
+# Postgres only reads POSTGRES_PASSWORD at initdb time, so the value that
+# matters is the one already inside the volume: apps/backend/.env's.
+if (-not $env:POSTGRES_PASSWORD) { $env:POSTGRES_PASSWORD = 'app_demo_password' }
+
+function Stop-Listener {
+    param([int] $Port, [string] $What)
+
+    $owners = Get-NetTCPConnection -State Listen -LocalPort $Port -ErrorAction SilentlyContinue |
+        Select-Object -ExpandProperty OwningProcess -Unique
+    if (-not $owners) { Write-Host "  skip  nothing on $Port ($What)" -ForegroundColor Yellow; return }
+    foreach ($processId in $owners) {
+        Stop-Process -Id $processId -Force -ErrorAction SilentlyContinue
+        Write-Host "  OK   stopped PID $processId on $Port ($What)" -ForegroundColor Green
+    }
+}
+
+if ($Stop) {
+    Write-Host "`nStopping the demo stack" -ForegroundColor Cyan
+    Stop-Listener -Port 8000 -What 'glasses server'
+    Stop-Listener -Port 8001 -What 'app communication server'
+    docker compose -f $ComposeFile stop postgres 2>&1 | Out-Null
+    Write-Host "  OK   postgres container stopped" -ForegroundColor Green
+    Write-Host "`nStack is down.`n" -ForegroundColor Cyan
+    return
+}
 
 # One ephemeral secret is inherited by both child processes. It is never
 # written to source control or printed. The backend callback is loopback-only.
@@ -57,12 +90,17 @@ function Test-Http {
 }
 
 # 1. PostgreSQL -------------------------------------------------------------
+# `compose up` rather than `docker start`: it recreates the container if someone
+# removed it, and `--wait` blocks on the compose healthcheck (pg_isready), not on
+# the TCP port. Docker publishes port 5432 the moment the container starts, so a
+# port check returns true seconds before Postgres can answer a query -- that race
+# is exactly how the backend ends up serving 500s on its first request.
 Write-Host "`n[1/4] PostgreSQL" -ForegroundColor Cyan
-docker start app-demo-postgres-1 2>&1 | Out-Null
-Wait-Until -What 'postgres accepting connections on 5432' -Check {
-    (Test-NetConnection -ComputerName 127.0.0.1 -Port 5432 `
-        -InformationLevel Quiet -WarningAction SilentlyContinue)
+docker compose -f $ComposeFile up -d --wait postgres
+if ($LASTEXITCODE -ne 0) {
+    throw "docker compose could not bring postgres up healthy (is Docker Desktop running?)"
 }
+Write-Host "  OK   postgres healthy on 5432" -ForegroundColor Green
 
 # 2. App Communication Server on 8001 ----------------------------------------
 Write-Host "`n[2/4] App Communication Server -> 127.0.0.1:8001" -ForegroundColor Cyan
