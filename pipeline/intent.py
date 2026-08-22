@@ -542,7 +542,16 @@ def detect_with_params(
     local = intent_local.classify(text)
     if local is not None:
         resolved = _apply_state(local.label, state, text)
-        if resolved is not None and resolved in _PARAM_FREE:
+        # T14/E3: SetFit không có tín hiệu `ocr_followup` (huấn luyện trước
+        # khi param này tồn tại) — `ocr` chỉ thật sự param-free khi KHÔNG có
+        # transcript cache còn hạn để mà hỏi tiếp. Có cache thì phải đi Gemini
+        # để phân biệt "đọc tiếp dòng X" (followup, không cần ảnh mới) với
+        # "đọc chữ này" (ảnh mới) — nếu không, `_PARAM_FREE` trả `params={}`
+        # ngay, `ocr_followup` không bao giờ được set, và cổng bỏ-qua-ảnh ở
+        # `pipeline/router.py::_resolve` (T14/E3) không bao giờ kích hoạt.
+        if resolved == Intent.OCR and _has_live_ocr_cache():
+            pass
+        elif resolved is not None and resolved in _PARAM_FREE:
             logger.info(
                 "phân loại cục bộ: %s (conf=%.2f biên=%.2f)",
                 resolved, local.confidence, local.margin,
@@ -567,6 +576,19 @@ def detect_with_params(
         # loại lại là một cơ hội sửa cho bước cục bộ.
 
     return _ask_gemini(_build_prompt(text, state))
+
+
+def _has_live_ocr_cache() -> bool:
+    """Còn transcript OCR trong hạn cho device hiện tại hay không (T14/E3).
+
+    Nhập trễ để tránh vòng tròn `pipeline` <-> `handlers` (lý do tương tự
+    `device_state` phía trên) và để dùng đúng TTL `handlers/ocr.py` khai báo,
+    không nhân đôi hằng số.
+    """
+    from handlers.action_flow import get_last_ocr
+    from handlers.ocr import OCR_CACHE_TTL_SECONDS
+
+    return get_last_ocr(OCR_CACHE_TTL_SECONDS) is not None
 
 
 def detect(text: str) -> str:
