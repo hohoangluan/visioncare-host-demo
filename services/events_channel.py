@@ -11,7 +11,7 @@ import uuid
 import config
 
 
-_EVENT_TYPES = frozenset({"frame_request", "call_incoming", "ping"})
+_EVENT_TYPES = frozenset({"frame_request", "call_incoming", "call_ended", "ping"})
 
 
 class EventHub:
@@ -80,6 +80,9 @@ class EventHub:
             device_id,
             {"type": "call_incoming", "caller": dict(caller)},
         )
+
+    def call_ended(self, device_id: str) -> int:
+        return self.publish(device_id, {"type": "call_ended"})
 
     def subscriber_count(self, device_id: str | None = None) -> int:
         with self._lock:

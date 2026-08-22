@@ -14,6 +14,8 @@ class Intent:
     # Dịch vụ Gọi điện & Khẩn cấp
     CONTACT_CALL = "contact_call"
     EMERGENCY_CALL = "emergency_call"
+    CALL_ANSWER = "call_answer"
+    CALL_REJECT = "call_reject"
 
     # Dịch vụ Đặt xe / Grab
     RIDE_QUOTE = "ride_quote"

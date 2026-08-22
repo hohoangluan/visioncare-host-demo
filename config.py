@@ -270,6 +270,7 @@ FRAME_WAIT_MS = float(get("FRAME_WAIT_MS", "800"))
 # default is provisional until a 10-minute tunnel run is measured on hardware.
 EVENT_HEARTBEAT_SECONDS = float(get("EVENT_HEARTBEAT_SECONDS", "15"))
 EVENT_QUEUE_SIZE = int(get("EVENT_QUEUE_SIZE", "8"))
+INCOMING_CALL_WINDOW_SECONDS = float(get("INCOMING_CALL_WINDOW_SECONDS", "15"))
 
 # Cửa sổ chống gửi lặp theo `X-Turn-Id`: hai `POST /process` cùng
 # (device_id, turn_id) trong cửa sổ này -> KHÔNG chạy lại pipeline (không gọi

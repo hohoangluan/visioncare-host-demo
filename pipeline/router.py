@@ -15,6 +15,8 @@ from handlers import (
 from handlers.waiting import with_progress_notice
 from services import capabilities
 from services.frame_buffer import frames
+from services.incoming_calls import incoming_calls
+from handlers import incoming_call
 
 logger = logging.getLogger("blind_assist")
 
@@ -34,6 +36,8 @@ _HANDLERS = {
     Intent.MUSIC_PLAY: music_play,
     Intent.MUSIC_STOP: music_stop,
     Intent.MUSIC_VOLUME: music_volume,
+    Intent.CALL_ANSWER: incoming_call,
+    Intent.CALL_REJECT: incoming_call,
 }
 
 _IMAGE_REQUIRED_INTENTS = frozenset(
@@ -316,16 +320,22 @@ def _dispatch(
     `params`, một số thì không) — dùng chung cho MỌI bước (1-6) dispatch tới
     handler, không riêng bước 6."""
     handler_mod = _HANDLERS.get(intent_name, chat)
-    sig = inspect.signature(handler_mod.handle)
+    if intent_name == Intent.CALL_ANSWER:
+        handler = incoming_call.handle_answer
+    elif intent_name == Intent.CALL_REJECT:
+        handler = incoming_call.handle_reject
+    else:
+        handler = handler_mod.handle
+    sig = inspect.signature(handler)
     handler_params = dict(params or {})
     # `_resolve` có thể được kéo trên thread không kế thừa ContextVar. Hai
     # handler đọc Session trực tiếp phải nhận key đã chụp ở request thread.
     if handler_mod in (chat, ocr) and device_key is not None:
         handler_params["_device_key"] = device_key
     if "params" in sig.parameters:
-        pieces = handler_mod.handle(image, command_text, params=handler_params)
+        pieces = handler(image, command_text, params=handler_params)
     else:
-        pieces = handler_mod.handle(image, command_text)
+        pieces = handler(image, command_text)
 
     # Chat tự dùng cùng helper để lời gọi trực tiếp trong test/script cũng được
     # nhớ. Mọi handler còn lại được bọc tại một điểm dispatch duy nhất.
@@ -679,6 +689,23 @@ def _resolve(
                 device_key=device_key,
             ),
             action_flow, device_key,
+        )
+        if first:
+            yield first
+        yield from rest
+        return
+
+    # T19: an incoming call is below emergency but above pending and every
+    # ordinary command. Closing the call window must not touch the pending
+    # question that was merely interrupted by ringing.
+    call_control = incoming_calls.command(device_key, command_text)
+    if call_control is not None:
+        incoming_calls.close(device_key)
+        logger.info("nghe='%s' -> %s (T19 incoming-call window)", command_text, call_control)
+        first, rest = _with_bargein(
+            _dispatch(call_control, image, command_text, {}, device_key=device_key),
+            action_flow,
+            device_key,
         )
         if first:
             yield first

@@ -23,6 +23,7 @@ from services.action_callbacks import action_callbacks
 from services import capabilities
 from services.frame_buffer import frames
 from services.events_channel import events
+from services.incoming_calls import announcement_for, incoming_calls, sanitize_caller
 
 logger = logging.getLogger("blind_assist")
 
@@ -525,6 +526,74 @@ async def receive_action_result(request: Request) -> dict:
 
     matched = action_callbacks.resolve(request_id, data)
     return {"status": "ok", "data": {"request_id": request_id, "matched": matched}}
+
+
+def _require_internal_callback(request: Request) -> None:
+    """Apply the same loopback + bearer policy to spontaneous device events."""
+    host = request.client.host if request.client else ""
+    try:
+        is_loopback = ipaddress.ip_address(host).is_loopback
+    except ValueError:
+        is_loopback = False
+    if not is_loopback:
+        raise HTTPException(status_code=403, detail="Loopback callback only")
+    expected = config.VISIONCARE_CALLBACK_TOKEN
+    supplied = request.headers.get("authorization", "")
+    if not expected:
+        raise HTTPException(status_code=503, detail="Callback token is not configured")
+    if not hmac.compare_digest(supplied, f"Bearer {expected}"):
+        raise HTTPException(status_code=401, detail="Invalid callback token")
+
+
+@app.post("/internal/device-events")
+async def receive_device_event(request: Request) -> dict:
+    """Accept spontaneous phone events without an action ``request_id``."""
+    _require_internal_callback(request)
+    envelope = await request.json()
+    if not isinstance(envelope, dict):
+        raise HTTPException(status_code=422, detail="Event body must be an object")
+    device_id = str(envelope.get("device_id") or "").strip()
+    event_type = envelope.get("type")
+    if not device_id:
+        raise HTTPException(status_code=422, detail="Missing device_id")
+
+    from handlers import action_flow
+
+    if event_type == "call_incoming":
+        raw_caller = envelope.get("caller")
+        if not isinstance(raw_caller, dict):
+            raise HTTPException(status_code=422, detail="caller must be an object")
+        try:
+            caller = sanitize_caller(raw_caller)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+        # Interrupt first. TTS preparation/event delivery happens afterwards so
+        # it cannot delay the <=200 ms cut target. bump_generation never clears
+        # Session.pending.
+        started = time.monotonic()
+        action_flow.bump_generation(device_id)
+        interruption_ms = (time.monotonic() - started) * 1000
+        incoming_calls.open(device_id, caller)
+        subscribers = events.call_incoming(device_id, caller)
+        return {
+            "status": "ok",
+            "data": {
+                "type": event_type,
+                "subscribers": subscribers,
+                "announcement": announcement_for(caller),
+                "interruption_ms": round(interruption_ms, 3),
+            },
+        }
+
+    if event_type == "call_ended":
+        incoming_calls.close(device_id)
+        subscribers = events.call_ended(device_id)
+        return {
+            "status": "ok",
+            "data": {"type": event_type, "subscribers": subscribers},
+        }
+    raise HTTPException(status_code=422, detail="Unsupported device event type")
 
 
 def _stream_audio(
