@@ -48,8 +48,8 @@ FAILED tests/test_bang_am_thanh.py::test_chat_follow_up_question_uses_previous_t
 | T05 | 3 | ✅ | af90284 | reports/T05.md | phát hiện + fix bug router.py điền pending (nhét thô transcript) |
 | T06 | 3 | ✅ | a623f26 | reports/T06.md | 6 slot trọn, emergency_number assert module-level |
 | T08 | 4 | 🟠 | Codex | reports/T08.md | server xong; chờ app P1 `contact_list` + đo ngưỡng danh bạ thật; commit ad03887 |
-| T09 | 4 | ⬜ | | | 🔴 khoá an toàn |
-| T10 | 4 | ⬜ | | | |
+| T09 | 4 | 🟠 | Codex | reports/T09.md | 15 pass/7 xfail; khóa an toàn xanh, chờ abort + classifier thấp + T21/P11; commit cc508f5 |
+| T10 | 4 | 🟠 | Codex | reports/T10.md | pending/readback/ack xong; D4 xfail vì app chưa phát INVALID_DESTINATION; commit 6636028 |
 | T12 | 4 | ⬜ | | | |
 | T14 | 4 | ⬜ | | | |
 | T16 | 4 | ⬜ | | | |
@@ -67,3 +67,5 @@ Ký hiệu: ⬜ chưa · 🟡 đang chạy · ✅ DONE · 🟠 PARTIAL · ⛔ BL
 
 | Đợt | Task | Câu hỏi | Đã chốt? |
 |---|---|---|---|
+| 4 | T09 | Endpoint abort; cửa sổ 3 hay 5 giây; danh sách từ khóa recall cao; P11 gộp T23? | Chưa; tạm gộp P11 vào T23 |
+| 4 | T10 | Có forward geocode ở app không, và ngưỡng invalid là gì? | Chưa |

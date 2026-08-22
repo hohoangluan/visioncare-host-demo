@@ -135,8 +135,8 @@ Mỗi task một session độc lập. Chúng chỉ giao nhau ở `slots.py` và
 task khác.**
 
 - [x] **T08** Gọi danh bạ · PARTIAL — server xong, chờ app P1/P2 + đo danh bạ thật
-- [ ] **T09** Gọi khẩn cấp · 🔴 khoá an toàn, ưu tiên cao
-- [ ] **T10** Chỉ đường · PARTIAL, D4 xfail chờ T20
+- [x] **T09** Gọi khẩn cấp · PARTIAL — khóa an toàn xanh; chờ abort, classifier thấp, T21/P11
+- [x] **T10** Chỉ đường · PARTIAL — server xong; D4 xfail vì app chưa phát mã
 - [ ] **T12** Nhạc
 - [ ] **T14** OCR ngữ cảnh
 - [ ] **T16** Không gian & vật cản
@@ -293,8 +293,8 @@ C2/P9 đã xong một phần, số dòng của `ride.py`/`music.py`/`navigation.
 
 ### Đợt 4 — chức năng
 - [x] T08 Gọi danh bạ *(PARTIAL: server xong, chờ app P1/P2 + số đo thật)*
-- [ ] T09 Gọi khẩn cấp
-- [ ] T10 Chỉ đường
+- [x] T09 Gọi khẩn cấp *(PARTIAL: chờ abort + classifier thấp + T21/P11)*
+- [x] T10 Chỉ đường *(PARTIAL: server xong, D4 chờ nguồn mã phía app)*
 - [ ] T12 Nhạc
 - [ ] T14 OCR ngữ cảnh
 - [ ] T16 Không gian & vật cản
@@ -315,7 +315,7 @@ C2/P9 đã xong một phần, số dòng của `ride.py`/`music.py`/`navigation.
 ### Cổng phát hành
 - [ ] 🔴 T22 xong — **HTTPS bật, bắt gói xác nhận**
 - [ ] 🔴 T11: P4/P5 xong — không còn chuyến nào đi tới toạ độ hằng số
-- [ ] 🔴 T09: 3 test khoá emergency xanh
+- [x] 🔴 T09: 3 test khoá emergency xanh
 - [ ] T21: mọi dòng ngân sách có số đo **trên bản TLS**
 - [x] T20: không mã lỗi nào rơi vào im lặng
 

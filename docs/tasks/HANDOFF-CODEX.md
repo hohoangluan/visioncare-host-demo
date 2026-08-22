@@ -1,6 +1,6 @@
 # HANDOFF — để Codex (hoặc bất kỳ agent nào khác) tiếp tục chương trình 23-task
 
-Viết ngày 2026-08-22; Codex cập nhật sau T08 cùng ngày. Claude Code ban đầu dùng
+Viết ngày 2026-08-22; Codex cập nhật sau T10 cùng ngày. Claude Code ban đầu dùng
 `superpowers:subagent-driven-development`; người dùng sau đó chốt **không cần
 Superpowers**, ưu tiên hoàn tất chức năng chạy đúng và batch test để tiết kiệm thời
 gian. Tài liệu này là checkpoint sống qua compaction.
@@ -39,9 +39,9 @@ Firmware đang trên branch `net-stream-adpcm` sẵn có (không phải branch t
 
 ## 2. Trạng thái hiện tại — task nào xong, task nào đang chạy
 
-Xem bảng đầy đủ ở `docs/tasks/PROGRESS.md` (đã commit). **DỪNG Ở ĐÂY theo yêu cầu
-người dùng (sắp hết token) — Đợt 0-3 xong hoàn toàn; Codex đã làm tiếp T08 phía
-server. Hiện **12/23 task có code xong hoặc PARTIAL đúng dự kiến**; tiếp tục từ T09.**
+Xem bảng đầy đủ ở `docs/tasks/PROGRESS.md` (đã commit). Đợt 0-3 xong hoàn toàn;
+Codex đã làm tiếp T08, T09 và T10 phía server. Hiện **13/23 task có code xong
+hoặc PARTIAL đúng dự kiến**; tiếp tục từ **T12**.
 Tóm tắt:
 
 | Đợt | Task | Trạng thái | Commit |
@@ -60,10 +60,15 @@ Tóm tắt:
 | 3 | T06 Bảng chính sách slot | ✅ | `995a431` |
 | 3 | **Fix router.py** (xem mục 2b) | ✅ | `6a6017a` |
 | 4 | T08 Gọi danh bạ | 🟠 server xong; chờ app P1/P2 + đo ngưỡng thật | `ad03887` |
-| 4-7 | T09-T23 còn lại | ⬜ **BẮT ĐẦU TỪ T09** |
+| 4 | T09 Gọi khẩn cấp | 🟠 khóa hiện hữu xong; chờ abort/classifier thấp/T21/P11 | `cc508f5` |
+| 4 | T10 Chỉ đường | 🟠 server xong; D4 chờ app phát `INVALID_DESTINATION` | `6636028` |
+| 4-7 | T12-T23 còn lại | ⬜ **BẮT ĐẦU TỪ T12** |
 
-**HEAD code hiện tại của branch `feat/hoi-thoai-23-task`: `ad03887`.** Full suite
-sau T08: **552 pass, 1 skip, 1 xfail**. Xfail duy nhất là P1 `contact_list` phía app.
+**HEAD code hiện tại của branch `feat/hoi-thoai-23-task`: `6636028`.** Regression
+theo cụm T09/T10: **147 pass, 8 xfail**. Full suite: **570 pass, 1 skip, 9 xfail,
+1 fail**; fail duy nhất là flaky đã biết
+`test_chat_follow_up_question_uses_previous_turn`, log xác nhận Gemini trả HTTP
+429 `RESOURCE_EXHAUSTED` (quota), không phải regression T09/T10.
 
 ### 2b. 🔴 Bug thật đã phát hiện VÀ SỬA trong lúc chạy Đợt 3 — đọc để hiểu vì sao có commit `6a6017a`
 
@@ -105,6 +110,11 @@ sạch), quay lại kiểm `pipeline/router.py` dòng ~443 trước tiên.
 - G11 (`docs/tasks/measurements/G11.md`) cần đo lại MỘT MÌNH (không có tải CPU song
   song) trước khi chốt số cho T21 — số hiện tại dao động 0.94x-2.59x vì đo lúc 5 agent
   khác chạy cùng máy.
+- T09/21.5 chưa có endpoint abort/cửa sổ 3-5 giây; chưa được hạ ngưỡng classifier
+  emergency khi người dùng chưa có đường dừng cuộc gọi nhầm. Hai từ khóa “gọi cứu
+  thương”, “một một bốn” cũng còn xfail vì T09 không sở hữu `pipeline/router.py`.
+- T10/D4 chờ quyết định forward geocode phía app và ngưỡng invalid; server đã xong
+  pending 2 lượt, readback low-confidence 25 giây và ack có tên điểm đến.
 
 **Ba task không cần đợi Đợt 4's dependencies, có thể dispatch bất cứ lúc nào (xem
 mục 9 dưới để biết chi tiết):** T23, T14, T17.
@@ -134,9 +144,8 @@ nằm trong `.superpowers/sdd/.../progress.md` nếu file đó còn tồn tại 
    thêm.** Lý do: Đợt 4 có 6 agent song song, không thể cùng sửa một file. Bảng đã
    viết xong, xem `handlers/slots.py` thật trên đĩa (T06 đã DONE).
 
-4. **`handlers/phone.py`, `navigation.py`, `ride.py`, `music.py` còn giữ hằng số
-   `_ASK_*` trùng với `slots.py` — dọn khi T08/T10/T11/T12 (chủ 4 file đó) chạm
-   tới.** Vô hại (dedupe theo `phrase_key`), không phải bug chặn, chỉ là dọn nợ.
+4. **`handlers/ride.py`, `music.py` còn giữ hằng số `_ASK_*` trùng với `slots.py`
+   — dọn khi T11/T12 (chủ 2 file đó) chạm tới.** T08/T10 đã dọn phần phone/navigation.
 
 5. **Ruling 5 — kiểm `.gitignore` kỹ trước khi tin file "sẽ commit được".**
    `tests/fixtures/*` từng nuốt `app_error_codes.txt` im lặng — luôn `git check-ignore
@@ -271,9 +280,8 @@ response về, không crash), không xác nhận được kịch bản STT/inten
 
 **Đợt 3: XONG HOÀN TOÀN** (T05, T06, fix router.py — xem mục 2).
 
-**Đợt 4:** T08 đã PARTIAL đúng dự kiến (server xong, commit `ad03887`; chờ app P1/P2
-và số đo danh bạ thật). Còn T09 (khẩn cấp, 🔴 giữ full rigor), T10 (chỉ đường),
-T12 (nhạc), T14 (OCR ngữ cảnh — nối H1/H3/H5 T15), T16 (không gian & vật cản).
+**Đợt 4:** T08, T09, T10 đã PARTIAL đúng dự kiến. Tiếp theo T12 (nhạc), T14
+(OCR ngữ cảnh — nối H1/H3/H5 T15), T16 (không gian & vật cản).
 
 **Đợt 5:** T13 (chat & lịch sử — nối `_remember`/history T14 để dở), T11 (đặt xe,
 🔴 giữ full rigor, PARTIAL chờ Farefeed), T23 (quyền & cấu hình, dùng emulator
