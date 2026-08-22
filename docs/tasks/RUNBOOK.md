@@ -137,9 +137,9 @@ task khác.**
 - [x] **T08** Gọi danh bạ · PARTIAL — server xong, chờ app P1/P2 + đo danh bạ thật
 - [x] **T09** Gọi khẩn cấp · PARTIAL — khóa an toàn xanh; chờ abort, classifier thấp, T21/P11
 - [x] **T10** Chỉ đường · PARTIAL — server xong; D4 xfail vì app chưa phát mã
-- [ ] **T12** Nhạc
-- [ ] **T14** OCR ngữ cảnh
-- [ ] **T16** Không gian & vật cản
+- [x] **T12** Nhạc
+- [x] **T14** OCR ngữ cảnh
+- [x] **T16** Không gian & vật cản
 
 ### Đợt 5 — phụ thuộc đợt 4
 
@@ -295,9 +295,9 @@ C2/P9 đã xong một phần, số dòng của `ride.py`/`music.py`/`navigation.
 - [x] T08 Gọi danh bạ *(PARTIAL: server xong, chờ app P1/P2 + số đo thật)*
 - [x] T09 Gọi khẩn cấp *(PARTIAL: chờ abort + classifier thấp + T21/P11)*
 - [x] T10 Chỉ đường *(PARTIAL: server xong, D4 chờ nguồn mã phía app)*
-- [ ] T12 Nhạc
-- [ ] T14 OCR ngữ cảnh
-- [ ] T16 Không gian & vật cản
+- [x] T12 Nhạc
+- [x] T14 OCR ngữ cảnh
+- [x] T16 Không gian & vật cản
 
 ### Đợt 5
 - [ ] T13 Chat & lịch sử

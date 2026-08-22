@@ -42,7 +42,7 @@ FAILED tests/test_bang_am_thanh.py::test_chat_follow_up_question_uses_previous_t
 | T04 | 1 | ✅ | a7fd12b | reports/T04.md | 6 bước đúng thứ tự; barge-in per-device (device_key qua action_flow) |
 | T02 (còn lại) | 2 | ✅ | a4a4386 | reports/T02.md | G11 dao động do tải song song lúc đo, cần đo lại riêng |
 | T07 | 2 | ✅ | a727a30 | reports/T07.md | P9 TTL/MAX_FIX_AGE tách xong (180s/600s, chưa đo) |
-| T15 | 2 | ✅ | a297bab | reports/T15.md | H1/H3/H5 xây xong, CHƯA nối production (nợ T14) |
+| T15 | 2 | ✅ | a297bab | reports/T15.md | H1/H3/H5 đã nối production trong T14 (`c39b8d2`) |
 | T20 (còn lại) | 2 | ✅ | a8ce029 | reports/T20.md | _DEFAULT_POLICY xong |
 | T22 | 2 | 🟠 | a32e461 | reports/T22.md | code xong, số đo phần cứng chờ controller |
 | T05 | 3 | ✅ | af90284 | reports/T05.md | phát hiện + fix bug router.py điền pending (nhét thô transcript) |
@@ -50,9 +50,9 @@ FAILED tests/test_bang_am_thanh.py::test_chat_follow_up_question_uses_previous_t
 | T08 | 4 | 🟠 | Codex | reports/T08.md | server xong; chờ app P1 `contact_list` + đo ngưỡng danh bạ thật; commit ad03887 |
 | T09 | 4 | 🟠 | Codex | reports/T09.md | 15 pass/7 xfail; khóa an toàn xanh, chờ abort + classifier thấp + T21/P11; commit cc508f5 |
 | T10 | 4 | 🟠 | Codex | reports/T10.md | pending/readback/ack xong; D4 xfail vì app chưa phát INVALID_DESTINATION; commit 6636028 |
-| T12 | 4 | ⬜ | | | |
-| T14 | 4 | ⬜ | | | |
-| T16 | 4 | ⬜ | | | |
+| T12 | 4 | ✅ | Codex | reports/T12.md | slot/pending thay toàn bộ string heuristic; 16 DoD pass; commit `80cedf2` |
+| T14 | 4 | ✅ | Codex | reports/T14.md | OCR cache/follow-up text-only + nối H1/H3/H5; 24 DoD pass; commit `c39b8d2` |
+| T16 | 4 | ✅ | Codex | reports/T16.md | space focus; hazard logic khóa nguyên; 15 DoD pass; commit `cd0932c` |
 | T11 | 5 | ⬜ | | | 🔴 PARTIAL, ⛔ Farefeed |
 | T13 | 5 | ⬜ | | | |
 | T23 | 5 | ⬜ | | | |
