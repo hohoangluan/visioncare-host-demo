@@ -40,11 +40,11 @@ FAILED tests/test_bang_am_thanh.py::test_chat_follow_up_question_uses_previous_t
 | T01 | 1 | ✅ | aa8a19c | reports/T01.md | header thật ra dây qua tunnel (verified phần cứng); idempotency reservation-based |
 | T03 | 1 | ✅ | aec3f81 | reports/T03.md | generation từ commit đầu; nợ cho T04 (bump tại turn boundary) và T13 (TTL history) |
 | T04 | 1 | ✅ | a7fd12b | reports/T04.md | 6 bước đúng thứ tự; barge-in per-device (device_key qua action_flow) |
-| T02 (còn lại) | 2 | ⬜ | | | |
-| T07 | 2 | ⬜ | | | |
-| T15 | 2 | ⬜ | | | |
-| T20 (còn lại) | 2 | ⬜ | | | |
-| T22 | 2 | ⬜ | | | firmware |
+| T02 (còn lại) | 2 | ✅ | a4a4386 | reports/T02.md | G11 dao động do tải song song lúc đo, cần đo lại riêng |
+| T07 | 2 | ✅ | a727a30 | reports/T07.md | P9 TTL/MAX_FIX_AGE tách xong (180s/600s, chưa đo) |
+| T15 | 2 | ✅ | a297bab | reports/T15.md | H1/H3/H5 xây xong, CHƯA nối production (nợ T14) |
+| T20 (còn lại) | 2 | ✅ | a8ce029 | reports/T20.md | _DEFAULT_POLICY xong |
+| T22 | 2 | 🟠 | a32e461 | reports/T22.md | code xong, số đo phần cứng chờ controller |
 | T05 | 3 | ⬜ | | | |
 | T06 | 3 | ⬜ | | | |
 | T08 | 4 | ⬜ | | | PARTIAL nếu chưa P1/P2 |

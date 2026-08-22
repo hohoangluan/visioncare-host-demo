@@ -283,9 +283,9 @@ C2/P9 đã xong một phần, số dòng của `ride.py`/`music.py`/`navigation.
 - [x] T04 Router & ngắt lời
 
 ### Đợt 2 — song song
-- [ ] T07 Vị trí
-- [ ] T15 OCR chất lượng
-- [ ] T22 Bật TLS
+- [x] T07 Vị trí
+- [x] T15 OCR chất lượng
+- [x] T22 Bật TLS *(code xong, số đo phần cứng chờ controller)*
 
 ### Đợt 3 — intent/slot
 - [ ] T05 Intent & schema slot
@@ -317,7 +317,7 @@ C2/P9 đã xong một phần, số dòng của `ride.py`/`music.py`/`navigation.
 - [ ] 🔴 T11: P4/P5 xong — không còn chuyến nào đi tới toạ độ hằng số
 - [ ] 🔴 T09: 3 test khoá emergency xanh
 - [ ] T21: mọi dòng ngân sách có số đo **trên bản TLS**
-- [ ] T20: không mã lỗi nào rơi vào im lặng
+- [x] T20: không mã lỗi nào rơi vào im lặng
 
 ---
 

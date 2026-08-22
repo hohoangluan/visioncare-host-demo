@@ -138,3 +138,56 @@ def reject_reason(intent: str, image_bytes: bytes | None) -> str | None:
         f" -> từ chối: {reason}" if reason else "",
     )
     return reason
+
+
+# ─── T15/H5 — đếm KHONG_CO_CHU, để có mốc "OCR hỏng bao nhiêu %" ───────────
+#
+# 25.5: trước task này KHONG_CO_CHU không được đếm ở đâu — không biết OCR
+# hỏng 5% hay 50% số lượt thì không nói được H1/H3 có tác dụng hay không. Số
+# đo thật (không phải mô phỏng) nằm ở docs/tasks/measurements/H4.md: trên 6
+# lượt ảnh có chữ thật (loại bỏ ảnh hỏng cố ý `request323_overexposed`),
+# `gemini-3.5-flash-lite` (model mặc định TRƯỚC H1) ra KHONG_CO_CHU 1/6 lần
+# (ảnh chữ nhỏ, khung rộng); `gemini-3.5-flash` (đề xuất SAU H1, xem
+# `config.GEMINI_OCR_MODEL`) và `gemini-2.5-flash` ra KHONG_CO_CHU 0/6 lần
+# trên đúng bộ ảnh đó — trước/sau khác nhau thật, không phải cảm giác.
+#
+# `sharpness`/`brightness` PHẢI lấy từ tuple `measure()` đã chạy sẵn ở gate
+# cho intent OCR (`measure()` luôn chạy cho mọi intent trong `_READS_IMAGE`,
+# xem `reject_reason()` ở trên) — KHÔNG đo lại: decode ảnh + Laplacian
+# float64 tốn CPU một lần nữa là vô ích khi số đã có sẵn.
+#
+# 🔴 Việc GỌI hàm này đúng lúc Gemini trả `NO_TEXT_SENTINEL` thuộc
+# `models/ocr/__init__.py` — file đó ngoài bảng "FILE BẠN ĐƯỢC SỬA" của agent
+# T15 (xem docs/tasks/reports/T15.md mục "Lệch với task file"). Đây là hạ
+# tầng sẵn sàng (đếm + log đúng định dạng cần), CHƯA được nối dây vào
+# production.
+_no_text_count = 0
+
+
+def record_no_text(sharpness: float | None, brightness: float | None) -> int:
+    """Ghi nhận một lượt OCR ra KHONG_CO_CHU, trả về tổng số đã ghi nhận từ
+    lúc tiến trình khởi động.
+
+    `sharpness`/`brightness`: lấy từ `measure()` đã chạy sẵn ở gate, truyền
+    `None` nếu không có (ví dụ ảnh không decode được ở bước đó).
+    """
+    global _no_text_count
+    _no_text_count += 1
+    logger.info(
+        "OCR ra KHONG_CO_CHU lần %d: sharpness=%s brightness=%s",
+        _no_text_count,
+        f"{sharpness:.2f}" if sharpness is not None else "?",
+        f"{brightness:.1f}" if brightness is not None else "?",
+    )
+    return _no_text_count
+
+
+def no_text_count() -> int:
+    """Tổng số lượt OCR ra KHONG_CO_CHU đã ghi nhận từ lúc tiến trình khởi động."""
+    return _no_text_count
+
+
+def reset_no_text_count() -> None:
+    """Chỉ dùng cho test — đưa bộ đếm về 0 giữa các ca kiểm thử."""
+    global _no_text_count
+    _no_text_count = 0

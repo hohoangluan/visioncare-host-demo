@@ -52,12 +52,14 @@ def _speech_modules() -> tuple:
     client HTTP).
     """
     from handlers import action_flow, music, navigation, phone, result_speech, ride, waiting
+    from models.ocr import prompts as ocr_prompts
     from pipeline import router
 
     return (
         waiting, action_flow, result_speech,
         music, navigation, phone, ride,
         router, image_quality,
+        ocr_prompts,  # T15/H3 — ba câu hướng dẫn chụp lại, xem STATIC_SPEECH ở đó
     )
 
 

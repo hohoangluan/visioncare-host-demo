@@ -104,7 +104,7 @@ def _build_contents(prompt: str, image: bytes | None) -> list:
 
 
 def generate_stream(
-    prompt: str, image: bytes | None = None, search: bool = False
+    prompt: str, image: bytes | None = None, search: bool = False, model: str | None = None
 ) -> Iterator[str]:
     """Như `generate()` nhưng trả từng mảnh text ngay khi Gemini sinh ra.
 
@@ -114,15 +114,20 @@ def generate_stream(
 
     `search=True` cho model tra Google trước khi trả lời (thời tiết, tin tức).
     Đổi lại mảnh đầu tới chậm hơn vì phải chờ vòng tra cứu.
+
+    `model` để gọi trên model khác mặc định — ví dụ OCR (T15/H1) cần model
+    không phải `-lite` vì "sai một ký tự là đọc sai", trong khi `space`/
+    `hazard`/`find`/`money`/`chat` KHÔNG truyền tham số này nên vẫn chạy đúng
+    `config.GEMINI_MODEL`/`config.GEMINI_SEARCH_MODEL` như cũ — xem
+    `config.GEMINI_OCR_MODEL`.
     """
     contents = _build_contents(prompt, image)
     got_text = False
 
+    resolved_model = model or (config.GEMINI_SEARCH_MODEL if search else config.GEMINI_MODEL)
     try:
         stream = _get_client().models.generate_content_stream(
-            # Lượt có tra Google phải chạy trên model còn hạn mức grounding —
-            # xem `config.GEMINI_SEARCH_MODEL`.
-            model=config.GEMINI_SEARCH_MODEL if search else config.GEMINI_MODEL,
+            model=resolved_model,
             contents=contents,
             config=_generation_config(search=search),
         )
