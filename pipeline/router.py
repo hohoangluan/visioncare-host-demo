@@ -99,6 +99,9 @@ _PENDING_NO = re.compile(
 _PENDING_REPEAT = re.compile(
     r"nói lại|nhắc lại|lặp lại|gì cơ|sao cơ|nghe không rõ", re.I
 )
+_PENDING_ANY_ARTIST = re.compile(
+    r"^\s*(cứ phát|bất kỳ|ai cũng được|sao cũng được|tuỳ|tùy)\s*[.!]?\s*$", re.I
+)
 _PENDING_CANCEL = re.compile(
     r"\bthôi\b|bỏ đi|hủy|huỷ|khỏi cần|không cần nữa", re.I
 )
@@ -382,6 +385,19 @@ def _resolve_deterministic_pending(
         action_flow.clear_pending()
         return iter([_CANCELLED_MESSAGE])
 
+    # T12/A4 — câu trả lời đóng cho pending artist, chạy tất định và không gọi
+    # LLM. Đây không phải heuristic đoán artist trong tên bài: chỉ sáu câu trả
+    # lời trọn vẹn mang nghĩa rõ ràng "bản nào cũng được".
+    if (
+        pending.kind == "fill"
+        and pending.slot == "artist"
+        and _PENDING_ANY_ARTIST.fullmatch(text)
+    ):
+        action_flow.clear_pending()
+        known = dict(pending.known)
+        known["artist_any"] = True
+        return _dispatch(pending.intent, image, command_text, known)
+
     if pending.kind == "confirm":
         # SỬA LỖI review (docs/tasks/reports/T04.md mục sửa lỗi #2): kiểm
         # PHỦ ĐỊNH TRƯỚC khẳng định. `_PENDING_YES` chứa "được"/"đồng ý" với
@@ -488,7 +504,15 @@ def _try_fill_pending_slot(
     known = dict(pending.known)
     known.update(params)
     value = known.get(pending.slot)
-    if value is None or not _validate_slot(pending.slot, value):
+    validation_text = value
+    # T12: tên policy là `volume_direction`, còn schema/handler công khai dùng
+    # `direction` (up/down) hoặc `volume` (0..100). Không ánh xạ thì câu trả lời
+    # "tăng" được trích đúng vẫn bị coi là thiếu slot và rơi xuống chat.
+    if pending.slot == "volume_direction":
+        direction = known.get("direction")
+        value = direction if direction is not None else known.get("volume")
+        validation_text = text
+    if value is None or not _validate_slot(pending.slot, str(validation_text)):
         return None
 
     return _dispatch(pending.intent, image, command_text, known)

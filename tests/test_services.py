@@ -7,6 +7,14 @@ from services import visioncare_client
 from handlers import action_flow, navigation, phone, ride, music, result_speech, slots
 
 
+@pytest.fixture(autouse=True)
+def _clean_action_state():
+    """Các pending chuẩn T03 không được rò giữa những unit test handler."""
+    action_flow.reset_state()
+    yield
+    action_flow.reset_state()
+
+
 def test_call_service_api_success(monkeypatch):
     """Chặn ở tầng vận chuyển của httpx, không phải ở `_client()`.
 
@@ -169,7 +177,15 @@ def test_contact_call_reports_a_failed_call_as_failed(monkeypatch):
         ),
         (
             "SONG_NOT_FOUND",
-            lambda: music.handle_play(b"", "", {"song": "Bài lạ - Ca sĩ lạ"}),
+            lambda: music.handle_play(
+                b"",
+                "",
+                {
+                    "song_title": "Bài lạ",
+                    "artist": "Ca sĩ lạ",
+                    "song_is_specific": True,
+                },
+            ),
             "song_title",
             "music_play",
         ),
@@ -337,24 +353,24 @@ def test_ride_destination_not_found_is_reported_not_guessed(monkeypatch):
 
 
 def test_music_play_asks_which_artist_when_only_a_title_was_given(monkeypatch):
-    action_flow.forget("pending_song_title")
     calls = _stub_flow(monkeypatch)
 
-    out = "".join(music.handle_play(b"", "", {"song": "Nơi này có anh"}))
+    out = "".join(music.handle_play(
+        b"", "", {"song_title": "Nơi này có anh", "song_is_specific": True}
+    ))
 
     # A bare title matches covers, remixes and karaoke versions; picking one is
     # a guess, and a blind listener cannot see they got the wrong track.
     assert calls == []
-    assert "nhiều bài trùng tên" in out
     assert "ca sĩ nào" in out
 
 
 @pytest.mark.parametrize(
     "command,params",
     [
-        ("mở nhạc đi", {"song": "nhạc"}),   # đo thật từ bộ phân loại
-        ("bật nhạc lên", {}),               # đo thật: không tách được gì
-        ("nghe nhạc", {"song": "nghe nhạc"}),
+        ("mở nhạc đi", {"song_title": "nhạc", "song_is_specific": False}),
+        ("bật nhạc lên", {"song_is_specific": False}),
+        ("nghe nhạc", {"song_title": "nghe nhạc", "song_is_specific": False}),
     ],
 )
 def test_music_play_asks_which_song_when_none_was_named(command, params, monkeypatch):
@@ -363,13 +379,12 @@ def test_music_play_asks_which_song_when_none_was_named(command, params, monkeyp
     Trước đây câu lệnh tự trở thành tên bài, nên ứng dụng nhạc đi tìm một bài
     hát tên đúng bằng câu người dùng vừa nói.
     """
-    action_flow.forget("pending_song_title")
     calls = _stub_flow(monkeypatch)
 
     out = "".join(music.handle_play(b"", command, params))
 
     assert calls == []
-    assert out == music._ASK_SONG
+    assert out == slots.SLOTS["song_title"].ask
 
 
 def test_music_volume_asks_instead_of_guessing_a_direction(monkeypatch):
@@ -380,7 +395,7 @@ def test_music_volume_asks_instead_of_guessing_a_direction(monkeypatch):
     out = "".join(music.handle_volume(b"", "âm lượng", {}))
 
     assert calls == []
-    assert out == music._ASK_VOLUME
+    assert out == slots.SLOTS["volume_direction"].ask
 
 
 @pytest.mark.parametrize(
@@ -401,30 +416,43 @@ def test_music_volume_still_acts_when_the_command_was_clear(params, expected, mo
 
 
 def test_music_play_combines_the_artist_answer_with_the_pending_title(monkeypatch):
-    action_flow.forget("pending_song_title")
     calls = _stub_flow(monkeypatch, {"title": "Nơi này có anh", "artist": "Sơn Tùng M-TP"})
-    "".join(music.handle_play(b"", "", {"song": "Nơi này có anh"}))
+    "".join(music.handle_play(
+        b"", "", {"song_title": "Nơi này có anh", "song_is_specific": True}
+    ))
+    pending = action_flow.get_pending()
+    assert pending is not None
 
-    "".join(music.handle_play(b"", "", {"song": "Sơn Tùng M-TP"}))
+    params = {**pending.known, "artist": "Sơn Tùng M-TP"}
+    action_flow.clear_pending()
+    "".join(music.handle_play(b"", "", params))
 
     assert calls[0][1]["song"] == "Nơi này có anh - Sơn Tùng M-TP"
 
 
 def test_music_play_honours_cu_phat_as_any_artist(monkeypatch):
-    action_flow.forget("pending_song_title")
     calls = _stub_flow(monkeypatch, {"title": "Nơi này có anh", "artist": "Unknown"})
-    "".join(music.handle_play(b"", "", {"song": "Nơi này có anh"}))
+    "".join(music.handle_play(
+        b"", "", {"song_title": "Nơi này có anh", "song_is_specific": True}
+    ))
+    pending = action_flow.get_pending()
+    assert pending is not None
 
-    "".join(music.handle_play(b"", "", {"song": "cứ phát"}))
+    params = {**pending.known, "artist_any": True}
+    action_flow.clear_pending()
+    "".join(music.handle_play(b"", "", params))
 
     assert calls[0][1]["song"] == "Nơi này có anh"
 
 
 def test_music_play_speaks_the_track_the_phone_actually_started(monkeypatch):
-    action_flow.forget("pending_song_title")
     calls = _stub_flow(monkeypatch, {"title": "Nơi này có anh", "artist": "Sơn Tùng M-TP"})
 
-    out = "".join(music.handle_play(b"", "", {"song": "Nơi này có anh - Sơn Tùng M-TP"}))
+    out = "".join(music.handle_play(b"", "", {
+        "song_title": "Nơi này có anh",
+        "artist": "Sơn Tùng M-TP",
+        "song_is_specific": True,
+    }))
 
     assert calls[0][0] == "api/v1/service/music/play"
     assert "Đã tìm được bài Nơi này có anh của Sơn Tùng M-TP" in out
@@ -442,7 +470,11 @@ def test_music_play_reports_silence_as_a_failure(monkeypatch):
         },
     )
 
-    out = "".join(music.handle_play(b"", "", {"song": "Nơi này có anh - Sơn Tùng M-TP"}))
+    out = "".join(music.handle_play(b"", "", {
+        "song_title": "Nơi này có anh",
+        "artist": "Sơn Tùng M-TP",
+        "song_is_specific": True,
+    }))
 
     # The whole point of polling: "sent the request" used to be the only thing
     # the user ever heard, whether or not a single note came out.
