@@ -1,11 +1,14 @@
+import hashlib
 import re
 import time
+from types import SimpleNamespace
 
 import pytest
 
 import config
-from handlers import chat
+from handlers import action_flow, chat
 from models import vlm
+from pipeline import router
 from services import visioncare_client
 
 IMG = b"fake image"
@@ -13,9 +16,9 @@ IMG = b"fake image"
 
 @pytest.fixture(autouse=True)
 def clean_history():
-    chat.reset_history()
+    action_flow.reset_state()
     yield
-    chat.reset_history()
+    action_flow.reset_state()
 
 
 @pytest.fixture(autouse=True)
@@ -116,7 +119,9 @@ def test_chat_history_capped_at_configured_turns(monkeypatch):
 def test_chat_history_dropped_when_stale(monkeypatch):
     """Bỏ máy vài giờ rồi quay lại là cuộc trò chuyện khác, không kéo lượt cũ theo."""
     stale_at = time.monotonic() - config.CHAT_HISTORY_TTL_SECONDS - 1
-    chat._HISTORY.append(("thủ đô Việt Nam là gì", "Hà Nội.", stale_at))
+    action_flow.record_history_turn(
+        "thủ đô Việt Nam là gì", "Hà Nội.", recorded_at=stale_at
+    )
 
     captured = _capture(monkeypatch)
     list(chat.handle(IMG, "xin chào"))
@@ -319,3 +324,202 @@ def test_chat_falls_back_to_a_plain_answer_when_search_fails(monkeypatch):
     # instead of answering from a training snapshot nearly two years stale.
     assert "KHÔNG tra cứu được" in prompts[1][0]
     assert out
+
+
+# ─── T13/B4 — lịch sử dùng chung ──────────────────────────────────────────
+
+
+def test_action_turn_recorded(monkeypatch):
+    device = "t13-action"
+    action_flow.clear_history(device_key=device)
+    fake = SimpleNamespace(
+        handle=lambda image, command_text: iter(["Đã mở Grab, xe máy 32 nghìn."])
+    )
+    monkeypatch.setitem(router._HANDLERS, "t13_fake_action", fake)
+
+    assert "".join(
+        router._dispatch(
+            "t13_fake_action",
+            None,
+            "đặt xe tới Bách Khoa",
+            device_key=device,
+        )
+    )
+
+    assert action_flow.recent_history(device_key=device) == [
+        ("đặt xe tới Bách Khoa", "Đã mở Grab, xe máy 32 nghìn.")
+    ]
+
+
+def test_chat_prompt_contains_action_turn(monkeypatch):
+    device = "t13-chat-action"
+    action_flow.clear_history(device_key=device)
+    action_flow.record_history_turn(
+        "đặt xe tới Bách Khoa",
+        "đã mở Grab, xe máy 32 đến 38 nghìn",
+        device_key=device,
+    )
+    captured = _capture(monkeypatch)
+
+    list(
+        chat.handle(
+            IMG,
+            "vừa nãy tôi đặt xe đi đâu",
+            params={"_device_key": device},
+        )
+    )
+
+    assert "đặt xe tới Bách Khoa" in captured["prompt"]
+    assert "32 đến 38 nghìn" in captured["prompt"]
+
+
+def test_history_shared_across_handlers(monkeypatch):
+    device = "t13-shared"
+    action_flow.clear_history(device_key=device)
+    monkeypatch.setitem(
+        router._HANDLERS,
+        "t13_first",
+        SimpleNamespace(handle=lambda image, command_text: iter(["kết quả một"])),
+    )
+    monkeypatch.setitem(
+        router._HANDLERS,
+        "t13_second",
+        SimpleNamespace(handle=lambda image, command_text: iter(["kết quả hai"])),
+    )
+
+    list(router._dispatch("t13_first", None, "lệnh một", device_key=device))
+    list(router._dispatch("t13_second", None, "lệnh hai", device_key=device))
+
+    assert action_flow.recent_history(device_key=device) == [
+        ("lệnh một", "kết quả một"),
+        ("lệnh hai", "kết quả hai"),
+    ]
+
+
+def test_history_ttl_600s():
+    device = "t13-ttl"
+    action_flow.clear_history(device_key=device)
+    now = time.monotonic()
+    action_flow.record_history_turn(
+        "lệnh cũ", "đáp cũ", device_key=device, recorded_at=now
+    )
+
+    assert action_flow.recent_history(
+        device_key=device,
+        now=now + config.CHAT_HISTORY_TTL_SECONDS + 0.01,
+    ) == []
+
+
+def test_history_maxlen_respected():
+    device = "t13-maxlen"
+    action_flow.clear_history(device_key=device)
+    for index in range(config.CHAT_HISTORY_TURNS + 2):
+        action_flow.record_history_turn(
+            f"lệnh {index}", f"đáp {index}", device_key=device
+        )
+
+    history = action_flow.recent_history(device_key=device)
+    assert len(history) == config.CHAT_HISTORY_TURNS
+    assert history[0] == ("lệnh 2", "đáp 2")
+
+
+def test_history_isolated_per_device():
+    action_flow.clear_history(device_key="t13-a")
+    action_flow.clear_history(device_key="t13-b")
+    action_flow.record_history_turn("bí mật A", "đáp A", device_key="t13-a")
+
+    assert action_flow.recent_history(device_key="t13-b") == []
+    assert action_flow.recent_history(device_key="t13-a") == [
+        ("bí mật A", "đáp A")
+    ]
+
+
+# ─── T13/E4 — transcript OCR trong chat ───────────────────────────────────
+
+
+def test_ocr_transcript_injected(monkeypatch):
+    device = "t13-ocr"
+    action_flow.remember_ocr(
+        "Điều 2: phí dịch vụ là 250 nghìn đồng", device_key=device
+    )
+    captured = _capture(monkeypatch)
+
+    list(
+        chat.handle(
+            IMG, "khái niệm đó là gì", params={"_device_key": device}
+        )
+    )
+
+    assert "Điều 2: phí dịch vụ là 250 nghìn đồng" in captured["prompt"]
+
+
+def test_ocr_transcript_has_ignore_clause(monkeypatch):
+    action_flow.remember_ocr("Nội dung tờ giấy")
+    captured = _capture(monkeypatch)
+
+    list(chat.handle(IMG, "mấy giờ rồi"))
+
+    assert "Không liên quan thì bỏ qua" in captured["prompt"]
+
+
+def test_unrelated_question_not_dragged_to_text(monkeypatch):
+    action_flow.remember_ocr("Hợp đồng vay 500 triệu đồng")
+    captured = _capture(monkeypatch, reply="Bây giờ là mười giờ.")
+
+    answer = "".join(chat.handle(IMG, "mấy giờ rồi"))
+
+    assert "Không liên quan thì bỏ qua" in captured["prompt"]
+    assert answer == "Bây giờ là mười giờ."
+    assert "hợp đồng" not in answer.lower()
+
+
+def test_expired_ocr_not_injected(monkeypatch):
+    action_flow.remember_ocr(
+        "OCR_EXPIRED_SECRET",
+        taken_at=time.monotonic() - 301,
+    )
+    captured = _capture(monkeypatch)
+
+    list(chat.handle(IMG, "xin chào"))
+
+    assert "OCR_EXPIRED_SECRET" not in captured["prompt"]
+
+
+# ─── T13/G7 — prefix cache và nhất quán vị trí ─────────────────────────────
+
+
+def test_invariant_prefix_is_stable(monkeypatch):
+    monkeypatch.setattr(chat, "_now_text", lambda: "GIỜ_MỘT")
+    first = chat._build_prompt("câu một", search=True)
+    monkeypatch.setattr(chat, "_now_text", lambda: "GIỜ_HAI")
+    action_flow.record_history_turn("lịch sử khác", "đáp khác")
+    action_flow.remember_ocr("OCR khác")
+    second = chat._build_prompt("câu hai", search=True)
+
+    assert first[: len(chat._SYSTEM_PROMPT)] == chat._SYSTEM_PROMPT
+    assert second[: len(chat._SYSTEM_PROMPT)] == chat._SYSTEM_PROMPT
+    assert first[: len(chat._SYSTEM_PROMPT)] == second[: len(chat._SYSTEM_PROMPT)]
+
+
+def test_prompt_content_unchanged_after_split():
+    # Hash phần luật bất biến trước khi T13 chỉ tách ba placeholder động ở cuối.
+    assert hashlib.sha256(chat._SYSTEM_PROMPT.encode()).hexdigest() == (
+        "e4df44f1e7d45aa4a74e57473bf48ed7bb9b4a76c8d113e74efe90a01353a02b"
+    )
+
+
+def test_no_location_no_nearby_search_instruction(monkeypatch):
+    chat.reset_location_cache()
+    captured = _capture(monkeypatch)
+
+    list(chat.handle(IMG, "quán ăn gần đây"))
+
+    prompt = captured["prompt"]
+    assert "CHƯA lấy được vị trí" in prompt
+    assert "địa điểm/quán/cửa hàng cụ thể nào quanh người dùng" not in prompt
+
+
+def test_first_person_pronouns_fixed(monkeypatch):
+    captured = _capture(monkeypatch)
+    list(chat.handle(IMG, "xin chào"))
+    assert 'Luôn xưng "tôi" và gọi người dùng là "bạn"' in captured["prompt"]

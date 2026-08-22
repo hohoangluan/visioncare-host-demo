@@ -1,11 +1,11 @@
 import logging
 import threading
 import time
-from collections import deque
 from collections.abc import Iterator
 from datetime import UTC, datetime
 
 import config
+from handlers import action_flow
 from models import vlm
 from services import visioncare_client
 
@@ -51,9 +51,12 @@ _SYSTEM_PROMPT = (
     "mời họ nói lại. TUYỆT ĐỐI không bịa ra một câu hỏi rồi tự trả lời nó.\n"
     "- Nhưng đừng vội bỏ cuộc: câu ngắn, cụt, sai ngữ pháp mà vẫn đoán ra ý thì "
     "cứ trả lời bình thường. Chỉ nói chưa hiểu khi thật sự không có manh mối.\n"
-    "{search}"
-    "Bây giờ là {now}.\n"
-    "{location}"
+)
+
+_OCR_CONTEXT_TEMPLATE = (
+    'Người dùng vừa nhờ đọc một văn bản. Nội dung: "{transcript}". Nếu câu '
+    'hỏi trỏ vào văn bản này ("chữ này", "khái niệm đó", "mục kia") thì trả '
+    "lời dựa vào nó. Không liên quan thì bỏ qua."
 )
 
 # Chỉ thêm khi lượt này thật sự bật Google Search. Dán câu "bạn tra được
@@ -316,13 +319,8 @@ _WEEKDAYS = [
     "thứ Hai", "thứ Ba", "thứ Tư", "thứ Năm", "thứ Sáu", "thứ Bảy", "Chủ nhật",
 ]
 
-# (câu người dùng, câu trả lời, mốc thời gian). deque có maxlen tự bỏ lượt cũ
-# nhất, nên lịch sử không phình vô hạn theo thời gian chạy của server.
-_HISTORY: deque[tuple[str, str, float]] = deque(maxlen=config.CHAT_HISTORY_TURNS)
-
-
 def reset_history() -> None:
-    _HISTORY.clear()
+    action_flow.clear_history()
 
 
 def _now_text() -> str:
@@ -338,15 +336,9 @@ def _now_text() -> str:
     )
 
 
-def _recent_turns() -> list[tuple[str, str]]:
-    """Các lượt gần đây, sau khi bỏ lịch sử đã nguội.
-
-    Người dùng bỏ máy rồi quay lại sau vài giờ là một cuộc trò chuyện khác;
-    kéo theo lượt cũ chỉ khiến model trả lời lạc đề.
-    """
-    if _HISTORY and time.monotonic() - _HISTORY[-1][2] > config.CHAT_HISTORY_TTL_SECONDS:
-        _HISTORY.clear()
-    return [(user, reply) for user, reply, _ in _HISTORY]
+def _recent_turns(device_key: str | None = None) -> list[tuple[str, str]]:
+    """Các lượt chat/action còn hạn trong Session dùng chung của thiết bị."""
+    return action_flow.recent_history(device_key=device_key)
 
 
 def _location_available() -> bool:
@@ -401,20 +393,31 @@ def _search_instruction(search: bool, search_failed: bool, has_location: bool) -
     return _SEARCH_INSTRUCTION if has_location else _SEARCH_INSTRUCTION_NO_LOCATION
 
 
-def _build_prompt(command_text: str, search: bool = False, search_failed: bool = False) -> str:
+def _build_prompt(
+    command_text: str,
+    search: bool = False,
+    search_failed: bool = False,
+    *,
+    device_key: str | None = None,
+) -> str:
+    # G7: tiền tố thật sự bất biến đứng trước. Giờ/vị trí/OCR/lịch sử/câu mới
+    # đều nằm sau để hai lượt khác nhau vẫn dùng chung toàn bộ prefix này.
     parts = [
-        _SYSTEM_PROMPT.format(
-            now=_now_text(),
-            search=_search_instruction(search, search_failed, _location_available()),
-            # Luôn nhét vị trí, không phân loại xem câu này có cần hay không.
-            # Cache do thread nền giữ nóng nên đọc ra tức thì, và đo được là
-            # thêm ~75 token này không làm mảnh đầu chậm đi
-            # (xem `config.CHAT_LOCATION_REFRESH_SECONDS`).
-            location=_location_text(),
-        )
+        _SYSTEM_PROMPT,
+        _search_instruction(search, search_failed, _location_available()),
+        f"Bây giờ là {_now_text()}.",
+        # Luôn nhét vị trí, không phân loại xem câu này có cần hay không. Cache
+        # do thread nền giữ nóng nên đọc ra tức thì.
+        _location_text(),
     ]
 
-    turns = _recent_turns()
+    cached_ocr = action_flow.get_last_ocr(300.0, device_key=device_key)
+    if cached_ocr is not None:
+        parts.append(
+            _OCR_CONTEXT_TEMPLATE.format(transcript=cached_ocr["text"])
+        )
+
+    turns = _recent_turns(device_key)
     if turns:
         parts.append("\nCác lượt trước (cũ trước, mới sau):")
         for user, reply in turns:
@@ -422,22 +425,6 @@ def _build_prompt(command_text: str, search: bool = False, search_failed: bool =
 
     parts.append(f'\nNgười dùng vừa nói: "{command_text}"\nTrợ lý:')
     return "\n".join(parts)
-
-
-def _remember(command_text: str, pieces: Iterator[str]) -> Iterator[str]:
-    """Đẩy từng mảnh ra ngay, đồng thời gom lại để ghi vào lịch sử khi xong.
-
-    Chỉ ghi khi luồng chạy hết: lỗi giữa chừng thì câu trả lời cụt đó không
-    được làm bối cảnh cho lượt sau.
-    """
-    reply: list[str] = []
-    for piece in pieces:
-        reply.append(piece)
-        yield piece
-
-    text = "".join(reply).strip()
-    if text:
-        _HISTORY.append((command_text, text, time.monotonic()))
 
 
 def handle(image: bytes, command_text: str, params: dict | None = None) -> Iterator[str]:
@@ -454,6 +441,7 @@ def handle(image: bytes, command_text: str, params: dict | None = None) -> Itera
     chính model quyết lúc sinh chữ. Giữ tham số lại để không phải sửa `router`
     và các handler khác cho khớp chữ ký.
     """
+    device_key = (params or {}).get("_device_key")
     if not config.CHAT_ALWAYS_SEARCH:
         # `search_failed=True`, không phải prompt trần. Tắt tra cứu bằng cấu hình
         # và tra cứu hỏng vì 429 là CÙNG MỘT tình huống với model: nó không có
@@ -469,16 +457,26 @@ def handle(image: bytes, command_text: str, params: dict | None = None) -> Itera
         # Cùng ba câu đó qua `search_failed=True` thì cả ba đều nói thẳng là
         # chưa tra cứu được. Một cờ boolean là toàn bộ khác biệt giữa "không
         # biết" và "bịa một quán phở có địa chỉ và khoảng cách".
-        return _remember(
+        return action_flow.remember_stream(
             command_text,
             vlm.generate_stream(
-                _build_prompt(command_text, search_failed=True), search=False
+                _build_prompt(
+                    command_text, search_failed=True, device_key=device_key
+                ),
+                search=False,
             ),
+            device_key=device_key,
         )
-    return _remember(command_text, _stream_with_search_fallback(command_text))
+    return action_flow.remember_stream(
+        command_text,
+        _stream_with_search_fallback(command_text, device_key=device_key),
+        device_key=device_key,
+    )
 
 
-def _stream_with_search_fallback(command_text: str) -> Iterator[str]:
+def _stream_with_search_fallback(
+    command_text: str, *, device_key: str | None = None
+) -> Iterator[str]:
     """Tra Google; tra hỏng thì trả lời lại và nói rõ là chưa tra được.
 
     Grounding có hạn mức riêng với hạn mức gọi model thường — đã gặp thật: lượt
@@ -486,7 +484,9 @@ def _stream_with_search_fallback(command_text: str) -> Iterator[str]:
     dự phòng thì người dùng chỉ nghe "có lỗi xảy ra", không biết là hỏng mạng,
     hỏng máy hay câu hỏi sai.
     """
-    grounded = vlm.generate_stream(_build_prompt(command_text, search=True), search=True)
+    grounded = vlm.generate_stream(
+        _build_prompt(command_text, search=True, device_key=device_key), search=True
+    )
     try:
         first = next(grounded)
     except StopIteration:
@@ -494,7 +494,10 @@ def _stream_with_search_fallback(command_text: str) -> Iterator[str]:
     except vlm.VLMError as exc:
         logger.warning("Tra cứu hỏng, trả lời không có tra cứu: %s", exc)
         yield from vlm.generate_stream(
-            _build_prompt(command_text, search_failed=True), search=False
+            _build_prompt(
+                command_text, search_failed=True, device_key=device_key
+            ),
+            search=False,
         )
         return
 

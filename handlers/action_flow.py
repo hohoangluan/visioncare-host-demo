@@ -366,13 +366,18 @@ def recall(key: str) -> str | None:
         return session.last_ids.get(key)
 
 
-def remember_ocr(text: str, taken_at: float | None = None) -> None:
+def remember_ocr(
+    text: str,
+    taken_at: float | None = None,
+    *,
+    device_key: str | None = None,
+) -> None:
     """Lưu transcript OCR hoàn chỉnh theo device hiện tại (T14/E2).
 
     Caller chỉ được gọi sau khi stream kết thúc sạch; hàm này cố ý không nhận
     các mảnh rời để một lỗi giữa stream không thể để lại cache nửa vời.
     """
-    session = _get_session()
+    session = _get_session(device_key)
     with _SESSIONS_LOCK:
         session.last_ocr = {
             "text": text,
@@ -381,14 +386,17 @@ def remember_ocr(text: str, taken_at: float | None = None) -> None:
 
 
 def get_last_ocr(
-    max_age_seconds: float = 300.0, now: float | None = None
+    max_age_seconds: float = 300.0,
+    now: float | None = None,
+    *,
+    device_key: str | None = None,
 ) -> dict | None:
     """Transcript OCR còn hạn của device hiện tại, hoặc ``None``.
 
     Cache hết hạn được xóa ngay để T13/E4 và T14/E3 không vô tình dùng lại
     chữ của một tờ giấy cũ. Trả bản sao để caller không sửa state ngoài lock.
     """
-    session = _get_session()
+    session = _get_session(device_key)
     current = time.monotonic() if now is None else now
     with _SESSIONS_LOCK:
         cached = session.last_ocr
@@ -694,27 +702,65 @@ def _reask_pending_for_error(operation: str, data: dict | None) -> None:
 # ─── T03 — lịch sử dùng chung theo device (hạ tầng cho B4) ─────────────────
 
 
-def record_history_turn(user_text: str, reply_text: str) -> None:
-    """Ghi một lượt vào lịch sử của thiết bị hiện tại.
-
-    Đây là HẠ TẦNG cho B4 ("lịch sử dùng chung, ghi cả lượt action") — CHƯA
-    nối vào `handlers/chat.py:226` (`_HISTORY`, một deque module-level RIÊNG,
-    chỉ ghi lượt `chat`) vì `handlers/chat.py` NẰM NGOÀI danh sách "FILE BẠN
-    ĐƯỢC SỬA" của T03 (AGENT_RULES mục B3 — không được sửa dù task file có
-    nhắc tới B4). Việc chuyển `chat.py` sang đọc/ghi qua đây, và gọi hàm này từ
-    mọi handler (không chỉ `chat`), là việc của một task/agent sau được phép
-    sửa `handlers/chat.py`. Xem "Lệch với task file" trong `docs/tasks/reports/T03.md`.
-    """
-    session = _get_session()
+def record_history_turn(
+    user_text: str,
+    reply_text: str,
+    *,
+    device_key: str | None = None,
+    recorded_at: float | None = None,
+) -> None:
+    """Ghi một lượt hoàn chỉnh vào lịch sử dùng chung của đúng thiết bị."""
+    user = " ".join((user_text or "").split())
+    reply = " ".join((reply_text or "").split())
+    if not user or not reply:
+        return
+    session = _get_session(device_key)
     with _SESSIONS_LOCK:
-        session.history.append((user_text, reply_text, time.monotonic()))
+        session.history.append(
+            (user, reply, time.monotonic() if recorded_at is None else recorded_at)
+        )
 
 
-def recent_history() -> list[tuple[str, str]]:
-    """Lịch sử (câu người dùng, câu trả lời) của thiết bị hiện tại, cũ nhất trước."""
-    session = _get_session()
+def recent_history(
+    *, device_key: str | None = None, now: float | None = None
+) -> list[tuple[str, str]]:
+    """Lịch sử còn hạn của thiết bị, cũ nhất trước (T13/B4)."""
+    session = _get_session(device_key)
+    current = time.monotonic() if now is None else now
     with _SESSIONS_LOCK:
+        if (
+            session.history
+            and current - session.history[-1][2] > config.CHAT_HISTORY_TTL_SECONDS
+        ):
+            session.history.clear()
         return [(user, reply) for user, reply, _ in session.history]
+
+
+def clear_history(*, device_key: str | None = None) -> None:
+    """Xóa lịch sử của một thiết bị; chủ yếu dùng khi reset test/session."""
+    session = _get_session(device_key)
+    with _SESSIONS_LOCK:
+        session.history.clear()
+
+
+def remember_stream(
+    user_text: str,
+    pieces: Iterator[str],
+    *,
+    device_key: str | None = None,
+) -> Iterator[str]:
+    """Stream ngay và chỉ ghi lịch sử sau khi nguồn kết thúc thành công.
+
+    Đây là `_remember()` dùng chung của T13/B4. Handler lỗi hoặc bị barge-in
+    giữa chừng không để lại một câu trả lời cụt làm ngữ cảnh cho lượt sau.
+    """
+    reply: list[str] = []
+    for piece in pieces:
+        reply.append(piece)
+        yield piece
+    text = "".join(reply).strip()
+    if text:
+        record_history_turn(user_text, text, device_key=device_key)
 
 
 def _await_result(

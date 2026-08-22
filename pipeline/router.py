@@ -281,16 +281,36 @@ def resolve_speech(
 
 
 def _dispatch(
-    intent_name: str, image: bytes | None, command_text: str, params: dict | None = None
+    intent_name: str,
+    image: bytes | None,
+    command_text: str,
+    params: dict | None = None,
+    *,
+    device_key: str | None = None,
 ) -> Iterator[str]:
     """Gọi handler của `intent_name`, tự dò chữ ký (một số handler nhận
     `params`, một số thì không) — dùng chung cho MỌI bước (1-6) dispatch tới
     handler, không riêng bước 6."""
     handler_mod = _HANDLERS.get(intent_name, chat)
     sig = inspect.signature(handler_mod.handle)
+    handler_params = dict(params or {})
+    # `_resolve` có thể được kéo trên thread không kế thừa ContextVar. Hai
+    # handler đọc Session trực tiếp phải nhận key đã chụp ở request thread.
+    if handler_mod in (chat, ocr) and device_key is not None:
+        handler_params["_device_key"] = device_key
     if "params" in sig.parameters:
-        return handler_mod.handle(image, command_text, params=params or {})
-    return handler_mod.handle(image, command_text)
+        pieces = handler_mod.handle(image, command_text, params=handler_params)
+    else:
+        pieces = handler_mod.handle(image, command_text)
+
+    # Chat tự dùng cùng helper để lời gọi trực tiếp trong test/script cũng được
+    # nhớ. Mọi handler còn lại được bọc tại một điểm dispatch duy nhất.
+    if handler_mod is chat:
+        return pieces
+    from handlers import action_flow as action_flow_mod
+    return action_flow_mod.remember_stream(
+        command_text, pieces, device_key=device_key
+    )
 
 
 def _with_bargein(
@@ -365,7 +385,11 @@ def _ordinal_index(text: str) -> int | None:
 
 
 def _resolve_deterministic_pending(
-    pending, image: bytes | None, command_text: str, action_flow
+    pending,
+    image: bytes | None,
+    command_text: str,
+    action_flow,
+    device_key: str | None = None,
 ) -> Iterator[str] | None:
     """Pha 2 (21.1) — PENDING TẤT ĐỊNH: câu trả lời ĐÓNG cho pending đang mở
     (ừ/không/số thứ tự/thôi/nói lại), khớp tất định, KHÔNG LLM.
@@ -396,7 +420,9 @@ def _resolve_deterministic_pending(
         action_flow.clear_pending()
         known = dict(pending.known)
         known["artist_any"] = True
-        return _dispatch(pending.intent, image, command_text, known)
+        return _dispatch(
+            pending.intent, image, command_text, known, device_key=device_key
+        )
 
     if pending.kind == "confirm":
         # SỬA LỖI review (docs/tasks/reports/T04.md mục sửa lỗi #2): kiểm
@@ -412,7 +438,13 @@ def _resolve_deterministic_pending(
             return iter([_CANCELLED_MESSAGE])
         if _PENDING_YES.search(text):
             action_flow.clear_pending()
-            return _dispatch(pending.intent, image, command_text, dict(pending.known))
+            return _dispatch(
+                pending.intent,
+                image,
+                command_text,
+                dict(pending.known),
+                device_key=device_key,
+            )
         return None
 
     if pending.kind == "select":
@@ -431,7 +463,9 @@ def _resolve_deterministic_pending(
                 known.update(chosen)
             else:
                 known["selected"] = chosen
-            return _dispatch(pending.intent, image, command_text, known)
+            return _dispatch(
+                pending.intent, image, command_text, known, device_key=device_key
+            )
         return None
 
     # kind == "fill": không có câu trả lời ĐÓNG khả dĩ nào khác — để pha 4 xử lý.
@@ -457,7 +491,11 @@ def _global_stop_target(command_text: str, state: dict) -> str | None:
 
 
 def _try_fill_pending_slot(
-    pending, image: bytes | None, command_text: str, state: dict
+    pending,
+    image: bytes | None,
+    command_text: str,
+    state: dict,
+    device_key: str | None = None,
 ) -> Iterator[str] | None:
     """Pha 4 (21.1) — PENDING ĐIỀN SLOT, qua Gemini có ngữ cảnh pending (B3/T05).
 
@@ -501,7 +539,9 @@ def _try_fill_pending_slot(
             known = dict(pending.known)
             known.update(params)
             known["_ocr_attempt"] = pending.attempt
-            return _dispatch(pending.intent, image, command_text, known)
+            return _dispatch(
+                pending.intent, image, command_text, known, device_key=device_key
+            )
         return None
 
     resolved, params = intent_mod.detect_with_params(text, state, pending=pending)
@@ -527,17 +567,21 @@ def _try_fill_pending_slot(
     if value is None or not _validate_slot(pending.slot, str(validation_text)):
         return None
 
-    return _dispatch(pending.intent, image, command_text, known)
+    return _dispatch(
+        pending.intent, image, command_text, known, device_key=device_key
+    )
 
 
-def _try_global_cancel_repeat(command_text: str, action_flow) -> str | None:
+def _try_global_cancel_repeat(
+    command_text: str, action_flow, device_key: str | None = None
+) -> str | None:
     """Pha 5 (21.1) — CANCEL / REPEAT TOÀN CỤC, chỉ xét khi KHÔNG có pending
     nào đang mở (pending có "thôi"/"nói lại" của riêng nó ở pha 2, mang nghĩa
     khác: huỷ CÂU HỎI đang chờ, không phải huỷ một tác vụ/nhắc lại câu vừa
     nói). `None` nếu câu không khớp — để bước 6 (INTENT DETECT) xử lý."""
     text = command_text or ""
     if _GLOBAL_REPEAT.search(text):
-        history = action_flow.recent_history()
+        history = action_flow.recent_history(device_key=device_key)
         return history[-1][1] if history else _NOTHING_TO_REPEAT
     if _GLOBAL_CANCEL.search(text):
         return _NOTHING_TO_CANCEL
@@ -596,7 +640,13 @@ def _resolve(
             command_text, stt_seconds,
         )
         first, rest = _with_bargein(
-            _dispatch(Intent.EMERGENCY_CALL, image, command_text, {}),
+            _dispatch(
+                Intent.EMERGENCY_CALL,
+                image,
+                command_text,
+                {},
+                device_key=device_key,
+            ),
             action_flow, device_key,
         )
         if first:
@@ -610,7 +660,7 @@ def _resolve(
     # ─── 2. PENDING TẤT ĐỊNH (21.1) ────────────────────────────────────────
     if pending is not None:
         deterministic = _resolve_deterministic_pending(
-            pending, image, command_text, action_flow
+            pending, image, command_text, action_flow, device_key
         )
         if deterministic is not None:
             logger.info(
@@ -635,7 +685,11 @@ def _resolve(
         # luôn, không để nó sống sót sang lượt sau chờ đúng slot cũ.
         action_flow.clear_pending()
         first, rest = _with_bargein(
-            _dispatch(stop_target, image, command_text), action_flow, device_key
+            _dispatch(
+                stop_target, image, command_text, device_key=device_key
+            ),
+            action_flow,
+            device_key,
         )
         if first:
             yield first
@@ -644,7 +698,9 @@ def _resolve(
 
     # ─── 4. PENDING ĐIỀN SLOT (21.1) — qua slot validator ──────────────────
     if pending is not None and pending.kind == "fill":
-        filled = _try_fill_pending_slot(pending, image, command_text, state)
+        filled = _try_fill_pending_slot(
+            pending, image, command_text, state, device_key
+        )
         if filled is not None:
             action_flow.clear_pending()
             logger.info(
@@ -662,7 +718,9 @@ def _resolve(
         action_flow.clear_pending()
 
     # ─── 5. CANCEL / REPEAT (21.1) — toàn cục, không có pending ────────────
-    global_reply = _try_global_cancel_repeat(command_text, action_flow)
+    global_reply = _try_global_cancel_repeat(
+        command_text, action_flow, device_key
+    )
     if global_reply is not None:
         logger.info("nghe='%s' -> CANCEL/REPEAT toàn cục (bước 5/6)", command_text)
         yield global_reply
@@ -700,7 +758,9 @@ def _resolve(
     ocr_text_only = (
         intent_name == Intent.OCR
         and params.get("ocr_followup") is True
-        and action_flow.get_last_ocr(ocr.OCR_CACHE_TTL_SECONDS) is not None
+        and action_flow.get_last_ocr(
+            ocr.OCR_CACHE_TTL_SECONDS, device_key=device_key
+        ) is not None
     )
     reject_reason = None if ocr_text_only else image_quality.reject_reason(intent_name, image)
     if reject_reason is not None:
@@ -712,7 +772,9 @@ def _resolve(
         return
 
     handler_started = time.monotonic()
-    pieces = _dispatch(intent_name, image, command_text, params)
+    pieces = _dispatch(
+        intent_name, image, command_text, params, device_key=device_key
+    )
 
     first, rest = _with_bargein(pieces, action_flow, device_key)
     # handler đo tới MẢNH ĐẦU, không phải tới lúc Gemini viết xong

@@ -8,9 +8,9 @@ from pipeline import image_quality
 OCR_CACHE_TTL_SECONDS = 300.0
 
 
-def _remember(transcript: str) -> None:
+def _remember(transcript: str, device_key: str | None = None) -> None:
     """T14/E2; T13 phải dùng lại helper state chung, không tạo cache thứ hai."""
-    action_flow.remember_ocr(transcript)
+    action_flow.remember_ocr(transcript, device_key=device_key)
 
 
 def _no_text(params: dict) -> str:
@@ -38,7 +38,10 @@ def handle(
     nguyên thuật ngữ chuyên ngành.
     """
     params = dict(params or {})
-    cached = action_flow.get_last_ocr(OCR_CACHE_TTL_SECONDS)
+    device_key = params.get("_device_key")
+    cached = action_flow.get_last_ocr(
+        OCR_CACHE_TTL_SECONDS, device_key=device_key
+    )
     if params.get("ocr_followup") and cached is not None:
         return ocr.answer_followup_stream(cached["text"], command_text)
 
@@ -53,6 +56,6 @@ def handle(
         image,
         mode,
         command_text,
-        on_complete=_remember,
+        on_complete=lambda transcript: _remember(transcript, device_key),
         on_no_text=lambda: _no_text(params),
     )
