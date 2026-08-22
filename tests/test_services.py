@@ -1,18 +1,24 @@
 import json
+import time
 import pytest
 from unittest.mock import patch, MagicMock
 
 import config
 from services import visioncare_client
-from handlers import action_flow, navigation, phone, ride, music, result_speech, slots
+from handlers import action_flow, chat, navigation, phone, ride, music, result_speech, slots
 
 
 @pytest.fixture(autouse=True)
 def _clean_action_state():
     """Các pending chuẩn T03 không được rò giữa những unit test handler."""
     action_flow.reset_state()
+    chat._LOCATION_FIX_CACHE = (
+        {"lat": 10.1234, "lng": 106.5678, "address": "Vị trí test"},
+        time.monotonic(),
+    )
     yield
     action_flow.reset_state()
+    chat.reset_location_cache()
 
 
 def test_call_service_api_success(monkeypatch):
@@ -297,19 +303,25 @@ def test_ride_confirm_books_the_destination_that_was_read_back(monkeypatch):
             "eta_minutes": 6,
         },
     )
-    "".join(ride.handle_quote(b"", "", {"destination": "Sân bay"}))
+    "".join(ride.handle_quote(b"", "", {
+        "destination": "Sân bay",
+        "destination_lat": 10.8188,
+        "destination_lng": 106.6519,
+    }))
 
     out = "".join(ride.handle_confirm(b"", "", {"confirm": True}))
 
     assert calls[0][0] == "api/v1/service/ride/quote"
     assert calls[0][1]["destination"]["address"] == "Sân bay"
+    assert calls[0][1]["destination"]["lat"] == 10.8188
+    assert calls[0][1]["current_location"]["lat"] == 10.1234
     # No price, product type or ETA: Grab only quotes after the rider confirms
     # the pickup point, which this flow cannot reach, so any number here would
     # be the backend's guess presented as a fare.
     assert "85" not in out
     assert "nghìn" not in out
     assert "phút" not in out
-    assert "điểm đón" in out and "xác nhận" in out
+    assert "điểm đón" in out and "chạm" in out
 
 
 def test_ride_confirm_cancels_without_calling_anything(monkeypatch):
@@ -324,7 +336,7 @@ def test_ride_confirm_cancels_without_calling_anything(monkeypatch):
 
 def test_ride_confirm_refuses_when_nothing_was_asked_for(monkeypatch):
     action_flow.forget("quote_id")
-    action_flow.forget("pending_ride_destination")
+    action_flow.clear_pending()
     calls = _stub_flow(monkeypatch)
 
     out = "".join(ride.handle_confirm(b"", "", {"confirm": True}))
@@ -344,7 +356,11 @@ def test_ride_destination_not_found_is_reported_not_guessed(monkeypatch):
             "error": {"code": "INVALID_DESTINATION"},
         },
     )
-    "".join(ride.handle_quote(b"", "", {"destination": "Chỗ Không Có Thật"}))
+    "".join(ride.handle_quote(b"", "", {
+        "destination": "Chỗ Không Có Thật",
+        "destination_lat": 10.1,
+        "destination_lng": 106.1,
+    }))
 
     out = "".join(ride.handle_confirm(b"", "", {"confirm": True}))
 

@@ -189,12 +189,12 @@ _DONE = "Đã thực hiện xong."
 # đó — nên mọi con số ở đây là ước lượng của server, đọc lên là nói một cái giá
 # không ai cam kết.
 _RIDE_APP_OPENED = (
-    "Đã mở ứng dụng đặt xe. Vui lòng nhấn vào thông báo trên điện thoại, "
-    "kiểm tra lại điểm đón và điểm đến trong ứng dụng rồi xác nhận để đặt xe."
+    "Đã mở ứng dụng đặt xe. Bạn còn phải chạm một lần vào nút đặt xe ở cuối "
+    "màn hình sau khi kiểm tra lại điểm đón và điểm đến."
 )
 _RIDE_REQUESTED = (
-    "Đã gửi yêu cầu đặt xe. Vui lòng nhấn vào thông báo trên điện thoại và "
-    "xác nhận điểm đón, điểm đến trong ứng dụng để hoàn tất."
+    "Đã mở ứng dụng đặt xe. Tôi không theo dõi được chuyến sau khi bàn giao. "
+    "Bạn còn phải kiểm tra điểm đón, điểm đến và chạm nút đặt xe để hoàn tất."
 )
 
 # Câu cố định của module này, để `pipeline/phrases.py` dựng sẵn audio.

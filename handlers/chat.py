@@ -133,15 +133,38 @@ _LOCATION_UNAVAILABLE = (
 # một vòng gọi xuống điện thoại có poll, trần 12s, và đặt nó trên đường người
 # dùng chờ là bắt họ đứng im ngần ấy giây trước khi nghe được chữ nào.
 _LOCATION_CACHE: tuple[str | None, float] = (None, 0.0)
+_LOCATION_FIX_CACHE: tuple[dict | None, float] = (None, 0.0)
 _LOCATION_LOCK = threading.Lock()
 _REFRESHER_STARTED = False
 
 
 def reset_location_cache() -> None:
     """Quên vị trí đã lấy (dùng trong test và khi đổi thiết bị)."""
-    global _LOCATION_CACHE
+    global _LOCATION_CACHE, _LOCATION_FIX_CACHE
     with _LOCATION_LOCK:
         _LOCATION_CACHE = (None, 0.0)
+        _LOCATION_FIX_CACHE = (None, 0.0)
+
+
+def get_current_location(
+    max_age_seconds: float | None = None, *, now: float | None = None
+) -> dict | None:
+    """Bản fix có cấu trúc còn hạn cho action cần tọa độ thật (T11/R6).
+
+    Đọc cache nóng, không gọi điện thoại trên request path. Trả bản sao để
+    caller không thể sửa state của refresher ngoài lock.
+    """
+    max_age = (
+        config.CHAT_LOCATION_MAX_FIX_AGE_SECONDS
+        if max_age_seconds is None
+        else max_age_seconds
+    )
+    current = time.monotonic() if now is None else now
+    with _LOCATION_LOCK:
+        fix, cached_at = _LOCATION_FIX_CACHE
+        if fix is None or current - cached_at >= max_age:
+            return None
+        return dict(fix)
 
 
 def _fix_age_seconds(captured_at: str | None) -> float | None:
@@ -175,7 +198,7 @@ def refresh_location_once() -> bool:
     nền vĩnh viễn — trong khi `_REFRESHER_STARTED` vẫn `True` nên không ai gọi
     lại. Bất cứ lỗi nào ở đây chỉ được phép trả `False`, không bao giờ ném ra.
     """
-    global _LOCATION_CACHE
+    global _LOCATION_CACHE, _LOCATION_FIX_CACHE
     try:
         result = visioncare_client.get_device_location()
         if not result:
@@ -224,8 +247,18 @@ def refresh_location_once() -> bool:
             "cái mà kể.\n"
             "Chỉ nhắc tới vị trí khi câu hỏi thật sự cần; đừng thêm thông tin thừa.\n"
         )
+        cached_at = time.monotonic()
         with _LOCATION_LOCK:
-            _LOCATION_CACHE = (text, time.monotonic())
+            _LOCATION_CACHE = (text, cached_at)
+            _LOCATION_FIX_CACHE = (
+                {
+                    "lat": lat,
+                    "lng": lng,
+                    "address": address,
+                    "captured_at": result.get("captured_at"),
+                },
+                cached_at,
+            )
         return True
     except Exception:  # noqa: BLE001 - thread nền chết lặng còn tệ hơn
         logger.exception("Lỗi khi lấy vị trí ở thread nền")
