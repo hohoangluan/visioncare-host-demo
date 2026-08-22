@@ -1,6 +1,6 @@
 # HANDOFF — để Codex (hoặc bất kỳ agent nào khác) tiếp tục chương trình 23-task
 
-Viết ngày 2026-08-22; Codex cập nhật sau T13 cùng ngày. Claude Code ban đầu dùng
+Viết ngày 2026-08-22; Codex cập nhật sau T11 cùng ngày. Claude Code ban đầu dùng
 `superpowers:subagent-driven-development`; người dùng sau đó chốt **không cần
 Superpowers**, ưu tiên hoàn tất chức năng chạy đúng và batch test để tiết kiệm thời
 gian. Tài liệu này là checkpoint sống qua compaction.
@@ -40,8 +40,9 @@ Firmware đang trên branch `net-stream-adpcm` sẵn có (không phải branch t
 ## 2. Trạng thái hiện tại — task nào xong, task nào đang chạy
 
 Xem bảng đầy đủ ở `docs/tasks/PROGRESS.md` (đã commit). Đợt 0-3 xong hoàn toàn;
-Codex đã làm tiếp T08, T09, T10, T12, T14, T16 và T13 phía server. Hiện **17/23
-task có code xong hoặc PARTIAL đúng dự kiến**; tiếp tục từ **T11**.
+Codex đã làm tiếp T08-T16 theo các task đã ghi ở bảng dưới. Hiện **18/23 task có
+code xong hoặc PARTIAL đúng dự kiến**; tiếp tục xác minh T11 trên emulator rồi
+làm **T23**.
 Tóm tắt:
 
 | Đợt | Task | Trạng thái | Commit |
@@ -66,9 +67,10 @@ Tóm tắt:
 | 4 | T14 OCR ngữ cảnh | ✅ | `c39b8d2` |
 | 4 | T16 Không gian & vật cản | ✅ | `cd0932c` |
 | 5 | T13 Chat & lịch sử | 🟠 code/test xong; chờ đo Gemini/prefix thật | `0a18376` |
-| 5-7 | T11/T17-T19/T21/T23 còn lại | ⬜ **BẮT ĐẦU TỪ T11** |
+| 5 | T11 Đặt xe | 🟠 server fail-closed; chờ Farefeed/geocode/app | `11662ac` |
+| 5-7 | T17-T19/T21/T23 còn lại | ⬜ **BẮT ĐẦU TỪ T23** |
 
-**HEAD code chức năng hiện tại của branch `feat/hoi-thoai-23-task`: `0a18376`.**
+**HEAD code chức năng hiện tại của branch `feat/hoi-thoai-23-task`: `11662ac`.**
 Regression T14/T16: **94 pass**. T12 có **16 DoD + 35 services + 109 regression
 pass**. Full suite sau T12: **584 pass, 1 skip, 9 xfail, 3 fail**, cả ba fail là
 LLM thật trả `unknown` khi quota Gemini cạn. Một snapshot full suite lúc T14/T16
@@ -281,16 +283,16 @@ response về, không crash), không xác nhận được kịch bản STT/inten
 
 ---
 
-## 6. Việc còn lại — 6 task chưa chạy + phần PARTIAL, theo RUNBOOK
+## 6. Việc còn lại — 5 task chưa chạy + phần PARTIAL, theo RUNBOOK
 
 **Đợt 3: XONG HOÀN TOÀN** (T05, T06, fix router.py — xem mục 2).
 
 **Đợt 4:** Xong. T08, T09, T10 PARTIAL đúng dự kiến; T12, T14, T16 DONE. T14
 đã nối H1/H3/H5 của T15 vào production và cung cấp OCR cache chung cho T13.
 
-**Đợt 5:** T13 đã code/test xong, PARTIAL chờ đo Gemini thật. Tiếp theo T11
-(đặt xe, 🔴 giữ full rigor, PARTIAL chờ Farefeed/geocode), rồi T23 (quyền &
-cấu hình, dùng emulator Android đã cài).
+**Đợt 5:** T13 đã code/test xong, PARTIAL chờ đo Gemini thật. T11 server đã
+fail-closed và PARTIAL chờ Farefeed/geocode/app contract; cần chạy AVD
+`test_pixel` trước khi nạp điện thoại thật. Tiếp theo T23 (quyền & cấu hình).
 
 **Đợt 6 — tuần tự (không song song, xây thẳng lên nhau):** T17 (tách `/frame`,
 🔴 F2 KHÔNG thi công) → T18 (SSE downlink) → T19 (cuộc gọi đến, cả 4 repo).

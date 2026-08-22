@@ -144,7 +144,7 @@ task khác.**
 ### Đợt 5 — phụ thuộc đợt 4
 
 - [x] **T13** Chat & lịch sử *(PARTIAL: code xong, chờ đo Gemini/prefix thật)*
-- [ ] **T11** Đặt xe *(cần T07; R1-R3/R5 ⛔ BLOCKED)*
+- [x] **T11** Đặt xe *(PARTIAL: server fail-closed; R1-R5/app ⛔ Farefeed/geocode/contract)*
 - [ ] **T23** Quyền & cấu hình *(độc lập, chèn đâu cũng được)*
 
 ### Đợt 6 — hạ tầng đường truyền
@@ -301,7 +301,7 @@ C2/P9 đã xong một phần, số dòng của `ride.py`/`music.py`/`navigation.
 
 ### Đợt 5
 - [x] T13 Chat & lịch sử *(PARTIAL: chờ đo Gemini/prefix thật)*
-- [ ] T11 Đặt xe
+- [x] T11 Đặt xe *(PARTIAL: server fail-closed; chờ Farefeed/geocode/app)*
 - [ ] T23 Quyền & cấu hình
 
 ### Đợt 6 — đường truyền
