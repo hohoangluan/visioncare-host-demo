@@ -8,6 +8,8 @@ hai đều ra cùng một câu "đã gửi yêu cầu".
 
 from dataclasses import dataclass
 
+from handlers.contact_match import format_candidates, sanitize_candidates
+
 _TIMEOUT_MESSAGE = "Điện thoại chưa phản hồi, vui lòng kiểm tra thông báo trên điện thoại."
 
 # Mã lỗi nghiệp vụ -> câu nói. Mã không có ở đây rơi về câu chung của từng
@@ -30,10 +32,13 @@ _TIMEOUT_MESSAGE = "Điện thoại chưa phản hồi, vui lòng kiểm tra th�
 # 8 mã cuối bảng là T20 THÊM MỚI: app đã phát (fixture xác nhận) nhưng trước
 # đây rơi vào `_GENERIC_FAILURE`/`_UNSPECIFIED_FAILURE` — câu chung, không nói
 # người dùng phải làm gì.
+_MULTIPLE_CONTACTS_PREFIX = "Có nhiều người trùng tên:"
+_CONTACT_SELECTION_QUESTION = "Bạn chọn ai?"
+
 _ERROR_SPEECH = {
     "DELIVERY_FAILED": "Không kết nối được với điện thoại, vui lòng mở ứng dụng trên điện thoại.",
     "CONTACT_NOT_FOUND": "Không tìm thấy người này trong danh bạ.",
-    "MULTIPLE_CONTACTS_FOUND": "Có nhiều người trùng tên trong danh bạ, vui lòng nói rõ hơn.",
+    "MULTIPLE_CONTACTS_FOUND": f"{_MULTIPLE_CONTACTS_PREFIX} {_CONTACT_SELECTION_QUESTION}",
     "CONTACT_PERMISSION_DENIED": "Ứng dụng chưa được cấp quyền đọc danh bạ.",
     "CALL_PERMISSION_DENIED": "Ứng dụng chưa được cấp quyền gọi điện.",
     "EMERGENCY_CONTACT_NOT_CONFIGURED": "Chưa cài số liên hệ khẩn cấp trên điện thoại.",
@@ -87,6 +92,18 @@ class ErrorPolicy:
     speech: str
     retryable: bool  # có đặt pending hỏi lại không (thi công thật ở T06)
     reask: tuple[str, str] | None = None  # (slot, intent) nếu retryable
+
+
+@dataclass(frozen=True)
+class PendingSpeech:
+    """Yêu cầu đặt pending đi kèm câu kết quả, không import ngược action_flow."""
+
+    slot: str
+    intent: str
+    known: dict
+    question: str
+    candidates: list
+    kind: str
 
 
 # code -> (retryable, reask). Mã không có mặt ở đây là TERMINAL, reask=None —
@@ -193,6 +210,8 @@ STATIC_SPEECH: tuple[str, ...] = (
     _RIDE_REQUESTED,
     _DONE,
     _DEFAULT_POLICY.speech,
+    _MULTIPLE_CONTACTS_PREFIX,
+    _CONTACT_SELECTION_QUESTION,
     *_ERROR_SPEECH.values(),
     *_GENERIC_FAILURE.values(),
 )
@@ -243,25 +262,50 @@ def _success_speech(operation: str, result: dict) -> str:
     return _DONE
 
 
-def speak_result(operation: str, data: dict | None) -> str:
-    """Câu nói cuối cùng cho một action, dựa trên trạng thái thật từ điện thoại.
+def _reply(text: str) -> tuple[tuple[str, ...], PendingSpeech | None]:
+    return (text,), None
+
+
+def speak_result(
+    operation: str, data: dict | None
+) -> tuple[tuple[str, ...], PendingSpeech | None]:
+    """Các mảnh câu nói cuối và pending (nếu có) từ kết quả điện thoại.
 
     `data` là phần `data` của `GET /api/v1/requests/{id}`, hoặc `None` khi chờ
     hết giờ mà request vẫn `processing`.
     """
     if data is None:
-        return _TIMEOUT_MESSAGE
+        return _reply(_TIMEOUT_MESSAGE)
 
     state = data.get("request_state")
     if state == "succeeded":
         result = data.get("result")
-        return _success_speech(operation, result if isinstance(result, dict) else {})
+        return _reply(_success_speech(operation, result if isinstance(result, dict) else {}))
 
     if state == "timed_out":
-        return _TIMEOUT_MESSAGE
+        return _reply(_TIMEOUT_MESSAGE)
 
     error = data.get("error") or {}
     code = error.get("code", "")
+    if operation == "contact_call" and code == "MULTIPLE_CONTACTS_FOUND":
+        details = error.get("details") or data.get("details") or {}
+        raw_candidates = details.get("candidates") if isinstance(details, dict) else []
+        candidates = sanitize_candidates(raw_candidates or [])
+        if candidates:
+            labels = format_candidates(candidates)
+            dynamic_names = "; ".join(labels) + "."
+            pending = PendingSpeech(
+                slot="contact_selection",
+                intent="contact_call",
+                known={},
+                question=_CONTACT_SELECTION_QUESTION,
+                candidates=[candidate.as_pending() for candidate in candidates],
+                kind="select",
+            )
+            return (
+                (_MULTIPLE_CONTACTS_PREFIX, dynamic_names, _CONTACT_SELECTION_QUESTION),
+                pending,
+            )
     if code in _ERROR_SPEECH:
-        return _ERROR_SPEECH[code]
-    return _GENERIC_FAILURE.get(operation, _DEFAULT_POLICY.speech)
+        return _reply(_ERROR_SPEECH[code])
+    return _reply(_GENERIC_FAILURE.get(operation, _DEFAULT_POLICY.speech))

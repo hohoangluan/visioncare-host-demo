@@ -104,7 +104,9 @@ def test_no_unhandled_app_code():
         # nhiều operation) -- test với một operation KHÔNG có trong
         # `_GENERIC_FAILURE`, để buộc câu trả lời phải tới từ `_ERROR_SPEECH`
         # hoặc `_DEFAULT_POLICY`, không phải tình cờ trúng generic fallback.
-        speech = result_speech.speak_result("__khong_ton_tai__", data)
+        pieces, pending = result_speech.speak_result("__khong_ton_tai__", data)
+        speech = "".join(pieces)
+        assert pending is None
         assert speech and speech.strip(), f"mã {code} ra câu rỗng"
         has_own_speech = code in result_speech._ERROR_SPEECH
         is_meaningful_fallback = speech == result_speech._DEFAULT_POLICY.speech
@@ -150,7 +152,9 @@ def test_unknown_code_never_silent():
     """🔴 Nguyên tắc 21.7: mã lỗi BỊA RA, chưa ai từng thấy, vẫn phải ra một
     câu nói được -- KHÔNG được rơi vào im lặng."""
     data = {"request_state": "failed", "error": {"code": "ZZZ_UNKNOWN"}}
-    speech = result_speech.speak_result("__operation_khong_ton_tai__", data)
+    pieces, pending = result_speech.speak_result("__operation_khong_ton_tai__", data)
+    speech = "".join(pieces)
+    assert pending is None
     assert speech == result_speech._DEFAULT_POLICY.speech
     assert speech.strip()
 
@@ -158,7 +162,9 @@ def test_unknown_code_never_silent():
     # thắng _DEFAULT_POLICY -- thứ tự tra đã chốt ở CONTRACTS mục 5.5:
     # _ERROR_SPEECH[code] -> _GENERIC_FAILURE[operation] -> _DEFAULT_POLICY.
     data_known_op = {"request_state": "failed", "error": {"code": "ZZZ_UNKNOWN"}}
-    speech_known_op = result_speech.speak_result("music_stop", data_known_op)
+    pieces, pending = result_speech.speak_result("music_stop", data_known_op)
+    speech_known_op = "".join(pieces)
+    assert pending is None
     assert speech_known_op == result_speech._GENERIC_FAILURE["music_stop"]
     assert speech_known_op != result_speech._DEFAULT_POLICY.speech
 
@@ -167,7 +173,9 @@ def test_missing_error_object_never_silent():
     """`data["error"]` vắng mặt hoàn toàn (không chỉ mã lạ) cũng không được im
     lặng -- `code` rỗng phải trượt hết `_ERROR_SPEECH` rồi rơi đúng fallback."""
     data = {"request_state": "failed"}
-    speech = result_speech.speak_result("__operation_khong_ton_tai__", data)
+    pieces, pending = result_speech.speak_result("__operation_khong_ton_tai__", data)
+    speech = "".join(pieces)
+    assert pending is None
     assert speech == result_speech._DEFAULT_POLICY.speech
 
 
@@ -190,7 +198,9 @@ def test_timeout_wins_over_error_code():
         "request_state": "timed_out",
         "error": {"code": "CONTACT_NOT_FOUND"},
     }
-    assert result_speech.speak_result("contact_call", data) == result_speech._TIMEOUT_MESSAGE
+    pieces, pending = result_speech.speak_result("contact_call", data)
+    assert "".join(pieces) == result_speech._TIMEOUT_MESSAGE
+    assert pending is None
 
 
 # --- 4.2 (T20-error-contract.md mục 4.2) — CHƯA LÀM, bàn giao cho T06 -------

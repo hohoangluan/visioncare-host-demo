@@ -11,7 +11,6 @@ import uuid
 import config
 from pipeline import tts
 from handlers import result_speech, slots as slot_policy
-from handlers.result_speech import speak_result
 from handlers.waiting import wait_for
 from services.visioncare_client import (
     VisionCareAPIError,
@@ -796,15 +795,42 @@ def run_action(
     remaining = config.VISIONCARE_FAST_ACTION_SECONDS - (time.monotonic() - started)
     final = action_callbacks.wait(request_id, remaining)
     if final is not None:
-        # T06/D4: lỗi có nguồn hỏi lại thật -> đặt pending TRƯỚC khi đọc câu
-        # báo lỗi, để lượt kế tiếp của người dùng đã có sẵn `question`/`slot`
-        # đúng chờ sẵn (xem `_reask_pending_for_error`). Chạy trong khi vẫn ở
+        # T06/D4 + T08/D6: lỗi có nguồn hỏi lại thật -> đặt pending TRƯỚC khi
+        # đọc câu báo lỗi và câu hỏi, để lượt kế tiếp của người dùng đã có sẵn
+        # `question`/`slot` đúng chờ sẵn. Chạy trong khi vẫn ở
         # request `/process` thật (ambient device context còn đúng) — KHÔNG
         # gọi từ `reconcile_late()`/callback nền, nơi đó không có
         # `DEVICE_ID_CTX` (cùng lớp bug mà `note_result()` đã phải vá, xem
         # docstring hàm đó).
-        _reask_pending_for_error(operation, final)
-        yield speak_result(operation, final)
+        pieces, pending_speech = result_speech.speak_result(operation, final)
+        pending_to_ask = None
+        if pending_speech is not None:
+            pending_to_ask = set_pending(
+                slot=pending_speech.slot,
+                intent=pending_speech.intent,
+                known=pending_speech.known,
+                question=pending_speech.question,
+                candidates=pending_speech.candidates,
+                kind=pending_speech.kind,
+            )
+        else:
+            before = get_pending()
+            _reask_pending_for_error(operation, final)
+            after = get_pending()
+            if after is not None and after is not before:
+                pending_to_ask = after
+                pieces = (*pieces, after.question)
+
+        if pending_to_ask is not None:
+            # `set_pending()` chỉ biết độ dài `question`. Ở đây người dùng còn
+            # nghe câu báo lỗi / danh sách tên TRƯỚC câu hỏi, nên dời asked_at
+            # thêm đúng phần đó để TTL thật sự bắt đầu sau khi TTS đọc xong.
+            before_question = pieces[:-1] if pieces and pieces[-1] == pending_to_ask.question else pieces
+            pending_to_ask.asked_at += sum(
+                _estimate_speech_seconds(piece) for piece in before_question
+            )
+        for piece in pieces:
+            yield _utterance(piece)
         return
 
     # Không hủy action ở mốc SLO. Polling chỉ còn là recovery nền nếu callback

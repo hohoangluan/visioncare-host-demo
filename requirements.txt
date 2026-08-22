@@ -17,5 +17,8 @@ lameenc
 # so với 113 ms mỗi lệnh gọi) — mà một lượt lấy vị trí là ~5 lệnh gọi và
 # `music_play` chờ tới 80 lượt poll.
 httpx
+# So khớp tên danh bạ (T08/D7): WRatio xử lý tốt tên đảo thứ tự token mà
+# difflib không làm được; wheel C++ nhỏ, không kéo model/torch.
+rapidfuzz
 # dev / test
 pytest

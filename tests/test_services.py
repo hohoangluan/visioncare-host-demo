@@ -218,10 +218,12 @@ def test_unknown_error_code_with_no_generic_failure_uses_default_policy(monkeypa
     `_GENERIC_FAILURE` riêng ('music_play' KHÔNG hợp — nó có; dùng thẳng
     `speak_result` với một operation bịa để trúng đúng nhánh thứ 4 của thứ tự
     tra ở CONTRACTS mục 5.5)."""
-    out = result_speech.speak_result(
+    pieces, pending = result_speech.speak_result(
         "mot_operation_khong_ton_tai",
         {"request_state": "failed", "error": {"code": "MOT_MA_KHONG_TON_TAI"}},
     )
+    out = "".join(pieces)
+    assert pending is None
     assert out == result_speech._DEFAULT_POLICY.speech
 
 
