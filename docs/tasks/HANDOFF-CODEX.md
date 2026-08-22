@@ -1,6 +1,6 @@
 # HANDOFF — để Codex (hoặc bất kỳ agent nào khác) tiếp tục chương trình 23-task
 
-Viết ngày 2026-08-22; Codex cập nhật sau T11 cùng ngày. Claude Code ban đầu dùng
+Viết ngày 2026-08-22; Codex cập nhật sau T17 cùng ngày. Claude Code ban đầu dùng
 `superpowers:subagent-driven-development`; người dùng sau đó chốt **không cần
 Superpowers**, ưu tiên hoàn tất chức năng chạy đúng và batch test để tiết kiệm thời
 gian. Tài liệu này là checkpoint sống qua compaction.
@@ -40,9 +40,9 @@ Firmware đang trên branch `net-stream-adpcm` sẵn có (không phải branch t
 ## 2. Trạng thái hiện tại — task nào xong, task nào đang chạy
 
 Xem bảng đầy đủ ở `docs/tasks/PROGRESS.md` (đã commit). Đợt 0-3 xong hoàn toàn;
-Codex đã làm tiếp T08-T23 theo các task đã ghi ở bảng dưới. Hiện **19/23 task có
+Codex đã làm tiếp T08-T23 theo các task đã ghi ở bảng dưới. Hiện **20/23 task có
 code xong hoặc PARTIAL đúng dự kiến**. Android AVD `test_pixel` đã build/test/cài
-và khởi động app thành công; bắt đầu làm **T23**.
+và khởi động app thành công; T17 server + firmware đã checkpoint, tiếp theo **T18**.
 Tóm tắt:
 
 | Đợt | Task | Trạng thái | Commit |
@@ -68,10 +68,13 @@ Tóm tắt:
 | 4 | T16 Không gian & vật cản | ✅ | `cd0932c` |
 | 5 | T13 Chat & lịch sử | 🟠 code/test xong; chờ đo Gemini/prefix thật | `0a18376` |
 | 5 | T11 Đặt xe | 🟠 server fail-closed; chờ Farefeed/geocode/app | `11662ac` |
-| 5 | T23 Quyền & cấu hình | 🟠 code/AVD xong; chờ điện thoại thật | pending commit |
-| 6-7 | T17-T19/T21 còn lại | ⬜ **BẮT ĐẦU TỪ T17** |
+| 5 | T23 Quyền & cấu hình | 🟠 code/AVD xong; chờ điện thoại thật | `2520017` |
+| 6 | T17 Tách `/frame` | 🟠 F3/F4 code/build xanh; chờ board + F5 | server `50b53e8`, firmware `61f81e7` |
+| 6-7 | T18/T19/T21 còn lại | ⬜ **BẮT ĐẦU TỪ T18** |
 
-**HEAD code chức năng hiện tại của branch `feat/hoi-thoai-23-task`: `11662ac`.**
+**HEAD code chức năng hiện tại của branch `feat/hoi-thoai-23-task`: `50b53e8`.**
+T17: **19 DoD + 114 regression pass**; firmware compile
+**1 295 623 B (41%) / RAM tĩnh 77 520 B (23%)**.
 Regression T14/T16: **94 pass**. T12 có **16 DoD + 35 services + 109 regression
 pass**. Full suite sau T12: **584 pass, 1 skip, 9 xfail, 3 fail**, cả ba fail là
 LLM thật trả `unknown` khi quota Gemini cạn. Một snapshot full suite lúc T14/T16
@@ -318,7 +321,7 @@ response về, không crash), không xác nhận được kịch bản STT/inten
 
 ---
 
-## 6. Việc còn lại — 4 task chưa chạy + phần PARTIAL, theo RUNBOOK
+## 6. Việc còn lại — 3 task chưa chạy + phần PARTIAL, theo RUNBOOK
 
 **Đợt 3: XONG HOÀN TOÀN** (T05, T06, fix router.py — xem mục 2).
 
@@ -336,8 +339,10 @@ ngắt ADB ngay trước install nên còn 5 ca manual; xem `reports/T23.md`. Th
 đang ở working tree repo `app_demo_backend`, chưa commit để không gom nhầm các
 thay đổi Spotify/backend có sẵn. Tiếp theo T17.
 
-**Đợt 6 — tuần tự (không song song, xây thẳng lên nhau):** T17 (tách `/frame`,
-🔴 F2 KHÔNG thi công) → T18 (SSE downlink) → T19 (cuộc gọi đến, cả 4 repo).
+**Đợt 6:** T17 đã PARTIAL đúng bằng chứng: server `/frame` + FrameBuffer,
+firmware hai socket, 19 test/114 regression/build xanh; 🔴 F2 không thi công.
+Chưa nạp board, chưa chốt F5/RTT/max-age. Tiếp theo theo thứ tự:
+T18 (SSE downlink) → T19 (cuộc gọi đến, cả 4 repo).
 
 **Đợt 7:** T21 (ngân sách độ trễ — 🔴 PHẢI SAU T02+T22, và phải đo TRÊN BẢN TLS=1
 thật, nghĩa là làm số đo phần cứng T22 CÒN TREO ở đây trước).
@@ -384,5 +389,6 @@ T14, nên nếu dispatch T14 riêng thì ĐỪNG dispatch lại T14 trong Đợt
 - Ai geocode `address → lat/lng` cho T11 (§7 #2).
 - Quyền partner Farefeed đã xin chưa (T11).
 - Ngân sách `ocr` là bao nhiêu (T15/T21, §7 #3).
-- `max_age_ms` cho `/frame` (T17, §7 #10).
+- `max_age_ms` cho `/frame` (T17, §7 #10): đang dùng tạm 6000 ms + wait 800 ms,
+  phải thay bằng số board thật trước release.
 - P1 `contact_list` phía app có làm được không (T08, §7 #8).
