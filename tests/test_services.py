@@ -4,7 +4,7 @@ from unittest.mock import patch, MagicMock
 
 import config
 from services import visioncare_client
-from handlers import action_flow, navigation, phone, ride, music
+from handlers import action_flow, navigation, phone, ride, music, result_speech, slots
 
 
 def test_call_service_api_success(monkeypatch):
@@ -141,6 +141,101 @@ def test_contact_call_reports_a_failed_call_as_failed(monkeypatch):
 
     assert calls[0][0] == "api/v1/service/contact/call"
     assert "Không tìm thấy" in out
+    action_flow.clear_pending()  # T06/D4 đặt pending ở đây, dọn để không rò sang test khác
+
+
+# ─── T06/D4 — `run_action` đặt pending từ mã lỗi host ──────────────────────
+#
+# docs/tasks/T06-slot-policy.md mục 4.3. CHỈ 3 mã (không phải 4 như bản gốc
+# task file liệt kê): `INVALID_DESTINATION` bị loại theo đúng chỉ đạo của
+# lượt này ("mã nào P7-error-matrix.md nói app KHÔNG thật sự phát thì không
+# dựng câu/đường hỏi lại cho nó") — xem `handlers/action_flow.py::_ERROR_REASK`
+# và docs/tasks/reports/T06.md mục "Lệch với task file".
+
+@pytest.mark.parametrize(
+    "code, handler_call, expected_slot, expected_intent",
+    [
+        (
+            "CONTACT_NOT_FOUND",
+            lambda: phone.handle_contact(b"", "", {"contact_name": "Ai Đó"}),
+            "contact_name",
+            "contact_call",
+        ),
+        (
+            "MULTIPLE_CONTACTS_FOUND",
+            lambda: phone.handle_contact(b"", "", {"contact_name": "Anh"}),
+            "contact_name",
+            "contact_call",
+        ),
+        (
+            "SONG_NOT_FOUND",
+            lambda: music.handle_play(b"", "", {"song": "Bài lạ - Ca sĩ lạ"}),
+            "song_title",
+            "music_play",
+        ),
+    ],
+)
+def test_error_reask_sets_pending(monkeypatch, code, handler_call, expected_slot, expected_intent):
+    _stub_flow(monkeypatch, state="failed", error={"code": code})
+
+    "".join(handler_call())
+
+    pending = action_flow.get_pending()
+    assert pending is not None, f"{code} phải đặt pending hỏi lại"
+    assert pending.slot == expected_slot
+    assert pending.intent == expected_intent
+    assert pending.kind == "fill"
+    assert pending.question == slots.SLOTS[expected_slot].ask
+    action_flow.clear_pending()
+
+
+def test_terminal_error_does_not_set_pending(monkeypatch):
+    """`CONTACT_PERMISSION_DENIED` là terminal — hỏi lại không có nghĩa (quyền
+    đọc danh bạ không tự nhiên có được vì người dùng nói lại tên)."""
+    _stub_flow(monkeypatch, state="failed", error={"code": "CONTACT_PERMISSION_DENIED"})
+
+    out = "".join(phone.handle_contact(b"", "", {"contact_name": "Ai Đó"}))
+
+    assert action_flow.get_pending() is None
+    assert "quyền" in out.lower()
+
+
+def test_unknown_error_code_has_fallback_and_no_pending(monkeypatch):
+    """21.7: mã lỗi lạ (bịa ra, chưa ai từng thấy) rơi về câu chung của
+    operation (`_GENERIC_FAILURE["contact_call"]`) — không im lặng — và
+    KHÔNG mở một pending cho một mã không rõ nghĩa (quyết định #9: pending sai
+    nuốt mất câu kế tiếp còn tệ hơn không hỏi)."""
+    _stub_flow(monkeypatch, state="failed", error={"code": "MOT_MA_KHONG_TON_TAI"})
+
+    out = "".join(phone.handle_contact(b"", "", {"contact_name": "Ai Đó"}))
+
+    assert action_flow.get_pending() is None
+    assert result_speech._GENERIC_FAILURE["contact_call"] in out
+
+
+def test_unknown_error_code_with_no_generic_failure_uses_default_policy(monkeypatch):
+    """21.7 fallback cuối cùng thật sự: operation KHÔNG có dòng
+    `_GENERIC_FAILURE` riêng ('music_play' KHÔNG hợp — nó có; dùng thẳng
+    `speak_result` với một operation bịa để trúng đúng nhánh thứ 4 của thứ tự
+    tra ở CONTRACTS mục 5.5)."""
+    out = result_speech.speak_result(
+        "mot_operation_khong_ton_tai",
+        {"request_state": "failed", "error": {"code": "MOT_MA_KHONG_TON_TAI"}},
+    )
+    assert out == result_speech._DEFAULT_POLICY.speech
+
+
+def test_emergency_call_error_never_sets_pending_even_when_code_is_reaskable(monkeypatch):
+    """Chốt chặn tường minh trong `_reask_pending_for_error`: dù mã lỗi trùng
+    với một mã NẰM trong `_ERROR_REASK` (giả lập bằng cách gọi trực tiếp, vì
+    `CALL_FAILED` — mã thật của emergency_call — không nằm trong bảng đó),
+    `operation == "emergency_call"` phải luôn bị chặn trước khi tra bảng."""
+    calls = _stub_flow(monkeypatch, state="failed", error={"code": "CONTACT_NOT_FOUND"})
+
+    "".join(phone.handle_emergency(b"", "", {"emergency_number": "112"}))
+
+    assert calls[0][0] == "api/v1/service/emergency/call"
+    assert action_flow.get_pending() is None
 
 
 def test_contact_call_refuses_without_a_name(monkeypatch):

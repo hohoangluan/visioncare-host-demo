@@ -10,7 +10,7 @@ import numpy as np
 import pytest
 
 import config
-from handlers import action_flow, music, phone, result_speech, waiting
+from handlers import action_flow, music, navigation, phone, result_speech, ride, slots, waiting
 from pipeline import phrases, tts
 
 
@@ -178,3 +178,70 @@ def test_music_ack_tail_is_prerendered_even_though_head_is_dynamic(fake_tts):
 def test_phrase_key_ignores_whitespace_differences():
     assert tts.phrase_key("  Đang gọi xe.  ") == tts.phrase_key("Đang gọi xe.")
     assert tts.phrase_key("Đang gọi\nxe.") == tts.phrase_key("Đang gọi xe.")
+
+
+# --- T06/G5 — 5 câu ask của handlers/slots.py phải dựng sẵn ------------------
+
+
+def test_all_slot_asks_are_static(fake_tts):
+    """6 câu ask trong bảng SLOTS (5 hằng số, `destination`/`ride_destination`
+    dùng chung một câu) đều nằm trong tập `phrases.collect()`."""
+    collected = phrases.collect()
+    for slot, spec in slots.SLOTS.items():
+        assert tts.phrase_key(spec.ask) in collected, f"thiếu câu ask của slot {slot!r}"
+
+
+def test_slot_asks_are_served_without_calling_the_model(fake_tts):
+    phrases.warm()
+    fake_tts.clear()
+
+    for sentence in tts._sentences([f"{slots.SLOTS['contact_name'].ask}\n"]):
+        assert tts.prerendered(sentence) is not None
+
+    assert fake_tts == [], "câu ask của slot đã dựng sẵn mà vẫn gọi model"
+
+
+def test_no_duplicate_static_sentence():
+    """G5: mỗi câu cố định chỉ dựng sẵn MỘT lần — hai chỗ định nghĩa cùng một
+    câu thì `pipeline/phrases.py::collect()` vẫn de-dup theo `phrase_key()`
+    (audio không bị tổng hợp hai lần), nhưng NGUỒN VĂN BẢN thì phải chỉ có một
+    chỗ, để sửa một chữ không phải nhớ sửa ở hai nơi rồi hai nơi trôi khỏi
+    nhau.
+
+    ⚠️ HAI NGOẠI LỆ ĐÃ BIẾT, KHÔNG SỬA ĐƯỢC Ở LƯỢT NÀY: `handlers/music.py`
+    (`_ASK_SONG`, `_ASK_VOLUME`) trùng chữ tuyệt đối với `handlers/slots.py`
+    (`song_title`, `volume_direction`). `handlers/music.py` KHÔNG nằm trong
+    danh sách "FILE BẠN ĐƯỢC SỬA" của T06 (AGENT_RULES mục B3) nên hai hằng
+    số đó CHƯA được dời sang `slots.py`. Xem `docs/tasks/reports/T06.md` mục
+    "Lệch với task file". Test này CHO PHÉP đúng hai ngoại lệ này (subset,
+    không phải equality — T12 dọn xong thì tập này tự về rỗng và test vẫn
+    xanh), nhưng CHẶN bất kỳ trùng lặp MỚI nào khác.
+    """
+    ask_texts = set(slots.STATIC_SPEECH)
+    known_exceptions = {
+        ("music", "Bạn muốn nghe bài hát nào?"),
+        ("music", "Bạn muốn tăng hay giảm âm lượng?"),
+    }
+
+    found = set()
+    for name, mod in (("phone", phone), ("navigation", navigation), ("ride", ride), ("music", music)):
+        for sentence in getattr(mod, "STATIC_SPEECH", ()):
+            if sentence in ask_texts:
+                found.add((name, sentence))
+
+    assert found <= known_exceptions, f"Trùng lặp câu hỏi lại MỚI, ngoài dự kiến: {found - known_exceptions}"
+
+
+def test_dynamic_sentence_not_prebuilt():
+    """Câu chứa tên ứng viên (động) KHÔNG nằm trong tập dựng sẵn — chỉ nửa cố
+    định của nó mới trúng cache (xem `test_music_ack_tail_is_prerendered_even_though_head_is_dynamic`)."""
+    collected = phrases.collect()
+    dynamic = "Đang tìm số của Nguyễn Văn A."
+    assert tts.phrase_key(dynamic) not in collected
+
+
+def test_phrases_speech_modules_reference_slots():
+    """`pipeline/phrases.py::_speech_modules()` phải thấy `handlers/slots.py`
+    — nếu không, 5 câu ask của bảng SLOTS không bao giờ được dựng sẵn."""
+    modules = phrases._speech_modules()
+    assert slots in modules

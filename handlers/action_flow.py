@@ -10,6 +10,7 @@ import uuid
 
 import config
 from pipeline import tts
+from handlers import result_speech, slots as slot_policy
 from handlers.result_speech import speak_result
 from handlers.waiting import wait_for
 from services.visioncare_client import (
@@ -579,6 +580,84 @@ def pending_should_change_strategy() -> bool:
         return pending is not None and pending.over_max_attempt()
 
 
+# ─── T06/D4 — pending từ mã lỗi host ────────────────────────────────────────
+#
+# docs/tasks/T06-slot-policy.md mục D4, CONTRACTS.md mục 4.2/5.5.
+#
+# Trước đây bốn mã lỗi mà host trả về ("không tìm thấy người này",
+# "không tìm thấy bài hát", ...) chỉ đọc một câu báo lỗi rồi DỪNG — người dùng
+# phải nói lại NGUYÊN CÂU LỆNH từ đầu để thử lại, dù chỉ một từ (tên người,
+# tên bài) là sai. `_ERROR_REASK` cho phép `run_action()` đặt một pending
+# `fill` ngay tại đây, để lượt kế tiếp chỉ cần MỘT từ là chạy tiếp.
+#
+# KHÔNG liệt kê tay: lấy trực tiếp từ `result_speech._ERROR_POLICY` (T20) —
+# một nguồn duy nhất quyết định "mã nào có nguồn phát thật VÀ đáng hỏi lại",
+# tránh hai bảng (một ở đây, một ở T20) trôi khỏi nhau theo thời gian. T20 đã
+# viết rõ trong comment của họ: bảng đó CHỈ điền `reask` cho mã đã CHỐT thật
+# theo `docs/tasks/measurements/P7-error-matrix.md` — hôm nay là ba mã:
+# `CONTACT_NOT_FOUND`, `MULTIPLE_CONTACTS_FOUND` (cả hai -> `contact_name`),
+# `SONG_NOT_FOUND` (-> `song_title`).
+#
+# `INVALID_DESTINATION` CỐ Ý KHÔNG có mặt: P7-error-matrix.md mục 1.2 xác
+# nhận app hôm nay KHÔNG kiểm địa điểm nên mã này chưa có nguồn phát thật
+# (CONTRACTS mục 7 câu hỏi #7 CHƯA CHỐT) — `result_speech._ERROR_POLICY
+# ["INVALID_DESTINATION"].retryable` vì vậy là `False`, và dict-comprehension
+# dưới đây tự động bỏ qua nó. Thêm dòng cho mã này vào `_ERROR_REASK` trước
+# khi câu hỏi đó được chốt là dựng một đường hỏi lại cho một mã không ai từng
+# phát — đúng điều task này được dặn tránh.
+_ERROR_REASK: dict[str, tuple[str, str]] = {
+    code: policy.reask
+    for code, policy in result_speech._ERROR_POLICY.items()
+    if policy.retryable and policy.reask is not None
+}
+
+
+def _reask_pending_for_error(operation: str, data: dict | None) -> None:
+    """D4: kết quả cuối của action vừa chạy là lỗi có mã nằm trong
+    `_ERROR_REASK` -> đặt pending hỏi lại đúng slot, TTL/`kind` lấy từ
+    `handlers.slots.SLOTS` (nguồn chính sách duy nhất, T06/D1).
+
+    🔴 Chốt chặn TƯỜNG MINH thứ hai cho nguyên tắc CONTRACTS mục 0 #3
+    (`emergency_call` không đi qua bất kỳ bước xác minh nào): loại trừ
+    `emergency_call` NGAY TẠI ĐÂY bằng tên, không dựa hoàn toàn vào việc
+    `_ERROR_REASK`/`handlers.slots.SLOTS` tình cờ không chứa mã/slot nào của
+    nó. Hai lớp phòng thủ độc lập (assert import-time ở `handlers/slots.py`,
+    và guard tường minh ở đây) — một lớp bị xoá hay sửa sai thì lớp còn lại
+    vẫn chặn được.
+
+    Mã KHÔNG trong `_ERROR_REASK` (terminal, hoặc lạ) -> KHÔNG đặt pending:
+    21.7/CONTRACTS quyết định #9 — một pending SAI nuốt mất câu kế tiếp của
+    người dùng còn tệ hơn không hỏi lại gì cả.
+
+    `known={}`: KHÔNG mang theo các tham số khác của lượt vừa thất bại (ví dụ
+    `volume` đã nói kèm `music_play`). Giữ lại chúng cần ánh xạ tên slot ↔ tên
+    tham số của từng handler đích (`song_title` ở đây khác `song` mà
+    `handlers/music.py::handle_play` đọc) — việc đó thuộc phạm vi handler sở
+    hữu (T12), NGOÀI danh sách file được sửa của T06. Xem
+    `docs/tasks/reports/T06.md` mục "Lệch với task file".
+    """
+    if operation == "emergency_call":
+        return
+    if not data or data.get("request_state") == "succeeded":
+        return
+    error = data.get("error") or {}
+    code = error.get("code", "")
+    reask = _ERROR_REASK.get(code)
+    if reask is None:
+        return
+    slot, intent = reask
+    spec = slot_policy.SLOTS.get(slot)
+    if spec is None:
+        return
+    set_pending(
+        slot=slot,
+        intent=intent,
+        known={},
+        question=spec.ask,
+        kind=spec.kind,
+    )
+
+
 # ─── T03 — lịch sử dùng chung theo device (hạ tầng cho B4) ─────────────────
 
 
@@ -717,6 +796,14 @@ def run_action(
     remaining = config.VISIONCARE_FAST_ACTION_SECONDS - (time.monotonic() - started)
     final = action_callbacks.wait(request_id, remaining)
     if final is not None:
+        # T06/D4: lỗi có nguồn hỏi lại thật -> đặt pending TRƯỚC khi đọc câu
+        # báo lỗi, để lượt kế tiếp của người dùng đã có sẵn `question`/`slot`
+        # đúng chờ sẵn (xem `_reask_pending_for_error`). Chạy trong khi vẫn ở
+        # request `/process` thật (ambient device context còn đúng) — KHÔNG
+        # gọi từ `reconcile_late()`/callback nền, nơi đó không có
+        # `DEVICE_ID_CTX` (cùng lớp bug mà `note_result()` đã phải vá, xem
+        # docstring hàm đó).
+        _reask_pending_for_error(operation, final)
         yield speak_result(operation, final)
         return
 
