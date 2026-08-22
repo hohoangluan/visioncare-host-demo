@@ -78,7 +78,20 @@ def call_service_api(endpoint_path: str, payload: dict) -> dict:
 
     request_payload = dict(payload)
     if "device_id" not in request_payload:
-        request_payload["device_id"] = config.VISIONCARE_DEVICE_ID
+        # T01/T03 nợ kỹ thuật đã ghi trong reports/T01.md, T03.md: trước đây
+        # luôn nhét hằng số cấu hình, kể cả khi payload đến từ một request có
+        # `X-Device-Id` thật khác — nhiều kính gọi cùng lúc thì host 8001 nhận
+        # nhầm device_id, ảnh hưởng định tuyến FCM/pairing phía app. Nhập trễ
+        # để tránh vòng tròn `app` <-> `services` (app.py import xuống tới
+        # đây qua `handlers/action_flow.py`); ContextVar rỗng ngoài request
+        # thật (vd. thread nền lấy vị trí, test) thì rơi về đúng hằng số cũ.
+        try:
+            from app import DEVICE_ID_CTX
+
+            ctx_device_id = DEVICE_ID_CTX.get()
+        except ImportError:
+            ctx_device_id = None
+        request_payload["device_id"] = ctx_device_id or config.VISIONCARE_DEVICE_ID
     if "request_id" not in request_payload:
         request_payload["request_id"] = str(uuid.uuid4())
 

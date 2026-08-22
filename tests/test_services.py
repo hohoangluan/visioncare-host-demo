@@ -63,6 +63,40 @@ def test_call_service_api_success(monkeypatch):
     assert captured_req["body"]["destination"]["address"] == "Bách Khoa"
 
 
+def test_call_service_api_uses_request_device_id_not_config_constant(monkeypatch):
+    """Nợ kỹ thuật T01/T03 (reports/T01.md, T03.md): trước đây payload luôn
+    mang `config.VISIONCARE_DEVICE_ID`, bất kể request thật đến từ kính nào —
+    nhiều kính gọi cùng lúc thì host 8001 định tuyến FCM/pairing sai. Giờ phải
+    đọc đúng `app.DEVICE_ID_CTX` của request hiện tại."""
+    import httpx
+    import app as app_module
+
+    captured_req = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_req["body"] = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(202, json={
+            "status": "ok",
+            "data": {"request_id": "req-456", "operation": "ride_quote", "request_state": "processing"},
+        })
+
+    monkeypatch.setattr(
+        visioncare_client, "_CLIENT",
+        httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    token = app_module.DEVICE_ID_CTX.set("glasses-thiet-bi-khac")
+    try:
+        visioncare_client.call_service_api(
+            "api/v1/service/ride/quote", {"destination": {"address": "Bách Khoa"}}
+        )
+    finally:
+        app_module.DEVICE_ID_CTX.reset(token)
+
+    assert captured_req["body"]["device_id"] == "glasses-thiet-bi-khac"
+    assert captured_req["body"]["device_id"] != config.VISIONCARE_DEVICE_ID
+
+
 def _stub_flow(monkeypatch, final_result=None, state="succeeded", error=None):
     """Replace the two network calls run_action makes, and record what was sent.
 

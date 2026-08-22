@@ -27,13 +27,7 @@ def _clean_emergency_state():
     [
         "cấp cứu",
         "cứu tôi",
-        pytest.param(
-            "gọi cứu thương",
-            marks=pytest.mark.xfail(
-                reason="T09/21.5b: cổng từ khoá router chưa nhận 'gọi cứu thương'",
-                strict=True,
-            ),
-        ),
+        "gọi cứu thương",
         pytest.param(
             "một một bốn",
             marks=pytest.mark.xfail(

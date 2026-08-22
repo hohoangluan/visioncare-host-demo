@@ -118,10 +118,44 @@ sạch), quay lại kiểm `pipeline/router.py` dòng ~443 trước tiên.
   song) trước khi chốt số cho T21 — số hiện tại dao động 0.94x-2.59x vì đo lúc 5 agent
   khác chạy cùng máy.
 - T09/21.5 chưa có endpoint abort/cửa sổ 3-5 giây; chưa được hạ ngưỡng classifier
-  emergency khi người dùng chưa có đường dừng cuộc gọi nhầm. Hai từ khóa “gọi cứu
-  thương”, “một một bốn” cũng còn xfail vì T09 không sở hữu `pipeline/router.py`.
+  emergency khi người dùng chưa có đường dừng cuộc gọi nhầm. “một một bốn” CỐ Ý
+  còn xfail (3 số rời dễ trùng phòng/tầng, hạ precision thật khi chưa có abort —
+  xem 2d). “gọi cứu thương” đã hết xfail, xem 2d.
 - T10/D4 chờ quyết định forward geocode phía app và ngưỡng invalid; server đã xong
   pending 2 lượt, readback low-confidence 25 giây và ack có tên điểm đến.
+
+### 2d. Đợt hardening (Ruling 9) — chạy 2026-08-22, sau khi T08-T16 xong
+
+Đọc lại toàn bộ `docs/tasks/reports/T*.md` mục "Chưa làm & vì sao", lọc thứ vá
+được ngay (code-only, không chặn bởi app/hardware/quyết định người dùng chưa
+chốt). Hai vá thật, cả hai đã có test mới, full suite xanh (627 pass, bỏ qua
+`test_bang_am_thanh.py` vì cạn quota Gemini free-tier lúc chạy — không liên
+quan code):
+
+- **`services/visioncare_client.py:81`** (nợ từ T01+T03, hai report cùng ghi):
+  `call_service_api()` luôn nhét `config.VISIONCARE_DEVICE_ID` bất kể request
+  đến từ kính nào — nhiều kính gọi cùng lúc thì host 8001 nhận nhầm device_id,
+  sai định tuyến FCM/pairing. Sửa: đọc `app.DEVICE_ID_CTX.get()` (nhập trễ
+  trong hàm, tránh vòng tròn `app`↔`services`), rơi về hằng số cũ khi ContextVar
+  rỗng (thread nền, test). Test mới:
+  `tests/test_services.py::test_call_service_api_uses_request_device_id_not_config_constant`.
+- **`pipeline/router.py::_LOCAL_EMERGENCY`** thêm `cứu thương` (cụm động-danh từ
+  đặc thù, an toàn) — xfail `gọi cứu thương` ở `tests/test_emergency_detect.py`
+  đã bỏ. **KHÔNG thêm `một một bốn`**: 3 số đọc rời dễ trùng số phòng/tầng/điện
+  thoại đọc dở, hạ precision thật — đúng loại rủi ro Ruling 8 cấm (không hạ độ
+  nghiêm ngặt emergency). Giữ nguyên xfail, chờ T09/21.5b (cửa sổ abort) trước
+  khi cân nhắc lại.
+
+Ngoài hai cái trên: phần lớn "Chưa làm" của các report đã tự hết hạn (T13 gộp
+lịch sử chat+action giải quyết nợ T03/T04 nêu; T12 dọn `_ASK_SONG`/`_ASK_VOLUME`
+giải quyết nợ T06 phần music) hoặc bị chặn thật (app Android, phần cứng, quyết
+định người dùng chưa chốt) — không vá thêm, tránh đoán mù.
+
+**Bug thật tìm thấy khi test e2e sống (server 8000+8001+postgres thật, TTS
+synth → `/process` → real server) trước khi vào hardening pass này:** local
+SetFit classifier chặn OCR follow-up (T14) không bao giờ chạm Gemini vì `ocr`
+nằm trong `_PARAM_FREE`; đã vá bằng `_has_live_ocr_cache()` trong
+`pipeline/intent.py`, nằm trong commit T14 (`c39b8d2`) vì chung working tree.
 
 **Ba task không cần đợi Đợt 4's dependencies, có thể dispatch bất cứ lúc nào (xem
 mục 9 dưới để biết chi tiết):** T23, T14, T17.

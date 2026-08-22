@@ -77,7 +77,14 @@ _CLASSIFY_FAILED_MESSAGE = "Hệ thống đang bận, bạn vui lòng thử lạ
 # đúng câu chữ trùng với một mẫu khác). Xem "Cần người dùng chốt" ở
 # docs/tasks/reports/T04.md.
 _LOCAL_EMERGENCY = re.compile(
-    r"cấp cứu|khẩn cấp|gọi 115|gọi 113|sos|cứu (tôi|với|em|cháu|giúp)",
+    r"cấp cứu|khẩn cấp|gọi 115|gọi 113|sos|cứu (tôi|với|em|cháu|giúp)"
+    # T09 nợ kỹ thuật (reports/T09.md mục "Chưa làm"): "cứu thương" là cụm
+    # động-danh từ đặc thù, không lẫn được với câu nói thường — an toàn thêm
+    # ngay. CỐ Ý KHÔNG thêm "một một bốn" (114 đọc rời số): đó là 3 số đơn lẻ
+    # có thể trùng phòng/tầng/số điện thoại đọc dở, hạ precision thật khi CHƯA
+    # có cửa sổ abort (Ruling 8 HANDOFF-CODEX.md — không hạ độ nghiêm ngặt
+    # emergency dưới bất kỳ lý do gì) — giữ nguyên xfail, chờ T09/21.5b.
+    r"|cứu thương",
     re.I,
 )
 
