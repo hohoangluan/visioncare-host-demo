@@ -236,16 +236,97 @@ read_contacts · read_phone_state · call_phone · send_sms
 emergency_contact_set
 ```
 
-### 5.5 Mã lỗi — 🔴 **chưa chốt, xem T20**
+### 5.5 Mã lỗi
 
-Kết quả của T20 sẽ điền vào đây:
-- mã nào app **thật sự** phát
-- mã nào server kính có câu
-- retryable / terminal
-- fallback mặc định
+Đo ngày **2026-08-22**. Server kính `1581246903fa9b494237e61030773979e9b7c65e`,
+app + server app `7ffa42668f8eb1531ef81f60038058809fb7a455`.
+Bảng đầy đủ 31 dòng: `measurements/P7-error-matrix.md`.
+Fixture cho test: `tests/fixtures/app_error_codes.txt`.
 
-Hiện có **9 mã mồ côi** (server có câu, app không phát) và **7 mã không câu**
-(app phát, server không có). Chi tiết ở T20.
+**Mã chỉ được coi là có nguồn khi có code chạy dựng ra nó** — một
+`ReportErrorPayload("<MÃ>", ...)` ở app, hoặc một `{"code": ...}` được ghi vào
+cột `error` của operation ở server app. Tên mã trong `endpoint.md` KHÔNG phải
+nguồn. `INVALID_DESTINATION` có tên ở 6 chỗ trong tài liệu và 0 chỗ trong code.
+
+#### Mã có nguồn thật VÀ có câu ở server kính — 12 mã (chốt)
+
+| Mã | Nguồn | Loại |
+|---|---|---|
+| `CONTACT_NOT_FOUND` | app | retryable — reask `contact_name` |
+| `MULTIPLE_CONTACTS_FOUND` | app | retryable — `select` |
+| `CONTACT_PERMISSION_DENIED` | app | terminal |
+| `CALL_PERMISSION_DENIED` | app | terminal |
+| `EMERGENCY_CONTACT_NOT_CONFIGURED` | app | terminal |
+| `SONG_NOT_FOUND` | app | retryable — reask `song_title` |
+| `PLAYBACK_STOP_FAILED` | app | retryable |
+| `SUBSCRIPTION_INACTIVE` | app | terminal |
+| `CURRENT_LOCATION_UNAVAILABLE` | app | retryable |
+| `LOCATION_PERMISSION_DENIED` | app | terminal |
+| `NO_RIDE_AVAILABLE` | app | terminal — ⚠️ app đang phát cho lỗi parse tham số, sai nghĩa |
+| `DELIVERY_FAILED` | server app | terminal |
+
+#### Mã app phát mà server kính CHƯA có câu riêng — 8 mã, phải thêm câu
+
+`PLAYBACK_FAILED` · `CALL_FAILED` · `INVALID_VOLUME` · `NAVIGATION_START_FAILED`
+`NAVIGATION_STOP_FAILED` · `RIDE_CONFIRM_FAILED` · `INVALID_PARAMS`
+`UNSUPPORTED_ACTION`
+
+Tất cả hiện rơi vào `_GENERIC_FAILURE` hoặc `_UNSPECIFIED_FAILURE` — có tiếng
+nói, nhưng câu không cho biết phải làm gì. `CALL_FAILED` ưu tiên cao nhất: nó
+gồm cả ca **gọi khẩn cấp không quay số được**.
+
+#### Mã server kính có câu mà KHÔNG ai phát — 10 mã
+
+⚠️ Nửa dưới của bảng này (nhánh app/app backend) chỉ được xác nhận bằng grep
+một lần trên một commit cụ thể của repo ngoài, không có test tự động canh giữ —
+xem lại bằng `git -C <repo app> grep` trước khi xoá dòng nào trong
+`_ERROR_SPEECH`, đừng xoá chỉ vì bảng này nói vậy.
+
+Đề nghị xoá (7 dòng, do app/app backend chưa từng phát):
+`NAVIGATION_NOT_FOUND` · `NAVIGATION_ALREADY_STOPPED` · `QUOTE_NOT_FOUND`
+`QUOTE_EXPIRED` · `NO_ACTIVE_PLAYBACK` · `MUSIC_ACCOUNT_NOT_CONNECTED`
+`SMS_PERMISSION_DENIED`
+
+Ba mã còn lại của nhóm "10" xử khác — không xoá:
+
+- `RIDE_ACCOUNT_NOT_CONNECTED` — giữ cho provider tương lai (mục 5.2, T11).
+- `GLASSES_DEVICE_NOT_LINKED` — mã CÓ thật nhưng đi bằng **HTTP 404 của chính
+  lời gọi POST**, không nằm trong `error.code`, nên `_ERROR_SPEECH` không bao
+  giờ tra tới. Xoá khỏi `_ERROR_SPEECH`; bắt nó ở `handlers/action_flow.py`.
+- `INVALID_DESTINATION` **chưa quyết** — chờ câu hỏi mở số 7 (mục 7 dưới).
+
+#### Mã KHÔNG bao giờ tới `_ERROR_SPEECH` — không thêm câu
+
+`REPORT_TIMEOUT` (server app) luôn đi kèm `request_state="timed_out"`, mà
+`speak_result` trả `_TIMEOUT_MESSAGE` trước khi đọc `error.code`.
+
+#### Fallback mặc định — 21.7
+
+Thứ tự tra, KHÔNG có nhánh nào rơi vào im lặng:
+
+```
+1. request_state == "timed_out"   -> _TIMEOUT_MESSAGE
+2. _ERROR_SPEECH[code]            -> câu riêng của mã
+3. _GENERIC_FAILURE[operation]    -> câu riêng của operation
+4. _DEFAULT_POLICY.speech         -> mặc định (thay _UNSPECIFIED_FAILURE)
+```
+
+`_DEFAULT_POLICY` = `retryable=False`, `reask=None`, câu nói phải (1) nói rõ là
+không làm được, (2) nói rõ là không biết lý do, (3) chỉ đúng một hành động khả
+thi là xem thông báo trên điện thoại. Mặc định KHÔNG retryable: chưa biết mã
+nghĩa là gì thì không được đặt pending, vì pending sai nuốt câu kế tiếp của
+người dùng (quyết định #9).
+
+#### Giữ hợp đồng này khỏi trôi
+
+`tests/fixtures/app_error_codes.txt` là nguồn sự thật chép tay, **bắt buộc có
+ngày + commit hash của cả hai repo**. Cập nhật khi `ActionRegistry.kt` thêm/bớt
+một `ReportErrorPayload`, hoặc server app thêm một payload lỗi mới.
+`tests/test_error_contract.py` đối chiếu fixture với `_ERROR_SPEECH`.
+
+*(Ghi chú thực thi: bảng gốc `_ERROR_SPEECH` có 22 mã — 12 giữ + 10 xử theo mục
+trên = 22, khớp. Số này không tự động đối chiếu được — `tests/test_error_contract.py`
+phải tự đếm và so, không copy con số 22 này.)*
 
 ---
 

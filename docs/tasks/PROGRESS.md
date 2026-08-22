@@ -34,9 +34,9 @@ FAILED tests/test_bang_am_thanh.py::test_chat_follow_up_question_uses_previous_t
 
 | Task | Đợt | Trạng thái | Agent | Report | Ghi chú |
 |---|---|---|---|---|---|
-| G10 (T02§2.1) | 0 | ⬜ | | | chỉ đo |
-| H0 (T15§H0) | 0 | ⬜ | | | chỉ đo |
-| P7 (T20§P7) | 0 | ⬜ | | | chỉ đọc code |
+| G10 (T02§2.1) | 0 | ✅ | ae09a01 | reports/T02-G10.md | terminator CÓ tới, giống hệt localhost/tunnel — README firmware sai |
+| H0 (T15§H0) | 0 | ✅ | a74b5f9 | reports/T15-H0.md | ngưỡng đề xuất giữ 4-6, PROVISIONAL — chưa xác nhận capture thật |
+| P7 (T20§P7) | 0 | ✅ | a1af9e5 | reports/T20-P7.md | 10 orphan/8 mute (task file ghi 9/7) — xem contract-deltas/T20.md |
 | T01 | 1 | ⬜ | | | |
 | T03 | 1 | ⬜ | | | |
 | T04 | 1 | ⬜ | | | |

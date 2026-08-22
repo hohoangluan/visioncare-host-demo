@@ -273,9 +273,9 @@ C2/P9 đã xong một phần, số dòng của `ride.py`/`music.py`/`navigation.
 ## 6. Checklist tổng
 
 ### Đợt 0 — đo trước
-- [ ] G10 chunked end *(T02)* → `measurements/G10.md`
-- [ ] H0 tài liệu + blur 720p *(T15)* → `measurements/H0-blur-720p.md`
-- [ ] P7 bảng mã lỗi *(T20)* → `measurements/P7-error-matrix.md`
+- [x] G10 chunked end *(T02)* → `measurements/G10.md` — CÓ tới, README firmware sai
+- [x] H0 tài liệu + blur 720p *(T15)* → `measurements/H0-blur-720p.md` — đề xuất, provisional
+- [x] P7 bảng mã lỗi *(T20)* → `measurements/P7-error-matrix.md` — 10 orphan/8 mute (không phải 9/7)
 
 ### Đợt 1 — nền tảng
 - [ ] T01 Định danh thiết bị & lượt

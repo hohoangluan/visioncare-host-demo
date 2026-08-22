@@ -5,9 +5,12 @@ một tấm ảnh là vô dụng với "đọc chữ giùm tôi" nhưng hoàn to
 tới "gọi cho mẹ". Chặn trước khi biết intent thì `chat` và 9 action điều khiển
 điện thoại — vốn không hề đọc ảnh — vẫn bị một tấm ảnh xấu chặn đứng.
 
-Camera hiện dùng (1600x1200) cho sharpness thấp một cách HỆ THỐNG trên toàn bộ
-ảnh chụp được, không riêng ảnh nào: đo trên 83 request thật cùng độ phân giải,
-Laplacian variance native ra min=0.70 median=19.38 max=108.94. Không có ngưỡng
+Camera thật hiện dùng 1280×720, JPEG quality 18 (thang esp32-camera 0–63, số
+nhỏ = nét hơn — CONTRACTS.md mục 1 #6), KHÔNG PHẢI 1600x1200 như tài liệu cũ
+từng ghi. Bộ số min=0.70 median=19.38 max=108.94 ở dưới đây đo trên 83 request
+"1600x1200" cũ — mô tả một cấu hình không còn tồn tại, xem
+`docs/tasks/measurements/H0-blur-720p.md` cho số đo lại trên 1280×720 (số đó
+là ĐỀ XUẤT, chưa áp vào `config.IMAGE_MIN_SHARPNESS` bên dưới). Không có ngưỡng
 nào tách được "ảnh mờ" khỏi "ảnh bình thường của máy này" mà không loại nhầm
 phần lớn request hợp lệ — nên ngưỡng ở đây chỉ bắt outlier cực đoan, KHÔNG đảm
 bảo ảnh đủ nét để đọc đúng mọi chi tiết.
@@ -107,9 +110,10 @@ def reject_reason(intent: str, image_bytes: bytes | None) -> str | None:
     """Câu từ chối ảnh cho `intent`, hoặc None nếu request được đi tiếp.
 
     Gọi sau khi đã có intent. Intent không đọc ảnh thì thoát ngay, không decode
-    gì — vừa khỏi từ chối oan, vừa khỏi tốn CPU: decode 1600x1200 rồi chạy
-    Laplacian float64 mất khoảng 0.1s cho mỗi request, kể cả request "gọi cho
-    mẹ" không hề dùng tới ảnh.
+    gì — vừa khỏi từ chối oan, vừa khỏi tốn CPU: decode ảnh rồi chạy Laplacian
+    float64 tốn CPU cho mỗi request (≈0.1s đo trên 1600×1200 — cấu hình cũ,
+    CHƯA đo lại trên 1280×720), kể cả request "gọi cho mẹ" không hề dùng tới
+    ảnh.
     """
     if intent not in _READS_IMAGE:
         return None

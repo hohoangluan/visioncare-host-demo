@@ -1,0 +1,55 @@
+# Mã lỗi mà PHÍA ĐIỆN THOẠI thật sự phát ra lúc chạy.
+#
+# Nguồn sự thật cho `tests/test_error_contract.py` (T20 / P7). Chép tay, nên
+# NGÀY và COMMIT HASH dưới đây là bắt buộc: không có chúng thì sau một tuần
+# không ai biết bảng này mô tả bản app nào.
+#
+# Ngày đo:            2026-08-22
+# Repo server kính:   d:\Study\innostar\Sever_test
+#                     commit 1581246903fa9b494237e61030773979e9b7c65e
+# Repo app + backend: d:\Study\innostar\app_demo_backend   (monorepo, một hash chung)
+#                     commit 7ffa42668f8eb1531ef81f60038058809fb7a455
+#
+# Cách đo: grep mọi `ReportErrorPayload(...)` trong app Android và mọi payload
+# `{"code": ...}` được ghi vào cột `error` của operation ở backend. CHỈ tính chỗ
+# phát thật lúc chạy — KHÔNG tính mã chỉ xuất hiện trong tài liệu (endpoint.md,
+# project_context.md, contracts/contract-matrix.md) hay trong test.
+#
+# Cập nhật khi nào: mỗi lần `ActionRegistry.kt` thêm/bớt một `ReportErrorPayload`,
+# hoặc backend thêm một payload lỗi mới. Xem docs/tasks/measurements/P7-error-matrix.md.
+
+# --- App Android phát (apps/android/.../actions/ActionRegistry.kt) ---
+CALL_FAILED
+CALL_PERMISSION_DENIED
+CONTACT_NOT_FOUND
+CONTACT_PERMISSION_DENIED
+CURRENT_LOCATION_UNAVAILABLE
+EMERGENCY_CONTACT_NOT_CONFIGURED
+INVALID_PARAMS
+INVALID_VOLUME
+LOCATION_PERMISSION_DENIED
+MULTIPLE_CONTACTS_FOUND
+NAVIGATION_START_FAILED
+NAVIGATION_STOP_FAILED
+NO_RIDE_AVAILABLE
+PLAYBACK_FAILED
+PLAYBACK_STOP_FAILED
+RIDE_CONFIRM_FAILED
+SONG_NOT_FOUND
+SUBSCRIPTION_INACTIVE
+UNSUPPORTED_ACTION
+
+# --- Server app 8001 ghi vào `error.code` của operation (kính đọc được) ---
+DELIVERY_FAILED
+
+# --- Server app 8001 phát nhưng KHÔNG tới được `speak_result()` ---
+# Ghi ra đây để không ai tưởng chúng "mất tích"; test 4.1 KHÔNG được coi hai mã
+# này là nguồn hợp lệ cho một dòng trong `_ERROR_SPEECH`.
+#
+# REPORT_TIMEOUT            workers/timeout.py:30 — đi kèm request_state="timed_out",
+#                           `speak_result` chặn trước ở nhánh timed_out
+#                           (handlers/result_speech.py:178) nên không bao giờ tra bảng.
+# GLASSES_DEVICE_NOT_LINKED errors.py:161 — là HTTP 404 của chính lời gọi POST,
+#                           không nằm trong `error.code` của operation. Kính bắt
+#                           thành VisionCareAPIError -> nói câu `failure` của
+#                           từng handler (handlers/action_flow.py:245-251).
