@@ -91,6 +91,39 @@ _SEARCH_UNAVAILABLE_INSTRUCTION = (
     "gian, nếu có.\n"
 )
 
+# Biến thể của `_SEARCH_INSTRUCTION` khi CHƯA có vị trí nào dùng được (T07/C1).
+# Bản gốc bảo "PHẢI tra ... địa điểm/quán/cửa hàng cụ thể nào quanh người
+# dùng" — đúng nguyên văn câu đã gây ra vụ bịa quán phở khi ghép với vị trí
+# rỗng: model vẫn cố tra rồi lấy đại một địa điểm, không biết có gần người
+# dùng hay không. Bản này bỏ hẳn vế "quanh người dùng" và nói thẳng vì sao.
+_SEARCH_INSTRUCTION_NO_LOCATION = (
+    "Bạn tra được Google, và tự quyết định có tra hay không.\n"
+    "PHẢI tra trước khi trả lời nếu câu trả lời thay đổi theo ngày: thời tiết, "
+    "tin tức, giá cả, tỉ số, sự kiện đang diễn ra.\n"
+    "KHÔNG được tra hay đoán địa điểm/quán/cửa hàng cụ thể nào lúc này, vì "
+    "CHƯA xác định được vị trí người dùng (xem phần vị trí bên dưới) — tra rồi "
+    "lấy đại một địa điểm mà không biết có gần người dùng hay không còn tệ hơn "
+    "là nói thẳng là chưa biết họ ở đâu.\n"
+    "KHÔNG cần tra với kiến thức chung, tính toán, định nghĩa, kể chuyện, chào "
+    "hỏi, hay câu hỏi về chính cuộc trò chuyện này — cứ trả lời thẳng cho nhanh.\n"
+    "Khi đã tra: TUYỆT ĐỐI không nêu tên địa điểm, quán, cửa hàng, thương hiệu, "
+    "con số, giá hay khoảng cách nào không có trong kết quả tra cứu. Thà nói ít "
+    "mà đúng. Tra không ra thì nói thẳng là chưa tra được, không suy đoán.\n"
+)
+
+# Cache rỗng/quá hạn PHẢI trả khối này, KHÔNG BAO GIỜ trả "" (T07/C1 — sửa
+# quan trọng nhất của cả task). Trả "" thì prompt đồng thời (a) không có một
+# chữ nào về vị trí và (b) `_SEARCH_INSTRUCTION` (khi search=True) vẫn bảo
+# model tra "địa điểm quanh người dùng" — đúng công thức khiến model tự quy
+# Tân Triều, Đồng Nai thành TP.HCM rồi bịa ra một quán phở không có thật.
+_LOCATION_UNAVAILABLE = (
+    "CHƯA lấy được vị trí hiện tại của người dùng.\n"
+    "TUYỆT ĐỐI không đoán người dùng đang ở đâu, không nêu tên thành phố, "
+    "quận, hay địa điểm cụ thể nào như thể biết chỗ họ đứng.\n"
+    "Nếu câu hỏi cần vị trí, nói thẳng là chưa xác định được vị trí và gợi ý "
+    "người dùng kiểm tra định vị trên điện thoại.\n"
+)
+
 # Vị trí đã lấy và mốc thời gian lấy, do thread nền ghi vào.
 #
 # Đường xử lý request chỉ ĐỌC cache này, không bao giờ tự đi lấy: lấy vị trí là
@@ -106,19 +139,6 @@ def reset_location_cache() -> None:
     global _LOCATION_CACHE
     with _LOCATION_LOCK:
         _LOCATION_CACHE = (None, 0.0)
-
-
-def to_vn_time_str(captured_at: str | None) -> str:
-    if not captured_at:
-        return "Không có"
-    try:
-        stamp = datetime.fromisoformat(str(captured_at).replace("Z", "+00:00"))
-        if stamp.tzinfo is None:
-            stamp = stamp.replace(tzinfo=UTC)
-        vn_stamp = stamp.astimezone(timezone(timedelta(hours=7)))
-        return vn_stamp.strftime("%H:%M:%S (%d/%m/%Y)")
-    except Exception:
-        return str(captured_at)
 
 
 def _fix_age_seconds(captured_at: str | None) -> float | None:
@@ -145,55 +165,122 @@ def refresh_location_once() -> bool:
 
     Tách khỏi vòng lặp để test gọi được thẳng, và để `app.py` lấy lượt đầu ngay
     lúc khởi động thay vì đợi hết một nhịp.
+
+    TOÀN THÂN nằm trong một try/except (T07/C2): trước đây `result['lat']`
+    nằm NGOÀI try, nên một host trả thiếu `lat`/`lng` ném `KeyError` xuyên qua
+    hàm này, xuyên qua `loop()` (cũng không có try/except), giết chết thread
+    nền vĩnh viễn — trong khi `_REFRESHER_STARTED` vẫn `True` nên không ai gọi
+    lại. Bất cứ lỗi nào ở đây chỉ được phép trả `False`, không bao giờ ném ra.
     """
     global _LOCATION_CACHE
     try:
         result = visioncare_client.get_device_location()
+        if not result:
+            # KHÔNG xoá toạ độ cũ khi lấy hỏng. Mất mạng một nhịp không có
+            # nghĩa người dùng đã dịch đi đâu; toạ độ vài phút trước vẫn dùng
+            # được, và `_location_text()` tự bỏ nó khi quá hạn.
+            logger.info("Chưa lấy được vị trí ở nhịp này, giữ toạ độ cũ")
+            return False
+
+        age = _fix_age_seconds(result.get("captured_at"))
+        if age is not None and age > config.CHAT_LOCATION_MAX_FIX_AGE_SECONDS:
+            # Điện thoại trả về vị trí cuối cùng nó biết chứ không phải fix
+            # mới — app bị treo nền, hoặc định vị đang tắt. Nhận vào là dạy
+            # trợ lý trả lời tự tin về một chỗ người dùng rời đi từ lâu.
+            logger.warning(
+                "Bỏ bản định vị cũ %.0f phút (captured_at=%s), giữ toạ độ trước đó",
+                age / 60, result.get("captured_at"),
+            )
+            return False
+
+        # `.get()` chứ không phải `result["lat"]`: thiếu khoá là kết quả hỏng,
+        # không phải lý do để ném `KeyError` giết thread nền.
+        lat = result.get("lat")
+        lng = result.get("lng")
+        if lat is None or lng is None:
+            logger.warning("Kết quả định vị thiếu lat/lng, coi như lấy hỏng: %r", result)
+            return False
+
+        address = result.get("address")
+        where = address or f"toạ độ {lat}, {lng}"
+        text = (
+            f"Vị trí hiện tại của người dùng: {where} "
+            f"(toạ độ {lat}, {lng}).\n"
+            # Nói thẳng là cấm hỏi lại: đo thật, chỉ đưa vị trí vào prompt thì
+            # model vẫn hỏi ngược "bạn muốn xem thời tiết ở đâu?", mà người
+            # dùng khiếm thị không đọc bản đồ để trả lời. Cấm đổi sang thành
+            # phố lớn vì nó từng tự quy Tân Triều, Đồng Nai thành TP.HCM —
+            # lệch khoảng 20 km.
+            "Tính theo đúng vị trí này. TUYỆT ĐỐI không hỏi lại người dùng đang ở "
+            "đâu, và không đổi sang thành phố lớn gần đó cho tiện.\n"
+            "Khi gợi ý quán ăn, cửa hàng hay địa điểm: mọi gợi ý phải ở QUANH ĐÚNG "
+            "vị trí trên, không phải ở trung tâm tỉnh/thành hay một khu nổi tiếng "
+            "cách đó hàng chục cây số. Nói rõ chỗ đó nằm ở đâu so với người dùng "
+            "(tên đường, xã/phường) để họ biết có tới được không. Quanh đây không "
+            "có gì thì nói thẳng là quanh đây không có, chứ đừng với ra xa để có "
+            "cái mà kể.\n"
+            "Chỉ nhắc tới vị trí khi câu hỏi thật sự cần; đừng thêm thông tin thừa.\n"
+        )
+        with _LOCATION_LOCK:
+            _LOCATION_CACHE = (text, time.monotonic())
+        return True
     except Exception:  # noqa: BLE001 - thread nền chết lặng còn tệ hơn
         logger.exception("Lỗi khi lấy vị trí ở thread nền")
         return False
 
-    if not result:
-        # KHÔNG xoá toạ độ cũ khi lấy hỏng. Mất mạng một nhịp không có nghĩa
-        # người dùng đã dịch đi đâu; toạ độ vài phút trước vẫn dùng được, và
-        # `_location_text()` tự bỏ nó khi quá hạn.
-        logger.info("Chưa lấy được vị trí ở nhịp này, giữ toạ độ cũ")
-        return False
 
-    age = _fix_age_seconds(result.get("captured_at"))
-    vn_time = to_vn_time_str(result.get("captured_at"))
-    if age is not None and age > config.CHAT_LOCATION_MAX_FIX_AGE_SECONDS:
-        # Điện thoại trả về vị trí cuối cùng nó biết chứ không phải fix mới —
-        # app bị treo nền, hoặc định vị đang tắt. Nhận vào là dạy trợ lý trả lời
-        # tự tin về một chỗ người dùng rời đi từ lâu.
-        logger.warning(
-            "Bỏ bản định vị cũ %.0f phút (captured_at=%s), giữ toạ độ trước đó",
-            age / 60, result.get("captured_at"),
-        )
-        return False
+# Backoff khi đang hỏng liên tiếp (T07/C3). GPS bật lại lúc t+10s mà phải chờ
+# tới nhịp bình thường (mặc định 240s) tiếp theo là mất gần 4 phút không cần
+# thiết. Hỏng lần 1 → 15s, lần 2 → 30s, lần 3 trở đi → giữ 60s. Thành công một
+# lần là về thẳng nhịp bình thường, không dò lại từ đầu.
+_BACKOFF_SCHEDULE_SECONDS: tuple[float, ...] = (15.0, 30.0, 60.0)
 
-    address = result.get("address")
-    where = address or f"toạ độ {result['lat']}, {result['lng']}"
-    text = (
-        f"Vị trí hiện tại của người dùng: {where} "
-        f"(toạ độ {result['lat']}, {result['lng']}).\n"
-        # Nói thẳng là cấm hỏi lại: đo thật, chỉ đưa vị trí vào prompt thì model
-        # vẫn hỏi ngược "bạn muốn xem thời tiết ở đâu?", mà người dùng khiếm thị
-        # không đọc bản đồ để trả lời. Cấm đổi sang thành phố lớn vì nó từng
-        # tự quy Tân Triều, Đồng Nai thành TP.HCM — lệch khoảng 20 km.
-        "Tính theo đúng vị trí này. TUYỆT ĐỐI không hỏi lại người dùng đang ở "
-        "đâu, và không đổi sang thành phố lớn gần đó cho tiện.\n"
-        "Khi gợi ý quán ăn, cửa hàng hay địa điểm: mọi gợi ý phải ở QUANH ĐÚNG "
-        "vị trí trên, không phải ở trung tâm tỉnh/thành hay một khu nổi tiếng "
-        "cách đó hàng chục cây số. Nói rõ chỗ đó nằm ở đâu so với người dùng "
-        "(tên đường, xã/phường) để họ biết có tới được không. Quanh đây không "
-        "có gì thì nói thẳng là quanh đây không có, chứ đừng với ra xa để có "
-        "cái mà kể.\n"
-        "Chỉ nhắc tới vị trí khi câu hỏi thật sự cần; đừng thêm thông tin thừa.\n"
-    )
-    with _LOCATION_LOCK:
-        _LOCATION_CACHE = (text, time.monotonic())
-    return True
+
+def _next_refresh_interval(consecutive_failures: int) -> float:
+    """Nhịp chờ trước lần thử tiếp theo, theo số lần hỏng LIÊN TIẾP gần nhất.
+
+    Hàm thuần, không đụng cache/thread, để test đo được backoff trực tiếp mà
+    không phải dựng thread thật hay chờ giây thật.
+    """
+    if consecutive_failures <= 0:
+        return config.CHAT_LOCATION_REFRESH_SECONDS
+    index = min(consecutive_failures, len(_BACKOFF_SCHEDULE_SECONDS)) - 1
+    return _BACKOFF_SCHEDULE_SECONDS[index]
+
+
+def _location_refresh_loop() -> None:
+    """Thân vòng lặp thật của thread nền (T07/C2, C3, C4).
+
+    Tách khỏi `start_location_refresher` để test gọi thẳng được: cho `time.sleep`
+    giả ném một ngoại lệ sau N lần gọi là dừng được vòng `while True` mà không
+    cần chờ giây thật hay dựng thread.
+
+    Mỗi vòng bọc `refresh_location_once()` trong try/except RIÊNG — bản thân
+    hàm đó đã tự bắt lỗi và trả `False`, nhưng đây là lưới an toàn thứ hai:
+    KHÔNG có ngoại lệ nào từ đây được phép thoát ra ngoài vòng lặp.
+    """
+    consecutive_failures = 0
+    while True:
+        try:
+            ok = refresh_location_once()
+        except Exception:
+            logger.exception("Lỗi không mong đợi trong vòng lặp lấy vị trí ở thread nền")
+            ok = False
+
+        if ok:
+            consecutive_failures = 0
+        else:
+            consecutive_failures += 1
+            if consecutive_failures >= 3:
+                # 42/42 nhịp hỏng liên tiếp từng chỉ log INFO — không ai nhìn
+                # ra đó là vĩnh viễn chứ không phải một lần trục trặc.
+                logger.error(
+                    "Lấy vị trí hỏng %d lần liên tiếp, có thể đã chết hẳn — "
+                    "kiểm tra app/điện thoại (CURRENT_LOCATION_UNAVAILABLE?)",
+                    consecutive_failures,
+                )
+
+        time.sleep(_next_refresh_interval(consecutive_failures))
 
 
 def start_location_refresher() -> None:
@@ -207,9 +294,17 @@ def start_location_refresher() -> None:
     _REFRESHER_STARTED = True
 
     def loop() -> None:
-        while True:
-            refresh_location_once()
-            time.sleep(config.CHAT_LOCATION_REFRESH_SECONDS)
+        # `_location_refresh_loop` đã tự bọc từng vòng, nhưng đây là lưới an
+        # toàn NGOÀI CÙNG (T07/C2): một lỗi bất ngờ nằm ngoài mọi dự liệu ở
+        # trên (kể cả trong chính việc log) cũng không được phép giết thread —
+        # `_REFRESHER_STARTED` đã `True` nên không ai khởi động lại nó.
+        try:
+            _location_refresh_loop()
+        except Exception:
+            logger.exception(
+                "Thread lấy vị trí thoát ngoài ý muốn, vị trí sẽ không cập nhật "
+                "nữa cho tới khi restart server"
+            )
 
     threading.Thread(target=loop, name="location-refresher", daemon=True).start()
     logger.info(
@@ -254,30 +349,63 @@ def _recent_turns() -> list[tuple[str, str]]:
     return [(user, reply) for user, reply, _ in _HISTORY]
 
 
-def _location_text() -> str:
-    """Vị trí hiện tại, lấy từ cache mà thread nền giữ nóng. KHÔNG BAO GIỜ chờ.
+def _location_available() -> bool:
+    """Có vị trí nào dùng được để nhét vào prompt hay không (mới hoặc hơi cũ).
 
-    Chưa có hoặc đã quá hạn thì trả chuỗi rỗng — thà để model nói "không biết
-    bạn đang ở đâu" còn hơn nó đoán một thành phố, và hơn hẳn việc bắt người
-    dùng đứng chờ hết vòng poll xuống điện thoại.
+    Chỉ dùng để quyết định `_search_instruction` có được phép bảo model tra
+    "quanh người dùng" hay không — bảo model tra chỗ quanh một người mà chính
+    server không biết đang đứng đâu là tự mâu thuẫn với `_LOCATION_UNAVAILABLE`
+    ngay bên dưới nó trong cùng một prompt.
     """
     cached, cached_at = _LOCATION_CACHE
-    if cached and time.monotonic() - cached_at < config.CHAT_LOCATION_TTL_SECONDS:
+    if not cached:
+        return False
+    return time.monotonic() - cached_at < config.CHAT_LOCATION_MAX_FIX_AGE_SECONDS
+
+
+def _location_text() -> str:
+    """Vị trí hiện tại, lấy từ cache mà thread nền giữ nóng. KHÔNG BAO GIỜ chờ,
+    và KHÔNG BAO GIỜ trả chuỗi rỗng (T07/C1).
+
+    Ba tầng theo tuổi cache:
+    - còn trong TTL: dùng thẳng, không kèm chú thích.
+    - quá TTL nhưng chưa quá MAX_FIX_AGE (P9): vẫn dùng NHƯNG nói rõ là đã cũ —
+      người dùng nghe không phân biệt được "chưa có vị trí" với "vị trí cũ"
+      nếu im lặng chuyển thẳng về khối cấm bịa.
+    - quá MAX_FIX_AGE hoặc chưa từng có: khối `_LOCATION_UNAVAILABLE`, KHÔNG
+      phải "". Trả "" là bug gốc: prompt vừa không có vị trí vừa bị
+      `_SEARCH_INSTRUCTION` giục tra "quanh người dùng" — model bịa thành phố.
+    """
+    cached, cached_at = _LOCATION_CACHE
+    if not cached:
+        return _LOCATION_UNAVAILABLE
+
+    age = time.monotonic() - cached_at
+    if age < config.CHAT_LOCATION_TTL_SECONDS:
         return cached
-    return ""
+    if age < config.CHAT_LOCATION_MAX_FIX_AGE_SECONDS:
+        minutes = max(1, round(age / 60))
+        return cached + (
+            f"Lưu ý: vị trí trên đã lấy được khoảng {minutes} phút trước, có "
+            "thể người dùng đã di chuyển — nếu câu trả lời phụ thuộc vào đúng "
+            "chỗ đứng hiện tại thì nói kèm là vị trí hơi cũ.\n"
+        )
+    return _LOCATION_UNAVAILABLE
 
 
-def _search_instruction(search: bool, search_failed: bool) -> str:
+def _search_instruction(search: bool, search_failed: bool, has_location: bool) -> str:
     if search_failed:
         return _SEARCH_UNAVAILABLE_INSTRUCTION
-    return _SEARCH_INSTRUCTION if search else ""
+    if not search:
+        return ""
+    return _SEARCH_INSTRUCTION if has_location else _SEARCH_INSTRUCTION_NO_LOCATION
 
 
 def _build_prompt(command_text: str, search: bool = False, search_failed: bool = False) -> str:
     parts = [
         _SYSTEM_PROMPT.format(
             now=_now_text(),
-            search=_search_instruction(search, search_failed),
+            search=_search_instruction(search, search_failed, _location_available()),
             # Luôn nhét vị trí, không phân loại xem câu này có cần hay không.
             # Cache do thread nền giữ nóng nên đọc ra tức thì, và đo được là
             # thêm ~75 token này không làm mảnh đầu chậm đi

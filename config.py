@@ -310,4 +310,48 @@ PENDING_ASKED_AT_ESTIMATE_CHARS_PER_SECOND = float(
 # áp dụng luôn để dict session không phình vô hạn qua nhiều ngày chạy.
 SESSION_IDLE_GC_SECONDS = float(get("SESSION_IDLE_GC_SECONDS", str(24 * 3600)))
 # === T07 ===
+# P9 (docs/tasks/T07-location.md mục 2.1, CONTRACTS.md mục 7 câu hỏi #3):
+# tầng giữa "vị trí cũ nhưng còn dùng được, có nói rõ là cũ" trong
+# `handlers/chat.py:_location_text()` chỉ có chỗ chạy khi
+# CHAT_LOCATION_TTL_SECONDS < CHAT_LOCATION_MAX_FIX_AGE_SECONDS. Định nghĩa
+# gốc ở trên (dòng ~236-238) đặt CẢ HAI bằng 600s — cửa sổ [TTL, MAX_FIX_AGE)
+# rỗng, tầng giữa KHÔNG BAO GIỜ chạy được trong production dù logic đúng
+# (bắt được ở vòng review, không phải tự đo).
+#
+# Ghi đè TTL xuống 180s (3 phút) ở đây, GIỮ NGUYÊN MAX_FIX_AGE ở 600s: mở
+# ra cửa sổ 180s-600s (3-10 phút) nơi vị trí bị coi là "hơi cũ, vẫn dùng
+# được, nói rõ với người dùng" trước khi rơi hẳn về "chưa xác định được vị
+# trí". 180s là số ĐỀ XUẤT trong khoảng task file gợi ý (120-300s), CHƯA ĐO
+# trên hành vi đi bộ thật (AGENT_RULES mục A9) — không phải kết quả từ bảng
+# số nào, chỉ là một mặc định hợp lý để P9 có tác dụng thay vì rỗng.
+#
+# Ghi đè một hằng đã định nghĩa ở dòng ~238 thay vì sửa thẳng dòng đó là
+# CHỦ Ý: bảng "file được sửa" của T07 chỉ cho phép chạm đúng dòng marker
+# `# === T07 ===` này (AGENT_RULES mục B4) — Python đọc module từ trên
+# xuống nên gán lại cùng tên biến ở đây ghi đè giá trị ở dòng ~238 khi
+# module được import; đọc cùng biến môi trường `CHAT_LOCATION_TTL_SECONDS`
+# nên set biến môi trường vẫn thắng ở CẢ HAI chỗ như trước.
+CHAT_LOCATION_TTL_SECONDS = float(get("CHAT_LOCATION_TTL_SECONDS", "180.0"))
 # === T15 ===
+# Model riêng cho OCR (`ocr`/H1, docs/tasks/T15-ocr-quality.md mục 25.1).
+#
+# `ocr` là tác vụ đòi hỏi cao nhất trong nhóm dùng Gemini VLM (`ocr`, `space`,
+# `hazard`, `find`, `money`, `chat`): `space`/`hazard` chỉ cần nhận ra khối
+# lớn, sai vài chi tiết vẫn có ích; OCR sai MỘT ký tự là đọc sai. Không đổi
+# thẳng `GEMINI_MODEL` được vì `space`/`hazard` là intent đi bộ, cần nhanh —
+# nâng chung sẽ kéo cả hai chậm theo. Cùng lý do đã tách `GEMINI_INTENT_MODEL`
+# và `GEMINI_SEARCH_MODEL` ở trên: mỗi bước có ràng buộc riêng thì có biến
+# riêng, handler khác không đổi một dòng.
+#
+# Số đo H4 (docs/tasks/measurements/H4.md, 3 model x 3 biến thể, 27 lượt gọi
+# Gemini thật, có ca hỏng thật `request323.jpg` cháy sáng): `-lite` (mặc định
+# hiện tại của GEMINI_MODEL) và hai model to hơn được so trực tiếp trên cùng
+# bộ ảnh — xem file đó cho bảng số và khuyến nghị.
+#
+# 🔴 CHƯA NỐI DÂY: `models/ocr/__init__.py` phải truyền
+# `model=config.GEMINI_OCR_MODEL` xuống `vlm.generate_stream()` để biến này
+# có tác dụng thật trong production — file đó nằm ngoài bảng "FILE BẠN ĐƯỢC
+# SỬA" của agent T15 (xem docs/tasks/reports/T15.md mục "Lệch với task
+# file"). `models/vlm/client.py` (T15/H1) đã nhận tham số `model=...` và bench
+# H4 đã gọi thật qua tham số đó — chỉ còn thiếu một dòng gọi ở call site.
+GEMINI_OCR_MODEL = get("GEMINI_OCR_MODEL", "gemini-3.5-flash")

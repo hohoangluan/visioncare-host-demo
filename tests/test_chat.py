@@ -175,8 +175,13 @@ def test_chat_uses_whatever_location_the_refresher_cached(monkeypatch):
     assert "10.7769" in captured["prompt"]
 
 
-def test_chat_drops_location_once_it_goes_stale(monkeypatch):
-    """Toạ độ cũ quá thì bỏ: người khiếm thị đi bộ, chỗ đứng đổi theo thời gian."""
+def test_chat_marks_location_stale_once_ttl_passes(monkeypatch):
+    """Quá TTL nhưng chưa quá MAX_FIX_AGE (T07/P9): vẫn dùng, NHƯNG nói rõ là cũ.
+
+    Trước T07 cả hai ngưỡng đều rơi thẳng về "" khi quá TTL. Giờ có tầng giữa:
+    người dùng nghe không phân biệt được "chưa có vị trí" với "vị trí đã cũ"
+    nếu im lặng bỏ hẳn toạ độ — xem `chat._location_text`.
+    """
     monkeypatch.setattr(
         visioncare_client,
         "get_device_location",
@@ -188,7 +193,27 @@ def test_chat_drops_location_once_it_goes_stale(monkeypatch):
     captured = _capture(monkeypatch)
     list(chat.handle(IMG, "quanh đây có gì"))
 
+    assert "Quận 1" in captured["prompt"]
+    assert "cũ" in captured["prompt"]
+
+
+def test_chat_drops_location_once_it_goes_truly_stale(monkeypatch):
+    """Quá cả TTL lẫn MAX_FIX_AGE thì bỏ hẳn: người khiếm thị đi bộ, chỗ đứng
+    đổi theo thời gian, và tới lúc này không còn gì đáng tin để dùng nữa."""
+    monkeypatch.setattr(
+        visioncare_client,
+        "get_device_location",
+        lambda *a, **k: {"lat": 10.7769, "lng": 106.7009, "address": "Quận 1"},
+    )
+    chat.refresh_location_once()
+    monkeypatch.setattr(config, "CHAT_LOCATION_TTL_SECONDS", 0.0)
+    monkeypatch.setattr(config, "CHAT_LOCATION_MAX_FIX_AGE_SECONDS", 0.0)
+
+    captured = _capture(monkeypatch)
+    list(chat.handle(IMG, "quanh đây có gì"))
+
     assert "Quận 1" not in captured["prompt"]
+    assert "CHƯA lấy được vị trí" in captured["prompt"]
 
 
 def test_refresher_rejects_a_stale_fix_from_the_phone(monkeypatch):
