@@ -12,6 +12,7 @@ from handlers import (
     music_play, music_stop, music_volume
 )
 from handlers.waiting import with_progress_notice
+from services import capabilities
 
 logger = logging.getLogger("blind_assist")
 
@@ -614,6 +615,10 @@ def _resolve(
     # bị vỡ chữ ký — trong sản xuất, `resolve_speech()` LUÔN truyền tường minh.
     if device_key is None:
         device_key = _capture_device_key()
+
+    pairing_warning = capabilities.consume_pairing_warning(device_key)
+    if pairing_warning:
+        yield pairing_warning
 
     # G2/G4: ranh giới "một lượt MỚI bắt đầu" THẬT SỰ — trước T04, generation
     # chỉ tăng GIỮA lượt (bên trong `run_action()`/`set_pending()`, xem mục

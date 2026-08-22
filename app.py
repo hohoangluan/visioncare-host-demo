@@ -20,6 +20,7 @@ from handlers import chat
 from models import vlm
 from pipeline import adpcm, intent_local, phrases, router, stt, tts
 from services.action_callbacks import action_callbacks
+from services import capabilities
 
 logger = logging.getLogger("blind_assist")
 
@@ -462,6 +463,7 @@ def preload_models() -> None:
     # `location/get` là poll xuống điện thoại tới 12s — đặt nó trong request là
     # bắt người dùng đứng chờ ngần ấy trước khi nghe được chữ nào.
     chat.start_location_refresher()
+    capabilities.start_pairing_refresh()
     tts._load_tts()
     # Tiêu thụ hết generator: warm-up phải đi đúng đường stream mà /process
     # dùng, vì phiên giải mã theo frame của infer_stream có warm-up riêng.
@@ -470,7 +472,7 @@ def preload_models() -> None:
 
     # Dựng sẵn audio cho mọi câu cố định. Lần đầu tốn một hai phút; các lần sau
     # đọc lại từ đĩa nên gần như tức thì.
-    phrases.warm(extra=STATIC_SPEECH)
+    phrases.warm(extra=(*STATIC_SPEECH, *capabilities.STATIC_SPEECH))
 
     lead_in = tts.prerendered(_RECEIVED_MESSAGE)
     if lead_in is None:

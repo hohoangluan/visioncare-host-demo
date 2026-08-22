@@ -4,6 +4,7 @@ import logging
 from handlers import action_flow
 from handlers.contact_match import choose_candidate
 from handlers.slots import SLOTS, should_readback
+from services import capabilities
 
 _CONNECTING = "Đang kết nối cuộc gọi, bạn chờ một chút."
 _CONTACT_RETRY_STRATEGY = (
@@ -128,6 +129,11 @@ def handle_contact(image: bytes, command_text: str, params: dict | None = None) 
 def handle_emergency(image: bytes, command_text: str, params: dict | None = None) -> Iterator[str]:
     params = params or {}
     number = params.get("emergency_number")
+
+    capability_failure = capabilities.emergency_blocking_speech()
+    if capability_failure:
+        yield capability_failure
+        return
 
     payload = {}
     if number:

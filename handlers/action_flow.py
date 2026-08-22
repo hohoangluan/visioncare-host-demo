@@ -11,6 +11,7 @@ import uuid
 import config
 from pipeline import tts
 from handlers import result_speech, slots as slot_policy
+from services import capabilities
 from handlers.waiting import wait_for
 from services.visioncare_client import (
     VisionCareAPIError,
@@ -882,7 +883,13 @@ def run_action(
         # gọi từ `reconcile_late()`/callback nền, nơi đó không có
         # `DEVICE_ID_CTX` (cùng lớp bug mà `note_result()` đã phải vá, xem
         # docstring hàm đó).
-        pieces, pending_speech = result_speech.speak_result(operation, final)
+        capability_speech = capabilities.permission_failure_speech(
+            operation, final, device_key=device_key
+        )
+        if capability_speech is not None:
+            pieces, pending_speech = (capability_speech,), None
+        else:
+            pieces, pending_speech = result_speech.speak_result(operation, final)
         pending_to_ask = None
         if pending_speech is not None:
             pending_to_ask = set_pending(

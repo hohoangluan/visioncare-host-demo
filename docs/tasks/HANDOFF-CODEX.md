@@ -40,9 +40,9 @@ Firmware đang trên branch `net-stream-adpcm` sẵn có (không phải branch t
 ## 2. Trạng thái hiện tại — task nào xong, task nào đang chạy
 
 Xem bảng đầy đủ ở `docs/tasks/PROGRESS.md` (đã commit). Đợt 0-3 xong hoàn toàn;
-Codex đã làm tiếp T08-T16 theo các task đã ghi ở bảng dưới. Hiện **18/23 task có
-code xong hoặc PARTIAL đúng dự kiến**; tiếp tục xác minh T11 trên emulator rồi
-làm **T23**.
+Codex đã làm tiếp T08-T23 theo các task đã ghi ở bảng dưới. Hiện **19/23 task có
+code xong hoặc PARTIAL đúng dự kiến**. Android AVD `test_pixel` đã build/test/cài
+và khởi động app thành công; bắt đầu làm **T23**.
 Tóm tắt:
 
 | Đợt | Task | Trạng thái | Commit |
@@ -68,7 +68,8 @@ Tóm tắt:
 | 4 | T16 Không gian & vật cản | ✅ | `cd0932c` |
 | 5 | T13 Chat & lịch sử | 🟠 code/test xong; chờ đo Gemini/prefix thật | `0a18376` |
 | 5 | T11 Đặt xe | 🟠 server fail-closed; chờ Farefeed/geocode/app | `11662ac` |
-| 5-7 | T17-T19/T21/T23 còn lại | ⬜ **BẮT ĐẦU TỪ T23** |
+| 5 | T23 Quyền & cấu hình | 🟠 code/AVD xong; chờ điện thoại thật | pending commit |
+| 6-7 | T17-T19/T21 còn lại | ⬜ **BẮT ĐẦU TỪ T17** |
 
 **HEAD code chức năng hiện tại của branch `feat/hoi-thoai-23-task`: `11662ac`.**
 Regression T14/T16: **94 pass**. T12 có **16 DoD + 35 services + 109 regression
@@ -317,7 +318,7 @@ response về, không crash), không xác nhận được kịch bản STT/inten
 
 ---
 
-## 6. Việc còn lại — 5 task chưa chạy + phần PARTIAL, theo RUNBOOK
+## 6. Việc còn lại — 4 task chưa chạy + phần PARTIAL, theo RUNBOOK
 
 **Đợt 3: XONG HOÀN TOÀN** (T05, T06, fix router.py — xem mục 2).
 
@@ -325,8 +326,15 @@ response về, không crash), không xác nhận được kịch bản STT/inten
 đã nối H1/H3/H5 của T15 vào production và cung cấp OCR cache chung cho T13.
 
 **Đợt 5:** T13 đã code/test xong, PARTIAL chờ đo Gemini thật. T11 server đã
-fail-closed và PARTIAL chờ Farefeed/geocode/app contract; cần chạy AVD
-`test_pixel` trước khi nạp điện thoại thật. Tiếp theo T23 (quyền & cấu hình).
+fail-closed và PARTIAL chờ Farefeed/geocode/app contract. AVD `test_pixel` đã
+verify ngày 2026-08-22: Gradle `testDebugUnitTest assembleDebug` xanh, APK cài và
+khởi động không crash. Theo yêu cầu người dùng, app Android đã bỏ khai báo và lời
+xin quyền `CAMERA`; build/cài mới xác nhận hộp thoại đầu tiên là Vị trí, không còn
+Camera. T23 đã code xong cả ba lớp: 9 DoD + 90 regression server xanh, host
+14 action tests/OpenAPI xanh, Android build + AVD cold-start xanh. Điện thoại thật
+ngắt ADB ngay trước install nên còn 5 ca manual; xem `reports/T23.md`. Thay đổi app
+đang ở working tree repo `app_demo_backend`, chưa commit để không gom nhầm các
+thay đổi Spotify/backend có sẵn. Tiếp theo T17.
 
 **Đợt 6 — tuần tự (không song song, xây thẳng lên nhau):** T17 (tách `/frame`,
 🔴 F2 KHÔNG thi công) → T18 (SSE downlink) → T19 (cuộc gọi đến, cả 4 repo).

@@ -53,9 +53,9 @@ FAILED tests/test_bang_am_thanh.py::test_chat_follow_up_question_uses_previous_t
 | T12 | 4 | ✅ | Codex | reports/T12.md | slot/pending thay toàn bộ string heuristic; 16 DoD pass; commit `80cedf2` |
 | T14 | 4 | ✅ | Codex | reports/T14.md | OCR cache/follow-up text-only + nối H1/H3/H5; 24 DoD pass; commit `c39b8d2` |
 | T16 | 4 | ✅ | Codex | reports/T16.md | space focus; hazard logic khóa nguyên; 15 DoD pass; commit `cd0932c` |
-| T11 | 5 | 🟠 | Codex | reports/T11.md | server fail-closed; 151 pass/9 xfail; chờ Farefeed/geocode/app contract; commit `11662ac` |
+| T11 | 5 | 🟠 | Codex | reports/T11.md | server fail-closed; 151 pass/9 xfail; AVD build/install/start xanh; chờ Farefeed/geocode/app contract; commit `11662ac` |
 | T13 | 5 | 🟠 | Codex | reports/T13.md | code + 33 DoD/134 regression xanh; chờ đo Gemini/prefix thật; commit `0a18376` |
-| T23 | 5 | ⬜ | | | |
+| T23 | 5 | 🟠 | Codex | reports/T23.md | code 3 lớp xong; 9 DoD/90 regression/Android build+AVD xanh; chờ nạp & manual trên điện thoại thật |
 | T17 | 6 | ⬜ | | | F2 KHÔNG thi công |
 | T18 | 6 | ⬜ | | | |
 | T19 | 6 | ⬜ | | | |

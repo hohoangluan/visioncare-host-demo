@@ -170,6 +170,33 @@ def get_device_location(timeout_seconds: float = 12.0) -> dict | None:
     return data.get("result") or None
 
 
+def get_device_capabilities(
+    timeout_seconds: float = 12.0, device_id: str | None = None
+) -> dict | None:
+    """Read the Android capability snapshot through the normal action pipeline.
+
+    Old host/app versions may not expose this action. Capability discovery is
+    advisory, so all transport, 404, timeout, and malformed-result failures
+    degrade to ``None`` instead of blocking user actions.
+    """
+    payload = {"device_id": device_id} if device_id else {}
+    try:
+        resp = call_service_api("api/v1/service/capabilities", payload)
+        request_id = resp.get("data", {}).get("request_id", "")
+    except VisionCareAPIError as exc:
+        logger.info("Không lấy được capabilities (app/host cũ vẫn được hỗ trợ): %s", exc)
+        return None
+    if not request_id:
+        return None
+
+    data = wait_for_result(request_id, timeout_seconds=timeout_seconds)
+    if not data or data.get("request_state") != "succeeded":
+        logger.info("Capabilities không sẵn sàng: %s", (data or {}).get("error"))
+        return None
+    result = data.get("result")
+    return result if isinstance(result, dict) else None
+
+
 def wait_for_result(request_id: str, timeout_seconds: float | None = None) -> dict | None:
     """Poll tới khi request rời trạng thái `processing`, hoặc hết thời gian chờ.
 

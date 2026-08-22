@@ -283,14 +283,35 @@ POST /internal/device-events
 
 ### 5.4 `capabilities_get` (T23)
 
-Enum **đóng**, không phải dict tự do:
+Transport đã chốt: `POST /api/v1/service/capabilities` đi qua pipeline operation
+hiện có và phát action `capabilities_get` tới app. Server kính poll status như
+`location_get`; host/app cũ trả 404/`UNSUPPORTED_ACTION` thì thoái hoá êm, không
+chặn chức năng.
 
+Kết quả có đúng một object `capabilities` với **đúng 10 khoá đóng** sau, không
+chấp nhận thiếu khoá hoặc khoá lạ:
+
+```json
+{
+  "capabilities": {
+    "notification_listener": true,
+    "system_alert_window": false,
+    "battery_optimization_off": false,
+    "background_location": "never | while_using | always",
+    "fine_location": true,
+    "read_contacts": true,
+    "read_phone_state": false,
+    "call_phone": true,
+    "send_sms": true,
+    "emergency_contact_set": false
+  }
+}
 ```
-notification_listener · system_alert_window · battery_optimization_off
-background_location (never|while_using|always) · fine_location
-read_contacts · read_phone_state · call_phone · send_sms
-emergency_contact_set
-```
+
+Chín trường ngoài `background_location` là boolean. Cache server kính theo
+`device_id`, TTL 300 giây; lỗi quyền buộc refresh. Chỉ `emergency_call` được
+precheck từ cache, mọi quyền phụ vẫn cho action chạy thử. Hai cảnh báo quan trọng
+(`emergency_contact_set`, `call_phone`) chỉ nói một lần mỗi phiên server/thiết bị.
 
 ### 5.5 Mã lỗi
 
