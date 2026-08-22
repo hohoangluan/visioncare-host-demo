@@ -38,7 +38,7 @@ FAILED tests/test_bang_am_thanh.py::test_chat_follow_up_question_uses_previous_t
 | H0 (T15§H0) | 0 | ✅ | a74b5f9 | reports/T15-H0.md | ngưỡng đề xuất giữ 4-6, PROVISIONAL — chưa xác nhận capture thật |
 | P7 (T20§P7) | 0 | ✅ | a1af9e5 | reports/T20-P7.md | 10 orphan/8 mute (task file ghi 9/7) — xem contract-deltas/T20.md |
 | T01 | 1 | ✅ | aa8a19c | reports/T01.md | header thật ra dây qua tunnel (verified phần cứng); idempotency reservation-based |
-| T03 | 1 | ⬜ | | | |
+| T03 | 1 | ✅ | aec3f81 | reports/T03.md | generation từ commit đầu; nợ cho T04 (bump tại turn boundary) và T13 (TTL history) |
 | T04 | 1 | ⬜ | | | |
 | T02 (còn lại) | 2 | ⬜ | | | |
 | T07 | 2 | ⬜ | | | |

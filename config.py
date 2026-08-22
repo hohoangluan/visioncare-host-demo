@@ -284,5 +284,30 @@ PROCESS_IDEMPOTENCY_MAX_ENTRIES = int(get("PROCESS_IDEMPOTENCY_MAX_ENTRIES", "64
 # trần 60s (~1.92 MB ở 32 000 B/s), thứ đã là câu dài bất thường.
 PROCESS_IDEMPOTENCY_MAX_BODY_BYTES = int(get("PROCESS_IDEMPOTENCY_MAX_BODY_BYTES", str(4_000_000)))
 # === T03 ===
+# Phiên & pending theo device_id (docs/tasks/T03-session-pending.md,
+# CONTRACTS.md mục 4).
+#
+# TTL theo `kind` — ĐÃ CHỐT ở CONTRACTS.md mục 4.1, KHÔNG tự đổi ở đây:
+# confirm 25s (để lâu nguy hiểm — quên ngữ cảnh rồi "ừ" cho việc khác) ·
+# select 45s (kể cả bảng giá xe: giá có surge, quá hạn phải gọi lại, cấm đọc
+# lại giá cũ) · fill 120s (quyết định #1, spec mục 17.3).
+PENDING_TTL_CONFIRM_SECONDS = float(get("PENDING_TTL_CONFIRM_SECONDS", "25"))
+PENDING_TTL_SELECT_SECONDS = float(get("PENDING_TTL_SELECT_SECONDS", "45"))
+PENDING_TTL_FILL_SECONDS = float(get("PENDING_TTL_FILL_SECONDS", "120"))
+
+# Ước lượng TẠM tốc độ đọc của TTS đang dùng (ký tự/giây), dùng để suy ra lúc
+# TTS đọc xong một câu hỏi khi đường phát audio không có hook gọi ngược về
+# `handlers/action_flow.py` (mục 21.3 — `asked_at` phải tính từ lúc TTS phát
+# xong, không phải lúc server tạo pending). CHƯA ĐO trên giọng TTS đang dùng —
+# đây là phỏng đoán hợp lý, không phải số đo (AGENT_RULES mục A9).
+PENDING_ASKED_AT_ESTIMATE_CHARS_PER_SECOND = float(
+    get("PENDING_ASKED_AT_ESTIMATE_CHARS_PER_SECOND", "14")
+)
+
+# Dọn session của thiết bị không hoạt động quá ngần này (giây). Đề xuất "24
+# giờ" ở T03-session-pending.md mục 6 câu 2 — không phải câu hỏi 🔴 chặn ở
+# CONTRACTS.md mục 7 (chỉ câu #9, cache vị trí, mới thật sự chặn task này) —
+# áp dụng luôn để dict session không phình vô hạn qua nhiều ngày chạy.
+SESSION_IDLE_GC_SECONDS = float(get("SESSION_IDLE_GC_SECONDS", str(24 * 3600)))
 # === T07 ===
 # === T15 ===

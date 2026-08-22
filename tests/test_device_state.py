@@ -4,6 +4,22 @@
 câu huấn luyện, đây là cặp lẫn nhau nhiều nhất (`nav_stop` <-> `music_stop`) và
 KHÔNG chữa được bằng thêm dữ liệu — chính người nghe cũng không phân biệt được
 nếu không biết cái gì đang chạy.
+
+VIẾT LẠI ở T03 (docs/tasks/T03-session-pending.md mục 4.5): "Single Active
+State" (B7) BỊ BỎ — nhạc và chỉ đường giờ chạy song song được, ca dùng thật là
+đi bộ vừa nghe nhạc vừa được chỉ đường. `test_starting_new_task_clears_
+previous_active_task` và `test_single_active_state_mutual_exclusion` của bản
+cũ giả định điều NGƯỢC LẠI (bật cái mới tự tắt cái cũ) — đã xoá, thay bằng
+`test_music_and_navigation_run_together` và
+`test_music_stop_does_not_clear_navigation` (mục 4.3 của task file).
+
+File này KHÔNG set `X-Device-Id`/ContextVar nào — mọi test ở đây chạy trên
+"session ngầm định" (`action_flow._NO_DEVICE_CONTEXT_KEY`), giữ đúng hành vi
+toàn cục mà các test vốn đã giả định trước T03 (file này không nằm trong danh
+sách file được set device context của T03, và các handler nó chạm tới —
+`pipeline/router.py`, `handlers/music.py`, `handlers/navigation.py` — cũng
+không set context, nên đây là hành vi thật của code khi có handler chưa được
+cập nhật để đọc `X-Device-Id`, không phải test giả).
 """
 import pytest
 
@@ -61,22 +77,40 @@ def test_navigation_stop_clears_navigating():
     assert action_flow.device_state()["navigating"] is False
 
 
-def test_starting_new_task_clears_previous_active_task():
-    """Quy tắc Single Active State: Bật tác vụ mới tự động tắt tác vụ cũ."""
+def test_pending_ride_quote_shows_in_state():
+    action_flow.remember("quote_id", "q-1")
+    assert action_flow.device_state()["ride_quote_pending"] is True
+
+
+# ── B7 (T03): nhạc và chỉ đường chạy SONG SONG, không loại trừ nhau ────────
+
+
+def test_music_and_navigation_run_together():
+    """B7: bật tác vụ mới KHÔNG tự tắt tác vụ cũ — đi bộ nghe nhạc vừa được
+    chỉ đường là ca dùng thật. `device_state()` phải báo CẢ HAI cùng chạy."""
     action_flow.note_result("music_play", {"request_state": "succeeded"})
     action_flow.note_result(
         "navigation_start",
         {"request_state": "succeeded", "result": {"navigation_id": "nav-1"}},
     )
     state = action_flow.device_state()
-    assert state["music_playing"] is False
+    assert state["music_playing"] is True
     assert state["navigating"] is True
     assert state["most_recent"] == "navigating"
 
 
-def test_pending_ride_quote_shows_in_state():
-    action_flow.remember("quote_id", "q-1")
-    assert action_flow.device_state()["ride_quote_pending"] is True
+def test_music_stop_does_not_clear_navigation():
+    """Dừng nhạc không đụng tới chỉ đường đang chạy song song."""
+    action_flow.note_result("music_play", {"request_state": "succeeded"})
+    action_flow.note_result(
+        "navigation_start",
+        {"request_state": "succeeded", "result": {"navigation_id": "nav-1"}},
+    )
+    action_flow.note_result("music_stop", {"request_state": "succeeded"})
+
+    state = action_flow.device_state()
+    assert state["music_playing"] is False
+    assert state["navigating"] is True
 
 
 # ── Trạng thái đi vào prompt phân loại ────────────────────────────────────
@@ -123,16 +157,6 @@ def test_detect_works_without_state(monkeypatch):
         lambda prompt, schema=None, model=None: {"intent": Intent.OCR, "params": {}},
     )
     assert intent_mod.detect_with_params("đọc chữ")[0] == Intent.OCR
-
-
-def test_single_active_state_mutual_exclusion():
-    action_flow.note_result("music_play", {"request_state": "succeeded"})
-    assert action_flow.device_state()["music_playing"] is True
-
-    # Khởi chạy navigation -> tự động ngắt music_playing (Single Active State)
-    action_flow.note_result("navigation_start", {"request_state": "succeeded", "result": {"navigation_id": "nav-10"}})
-    assert action_flow.device_state()["music_playing"] is False
-    assert action_flow.device_state()["navigating"] is True
 
 
 def test_router_fast_bypass_music(monkeypatch):
