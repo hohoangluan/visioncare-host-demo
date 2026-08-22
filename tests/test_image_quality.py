@@ -105,6 +105,7 @@ def test_darkness_check_wins_over_blur_when_both_fail(monkeypatch):
 
 _NO_IMAGE_INTENTS = [
     Intent.CHAT, Intent.CONTACT_CALL, Intent.EMERGENCY_CALL,
+    Intent.CALL_ANSWER, Intent.CALL_REJECT,
     Intent.MUSIC_PLAY, Intent.MUSIC_STOP, Intent.MUSIC_VOLUME,
     Intent.NAV_START, Intent.NAV_STOP, Intent.RIDE_QUOTE, Intent.RIDE_CONFIRM,
     Intent.UNKNOWN,
