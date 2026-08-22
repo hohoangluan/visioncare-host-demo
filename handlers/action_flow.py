@@ -318,23 +318,32 @@ def gc_idle_sessions(now: float | None = None) -> int:
     return removed
 
 
-def bump_generation() -> int:
+def bump_generation(device_key: str | None = None) -> int:
     """Tăng `generation` của session hiện tại, trả về giá trị MỚI (G2).
 
     Tăng ở hai điểm T03 sở hữu — cả hai đều là ranh giới "một lượt mới bắt
     đầu" theo đúng phạm vi module này: lúc `run_action()` bắt đầu một lệnh gọi
-    điện thoại mới, và lúc `set_pending()` tạo một pending mới. T04 (barge-in,
-    chưa làm) sẽ là nơi ĐỌC generation này để tự huỷ lượt cũ khi phát hiện
-    lệch — T03 chỉ đảm bảo con số tăng đúng chỗ ngay từ bây giờ.
+    điện thoại mới, và lúc `set_pending()` tạo một pending mới. T04 (barge-in)
+    là nơi ĐỌC generation này để tự huỷ lượt cũ khi phát hiện lệch.
+
+    `device_key`: xem `_get_session()` — truyền TƯỜNG MINH khi gọi từ một nơi
+    có thể chạy trên một luồng KHÔNG kế thừa `contextvars.Context` của luồng
+    đã có `X-Device-Id` đúng (T04/`pipeline/router.py`: `with_progress_notice`
+    kéo mảnh đầu trên một `threading.Thread` trần — xem
+    `docs/tasks/reports/T04.md` mục sửa lỗi barge-in server-global). Mặc định
+    `None` giữ nguyên hành vi ambient cũ (`_device_key()`) cho mọi lời gọi
+    đồng bộ hiện có trong `run_action()`/`set_pending()`.
     """
-    session = _get_session()
+    session = _get_session(device_key)
     with _SESSIONS_LOCK:
         session.generation += 1
         return session.generation
 
 
-def current_generation() -> int:
-    session = _get_session()
+def current_generation(device_key: str | None = None) -> int:
+    """`generation` hiện tại của session — xem `bump_generation()` để biết vì
+    sao `device_key` tường minh cần thiết cho T04 (barge-in qua thread trần)."""
+    session = _get_session(device_key)
     with _SESSIONS_LOCK:
         return session.generation
 

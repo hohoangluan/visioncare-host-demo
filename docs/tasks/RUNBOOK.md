@@ -280,7 +280,7 @@ C2/P9 đã xong một phần, số dòng của `ride.py`/`music.py`/`navigation.
 ### Đợt 1 — nền tảng
 - [x] T01 Định danh thiết bị & lượt
 - [x] T03 Phiên & pending
-- [ ] T04 Router & ngắt lời
+- [x] T04 Router & ngắt lời
 
 ### Đợt 2 — song song
 - [ ] T07 Vị trí
