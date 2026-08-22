@@ -1,4 +1,5 @@
 import logging
+import re
 
 import config
 from models import vlm
@@ -28,6 +29,8 @@ logger = logging.getLogger("blind_assist")
 _PARAM_FREE = frozenset({
     Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE, Intent.HAZARD,
     Intent.CHAT, Intent.NAV_STOP, Intent.MUSIC_STOP, Intent.UNKNOWN,
+    # B5 (T05-intent-slots.md): "thôi bỏ đi"/"nói lại đi" không cần tham số nào.
+    "cancel", "repeat",
 })
 
 # Hai nhãn này phụ thuộc trạng thái thiết bị, mà bộ phân loại cục bộ chỉ đọc
@@ -57,6 +60,29 @@ _LABELS = (
     Intent.CONTACT_CALL, Intent.EMERGENCY_CALL,
     Intent.RIDE_QUOTE, Intent.RIDE_CONFIRM,
     Intent.MUSIC_PLAY, Intent.MUSIC_STOP, Intent.MUSIC_VOLUME,
+    # B5 — hai nhãn THOÁT, người khiếm thị cần cả hai. Không có hằng số tương
+    # ứng trong `schemas.Intent` (file đó KHÔNG nằm trong "FILE BẠN ĐƯỢC SỬA"
+    # của T05) — dùng thẳng chuỗi literal, khớp với giá trị mà
+    # `_LOCAL_CANCEL_WORDS`/`_LOCAL_REPEAT_WORDS` bên dưới trả về.
+    "cancel", "repeat",
+)
+
+# B5 — bắt "cancel"/"repeat" TẤT ĐỊNH, không mạng ngoài, không LLM (ngân sách
+# < 300ms, T21/G1). Chạy trước cả SetFit lẫn Gemini trong `detect_with_params`.
+#
+# ⚠️ Xem docs/tasks/reports/T05.md mục "Lệch với task file": `pipeline/router.py`
+# (T04) đã có MỘT bộ regex cancel/repeat riêng ở bước 3/5, chạy TRƯỚC khi một
+# câu tới được `detect_with_params` (bước 6). Hai regex dưới đây vì vậy chủ yếu
+# là lưới dự phòng cho lượt gọi `detect_with_params` trực tiếp (không qua
+# router) hoặc câu lọt qua bộ regex kia — không phải đường chính người dùng đi
+# qua trong `/process` thật. Giữ ở đây vì `pipeline/intent.py` phải tự đứng
+# được một mình (test đơn vị, lời gọi trực tiếp), và vì đây đúng là phạm vi
+# B5 giao cho T05 (`_LABELS`/`_PARAM_FREE` ở FILE NÀY).
+_LOCAL_CANCEL_WORDS = re.compile(
+    r"\bhủy\b|\bhuỷ\b|bỏ đi|thôi khỏi|không cần nữa|\bthôi\b", re.I
+)
+_LOCAL_REPEAT_WORDS = re.compile(
+    r"nói lại|nhắc lại|lặp lại|nghe không rõ|gì cơ|sao cơ", re.I
 )
 
 _SCHEMA = {
@@ -67,8 +93,21 @@ _SCHEMA = {
             "type": "object",
             "properties": {
                 "destination": {"type": "string"},
+                # A1 (T05-intent-slots.md): bản THÔ nguyên văn STT, giữ song
+                # song với `destination` (đã sửa lỗi nghe nhầm) để log được tỉ
+                # lệ sửa đúng/sai — xem `_STT_CORRECTION_BLOCK`.
+                "destination_raw": {"type": "string"},
                 "contact_name": {"type": "string"},
+                # "song" GIỮ NGUYÊN làm alias trong lúc chuyển: `handlers/music.py`
+                # và hợp đồng host (`endpoint.md:131`) vẫn dùng chuỗi
+                # "Tên - Ca sĩ" nguyên khối này. KHÔNG xoá.
                 "song": {"type": "string"},
+                "song_title": {"type": "string"},
+                "artist": {"type": "string"},
+                # true = người dùng đọc rõ tên bài hát cụ thể; false = câu trả
+                # lời chung chung ("cứ phát", "bài nào cũng được") hoặc chỉ có
+                # tên ca sĩ.
+                "song_is_specific": {"type": "boolean"},
                 "volume": {"type": "integer"},
                 "direction": {"type": "string", "enum": ["up", "down"]},
                 "confirm": {"type": "boolean"},
@@ -76,6 +115,12 @@ _SCHEMA = {
                 "emergency_number": {"type": "string"},
                 "needs_location": {"type": "boolean"},
                 "needs_web": {"type": "boolean"},
+                # A1 — đầu vào của readback (T06/D3): "low" thì T06 đọc lại
+                # slot cho người dùng xác nhận trước khi dùng.
+                "slot_confidence": {"type": "string", "enum": ["high", "low"]},
+                # A1 — hướng người dùng đang hỏi (find/hazard/space): "cái ví
+                # của tôi ở BÊN TRÁI đâu rồi".
+                "focus": {"type": "string", "enum": ["left", "right", "front", "behind"]},
             }
         }
     },
@@ -184,12 +229,22 @@ _PROMPT_TEMPLATE = (
     "emergency_call: gọi cấp cứu/khẩn cấp/SOS (emergency_number nếu có đọc số).\n"
     "ride_quote: đặt xe/gọi Grab đi đâu đó (destination).\n"
     "ride_confirm: xác nhận hoặc huỷ chuyến vừa báo giá (confirm).\n"
-    "music_play: phát nhạc/mở bài hát (song, volume nếu có).\n"
-    "  Câu chỉ có tên ca sĩ, hoặc \"cứ phát\"/\"bài nào cũng được\", cũng là\n"
-    "  music_play — đó là trả lời câu hỏi \"muốn nghe của ca sĩ nào?\", và\n"
-    "  song chính là nguyên câu vừa nói.\n"
+    "music_play: phát nhạc/mở bài hát. Điền CẢ HAI kiểu tham số nếu nghe ra:\n"
+    "  - song (alias cũ, GIỮ để tương thích ngược): chuỗi \"Tên bài - Ca sĩ\",\n"
+    "    hoặc chỉ một trong hai nếu câu không nói đủ.\n"
+    "  - song_title/artist (mới, TÁCH RIÊNG): song_title là tên bài, artist là\n"
+    "    tên ca sĩ, kể cả khi câu chỉ nói một trong hai.\n"
+    "  song_is_specific = true khi người dùng đọc rõ TÊN BÀI cụ thể; false khi\n"
+    "  câu chỉ có tên ca sĩ, hoặc \"cứ phát\"/\"bài nào cũng được\" — đó là trả\n"
+    "  lời câu hỏi \"muốn nghe của ca sĩ nào?\", lúc này ĐỪNG điền song_title,\n"
+    "  và song vẫn là nguyên câu vừa nói.\n"
     "music_stop: tắt nhạc.\n"
     "music_volume: chỉnh âm lượng (direction up/down, hoặc volume 0..100).\n"
+    "cancel: muốn HUỶ hẳn việc đang hỏi/đang chờ trả lời — khác music_stop/\n"
+    "  nav_stop (hai nhãn đó là tắt nhạc/dừng chỉ đường đang CHẠY, không phải\n"
+    "  huỷ một câu hỏi). \"thôi bỏ đi\", \"không cần nữa\", \"huỷ đi\".\n"
+    "repeat: muốn nghe LẠI câu vừa rồi vì không nghe rõ/không hiểu. \"gì cơ\",\n"
+    "  \"nói lại đi\", \"sao cơ\".\n"
     "chat: MỌI thứ còn lại — hỏi đáp, chào hỏi, than thở, hỏi giờ, hỏi thời\n"
     "  tiết, hỏi mình đang ở đâu, nhờ kể chuyện. Kể cả câu nghe cụt, sai ngữ\n"
     "  pháp, hay không đọc ra nghĩa gì: cứ chọn chat, đừng cố loại bỏ.\n"
@@ -204,6 +259,60 @@ _PROMPT_TEMPLATE = (
     "Câu lệnh: \"{command_text}\"\n\n"
     "Trả JSON có 'intent' và 'params'."
 )
+
+
+# A2 (T05-intent-slots.md mục 2): STT là Zipformer-vi 30M int8 (`pipeline/
+# stt.py`), sai tên riêng liên tục. Không có khối này, prompt trích slot chỉ
+# trích SPAN nguyên văn — tức là chép lại đúng lỗi nghe nhầm rồi đem đi query
+# (chỉ đường sai chỗ, tìm bài hát sai tên).
+#
+# Ba mệnh lệnh dưới đây đều BẮT BUỘC, thiếu một là hỏng một kiểu khác nhau:
+# 1. SỬA — không sửa thì chép lại lỗi.
+# 2. THÚ NHẬN khi không sửa được (đặt slot_confidence=low) — thiếu vế này thì
+#    T06/D3 (readback theo slot_confidence) không có tín hiệu để hỏi lại.
+# 3. CẤM BỊA — thiếu vế này thì model "sửa" bằng cách tự nghĩ ra số nhà/tên
+#    đường/tên album chưa từng nghe thấy, còn hại hơn chép lại nguyên lỗi.
+_STT_CORRECTION_BLOCK = (
+    "Câu lệnh trên do máy nhận dạng giọng nói tiếng Việt (model nhỏ) ghi lại. "
+    "TÊN RIÊNG (địa danh, tên người, tên bài hát) bị nghe sai rất nhiều.\n"
+    "- SỬA: khi trích slot, sửa về dạng đúng mà bạn tin người dùng định nói, "
+    "đừng chép lại lỗi nghe nhầm. Ví dụ: \"Bát Khoa\" -> \"Bách Khoa\".\n"
+    "- THÚ NHẬN: không sửa được (không đủ tự tin) thì GIỮ NGUYÊN văn bản gốc "
+    "và đặt slot_confidence = \"low\". Sửa được, tự tin thì slot_confidence = "
+    "\"high\".\n"
+    "- CẤM BỊA: KHÔNG bịa thêm số nhà, tên đường, tên album mà câu lệnh không "
+    "hề nhắc tới. Không đoán ra được một TÊN RIÊNG là gì (nghe như một chuỗi "
+    "âm tiết vô nghĩa) thì GIỮ NGUYÊN đúng nguyên văn đã nghe — ĐỪNG thay "
+    "bằng một tên nghe có vẻ hợp lý (kể cả tên nước ngoài, tên công ty, tên "
+    "địa điểm nổi tiếng) mà bạn không chắc chắn.\n\n"
+)
+
+
+# B3 (T05-intent-slots.md mục 2): có pending (`kind == "fill"`) đang mở thì câu
+# vừa nói RẤT có thể là câu trả lời trần trụi ("Sơn Tùng", "đúng rồi", "mẹ") —
+# không tự nó mang nghĩa gì nếu đọc rời khỏi ngữ cảnh câu hỏi vừa hỏi. Khối này
+# cho Gemini biết ngữ cảnh đó, và bắt buộc phải có vế thứ ba ("việc hoàn toàn
+# khác thì bỏ qua pending") — thiếu vế đó thì MỌI câu trong 120s sau một câu
+# hỏi đều bị kéo về đúng slot đang chờ, kể cả "gọi cho mẹ" giữa lúc đang hỏi
+# tên bài hát.
+_PENDING_PROMPT_TEMPLATE = (
+    "Hệ thống VỪA HỎI người dùng: \"{question}\"\n"
+    "Câu vừa nói RẤT có thể là câu trả lời cho câu hỏi này, kể cả khi nó cụt "
+    "hoặc chỉ có một từ.\n"
+    "- Nếu ĐÚNG là câu trả lời cho câu hỏi trên -> intent = \"{intent}\", trích "
+    "giá trị vừa nói vào slot \"{slot}\".\n"
+    "- Nếu là câu HUỶ (\"thôi\", \"bỏ đi\", \"không cần nữa\", \"huỷ\") -> "
+    "intent = \"cancel\".\n"
+    "- Nếu là việc HOÀN TOÀN KHÁC, không liên quan câu hỏi trên -> BỎ QUA câu "
+    "hỏi này, phân loại bình thường theo danh sách nhãn bên dưới như một câu "
+    "nói mới, đừng cố ép về slot \"{slot}\".\n\n"
+)
+
+
+def _pending_block(pending) -> str:
+    return _PENDING_PROMPT_TEMPLATE.format(
+        question=pending.question, intent=pending.intent, slot=pending.slot,
+    )
 
 
 # Bối cảnh thiết bị chèn vào trước câu lệnh.
@@ -231,11 +340,33 @@ _CONTEXT_TEMPLATE = (
 _RECENT_LABELS = {"music_playing": "nhạc (music_stop)", "navigating": "chỉ đường (nav_stop)"}
 
 
-def _context_block(state: dict | None) -> str:
-    if not state:
+def _location_block() -> str:
+    """A3 (T05-intent-slots.md mục 2): vị trí hiện tại cho bước PHÂN LOẠI ý
+    định — `nav_start`/`ride_quote` là hai nhãn cần vị trí nhất
+    ("Bách Khoa" là Hà Nội hay TP.HCM?) nhưng trước T05 không được cấp gì.
+
+    Dùng LẠI `handlers.chat._location_text()`/`_location_available()`
+    (T07) — không viết lại logic cache/TTL/backoff ở đây.
+
+    ⚠️ KHÁC hẳn `handlers/chat.py` (C1): ở đó vị trí rỗng vẫn PHẢI chèn khối
+    cấm bịa, vì `chat` là bước SINH CÂU TRẢ LỜI tự do và im lặng bỏ qua sẽ khiến
+    model tự bịa một thành phố. Ở đây là bước PHÂN LOẠI NHÃN — không có vị trí
+    thật thì KHÔNG chèn dòng nào cả (đừng tốn token nói "chưa rõ vị trí" cho
+    một nhãn không cần tới vị trí, ví dụ `ocr`/`money`), im lặng bỏ qua là đúng.
+    """
+    from handlers import chat as chat_mod  # lazy: tránh vòng import lúc nạp module
+
+    if not chat_mod._location_available():
         return ""
+    return f"Vị trí hiện tại của người dùng: {chat_mod._location_text()}\n\n"
+
+
+def _context_block(state: dict | None) -> str:
+    location = _location_block()
+    if not state:
+        return location
     recent = _RECENT_LABELS.get(state.get("most_recent") or "", "không có cái nào")
-    return _CONTEXT_TEMPLATE.format(
+    return location + _CONTEXT_TEMPLATE.format(
         music="ĐANG PHÁT" if state.get("music_playing") else "không phát",
         nav="ĐANG CHẠY" if state.get("navigating") else "không chạy",
         ride="có" if state.get("ride_quote_pending") else "không",
@@ -298,21 +429,90 @@ def _apply_state(label: str, state: dict | None, text: str = "") -> str | None:
     return None
 
 
-def _build_prompt(command_text: str, state: dict | None = None) -> str:
-    return _context_block(state) + _PROMPT_TEMPLATE.format(command_text=command_text)
+def _build_prompt(command_text: str, state: dict | None = None, pending=None) -> str:
+    """Ráp prompt trích slot đầy đủ: khối pending (B3, nếu có) + bối cảnh thiết
+    bị/vị trí (A3) + khối sửa lỗi STT (A2) + phần khai báo nhãn/tham số.
+
+    `pending`: object có `.question`/`.intent`/`.slot` (khớp
+    `handlers.action_flow.Pending`) — `None` khi không có pending nào, hoặc
+    khi pending không phải loại `fill` (xem `detect_with_params`).
+    """
+    pending_block = _pending_block(pending) if pending is not None else ""
+    return (
+        pending_block
+        + _context_block(state)
+        + _STT_CORRECTION_BLOCK
+        + _PROMPT_TEMPLATE.format(command_text=command_text)
+    )
 
 
-def detect_with_params(text: str, state: dict | None = None) -> tuple[str, dict]:
+def _ask_gemini(prompt: str) -> tuple[str, dict]:
+    """Gọi Gemini phân loại + validate reply. DÙNG CHUNG cho đường thường
+    (SetFit không đủ chắc) VÀ đường có pending (B3) — một nguồn xử lý lỗi duy
+    nhất, tránh hai chỗ hai cách xử lý `VLMError`/reply hỏng.
+
+    `classify_failed` phân biệt "phân loại xong, kết luận là vô nghĩa" với
+    "chưa phân loại được vì hệ thống hỏng". Cùng ra nhãn `unknown` nhưng lỗi
+    của ai thì khác nhau — nói "tôi chưa hiểu bạn muốn gì" khi thật ra Gemini
+    vừa timeout là đổ lỗi cho người dùng về một việc họ không làm sai.
+    """
+    try:
+        reply = vlm.generate_json(prompt, schema=_SCHEMA, model=config.GEMINI_INTENT_MODEL)
+    except vlm.VLMError:
+        return Intent.UNKNOWN, {"classify_failed": True}
+
+    if not isinstance(reply, dict):
+        return Intent.UNKNOWN, {"classify_failed": True}
+
+    intent_val = reply.get("intent")
+    if intent_val not in _LABELS:
+        return Intent.UNKNOWN, {"classify_failed": True}
+
+    params = reply.get("params")
+    if not isinstance(params, dict):
+        params = {}
+
+    return intent_val, params
+
+
+def detect_with_params(
+    text: str, state: dict | None = None, pending=None
+) -> tuple[str, dict]:
     """Phân loại ý định và trích xuất tham số từ câu lệnh giọng nói.
 
     `state`: cái gì đang chạy trên điện thoại (xem `action_flow.device_state()`).
     Bỏ trống thì bước phân loại chạy như cũ — chỉ mất khả năng gỡ mơ hồ cho
     những câu tắt/dừng nói trống không.
 
+    `pending` (B3): pending đang mở, nếu có (khớp `handlers.action_flow.Pending`
+    — chỉ cần có `.slot`/`.intent`/`.known`/`.question`/`.kind`). CHỈ có tác
+    dụng khi `pending.kind == "fill"` — hai loại pending TẤT ĐỊNH (`confirm`/
+    `select`) không đi qua đây (T04/`pipeline/router.py` xử lý riêng bằng
+    regex, ngân sách < 400ms, không phải việc của hàm này).
+
+    ⚠️ Xem docs/tasks/reports/T05.md mục "Lệch với task file": tính tới lúc
+    T05 hoàn thành, `pipeline/router.py::_try_fill_pending_slot` (T04, đã
+    commit) CHƯA gọi `detect_with_params(..., pending=...)` — nó tự gọi thẳng
+    `intent_local.classify()` khi có pending đang mở, khác hẳn B3. Tham số
+    `pending` ở đây có mặt và được test đầy đủ ở tầng đơn vị, nhưng chưa được
+    router nối vào cho tới khi có một task sau sửa `pipeline/router.py` (nằm
+    ngoài "FILE BẠN ĐƯỢC SỬA" của T05).
+
     Trả về (intent_name, params_dict).
     """
     if not text.strip():
         return Intent.UNKNOWN, {}
+
+    # B5 — cancel/repeat: tất định, không mạng ngoài, không SetFit, không
+    # Gemini (ngân sách < 300ms, T21/G1). Chạy TRƯỚC cả pending lẫn SetFit:
+    # một câu huỷ rõ ràng thì huỷ ngay, không cần biết đang có pending hay
+    # không, và không tốn một lượt classify cục bộ vô ích.
+    if _LOCAL_CANCEL_WORDS.search(text):
+        logger.info("nhãn cục bộ (regex, không SetFit/Gemini): cancel")
+        return "cancel", {}
+    if _LOCAL_REPEAT_WORDS.search(text):
+        logger.info("nhãn cục bộ (regex, không SetFit/Gemini): repeat")
+        return "repeat", {}
 
     if state is None:
         # Nhập sau, không phải lúc import: `handlers` phụ thuộc ngược lại vào
@@ -320,6 +520,19 @@ def detect_with_params(text: str, state: dict | None = None) -> tuple[str, dict]
         from handlers.action_flow import device_state
 
         state = device_state()
+
+    if pending is not None and getattr(pending, "kind", "fill") == "fill":
+        # B3 — có pending MỞ SLOT đang chờ: SetFit cục bộ KHÔNG ĐƯỢC GỌI. Nó
+        # chưa từng được huấn luyện cho câu trả lời trần trụi ("Sơn Tùng",
+        # "đúng rồi", "mẹ") — ép nó quyết một câu như vậy chính là nguồn bug
+        # (T05-intent-slots.md mục 1, chỗ hỏng #1/#2). Đi thẳng Gemini kèm
+        # khối hỏi-gì (`_pending_block`) để nó có ngữ cảnh mà một mình câu chữ
+        # không có.
+        logger.info(
+            "pending mở slot=%s (%s) -> bỏ qua SetFit, hỏi Gemini kèm ngữ cảnh",
+            pending.slot, pending.intent,
+        )
+        return _ask_gemini(_build_prompt(text, state, pending))
 
     local = intent_local.classify(text)
     if local is not None:
@@ -348,29 +561,7 @@ def detect_with_params(text: str, state: dict | None = None) -> tuple[str, dict]
         # trong prompt: gợi ý sai thì Gemini bị neo theo, mà mỗi lần nó tự phân
         # loại lại là một cơ hội sửa cho bước cục bộ.
 
-    # `classify_failed` phân biệt "phân loại xong, kết luận là vô nghĩa" với
-    # "chưa phân loại được vì hệ thống hỏng". Cùng ra nhãn `unknown` nhưng lỗi
-    # của ai thì khác nhau — nói "tôi chưa hiểu bạn muốn gì" khi thật ra Gemini
-    # vừa timeout là đổ lỗi cho người dùng về một việc họ không làm sai.
-    try:
-        reply = vlm.generate_json(
-            _build_prompt(text, state), schema=_SCHEMA, model=config.GEMINI_INTENT_MODEL
-        )
-    except vlm.VLMError:
-        return Intent.UNKNOWN, {"classify_failed": True}
-
-    if not isinstance(reply, dict):
-        return Intent.UNKNOWN, {"classify_failed": True}
-
-    intent_val = reply.get("intent")
-    if intent_val not in _LABELS:
-        return Intent.UNKNOWN, {"classify_failed": True}
-
-    params = reply.get("params")
-    if not isinstance(params, dict):
-        params = {}
-
-    return intent_val, params
+    return _ask_gemini(_build_prompt(text, state))
 
 
 def detect(text: str) -> str:
