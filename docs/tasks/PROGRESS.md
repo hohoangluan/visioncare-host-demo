@@ -47,7 +47,7 @@ FAILED tests/test_bang_am_thanh.py::test_chat_follow_up_question_uses_previous_t
 | T22 | 2 | 🟠 | a32e461 | reports/T22.md | code xong, số đo phần cứng chờ controller |
 | T05 | 3 | ✅ | af90284 | reports/T05.md | phát hiện + fix bug router.py điền pending (nhét thô transcript) |
 | T06 | 3 | ✅ | a623f26 | reports/T06.md | 6 slot trọn, emergency_number assert module-level |
-| T08 | 4 | ⬜ | | | PARTIAL nếu chưa P1/P2 |
+| T08 | 4 | 🟠 | Codex | reports/T08.md | server xong; chờ app P1 `contact_list` + đo ngưỡng danh bạ thật; commit ad03887 |
 | T09 | 4 | ⬜ | | | 🔴 khoá an toàn |
 | T10 | 4 | ⬜ | | | |
 | T12 | 4 | ⬜ | | | |

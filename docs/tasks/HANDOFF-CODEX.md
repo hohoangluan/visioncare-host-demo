@@ -1,8 +1,9 @@
 # HANDOFF — để Codex (hoặc bất kỳ agent nào khác) tiếp tục chương trình 23-task
 
-Viết ngày 2026-08-22. Claude Code (dùng skill `superpowers:subagent-driven-development`)
-đã điều phối chương trình này tới giữa **Đợt 3**. Tài liệu này thay thế skill đó cho
-một công cụ không có sẵn nó — đọc xong file này là đủ để tiếp tục đúng kỷ luật.
+Viết ngày 2026-08-22; Codex cập nhật sau T08 cùng ngày. Claude Code ban đầu dùng
+`superpowers:subagent-driven-development`; người dùng sau đó chốt **không cần
+Superpowers**, ưu tiên hoàn tất chức năng chạy đúng và batch test để tiết kiệm thời
+gian. Tài liệu này là checkpoint sống qua compaction.
 
 **Repo:** `D:\Study\innostar\Sever_test` (server kính) + `D:\Study\innostar\your-eyes-esp32-firmware` (firmware).
 **Branch làm việc:** `feat/hoi-thoai-23-task` (server kính) — **KHÔNG PHẢI `main`**.
@@ -39,8 +40,9 @@ Firmware đang trên branch `net-stream-adpcm` sẵn có (không phải branch t
 ## 2. Trạng thái hiện tại — task nào xong, task nào đang chạy
 
 Xem bảng đầy đủ ở `docs/tasks/PROGRESS.md` (đã commit). **DỪNG Ở ĐÂY theo yêu cầu
-người dùng (sắp hết token) — Đợt 0-3 xong hoàn toàn (11/23 task), Đợt 4 CHƯA
-dispatch.** Tóm tắt:
+người dùng (sắp hết token) — Đợt 0-3 xong hoàn toàn; Codex đã làm tiếp T08 phía
+server. Hiện **12/23 task có code xong hoặc PARTIAL đúng dự kiến**; tiếp tục từ T09.**
+Tóm tắt:
 
 | Đợt | Task | Trạng thái | Commit |
 |---|---|---|---|
@@ -57,10 +59,11 @@ dispatch.** Tóm tắt:
 | 3 | T05 Intent & schema slot | ✅ | `bd528c1` |
 | 3 | T06 Bảng chính sách slot | ✅ | `995a431` |
 | 3 | **Fix router.py** (xem mục 2b) | ✅ | `6a6017a` |
-| 4-7 | T08-T23 còn lại | ⬜ **BẮT ĐẦU TỪ ĐÂY** |
+| 4 | T08 Gọi danh bạ | 🟠 server xong; chờ app P1/P2 + đo ngưỡng thật | `ad03887` |
+| 4-7 | T09-T23 còn lại | ⬜ **BẮT ĐẦU TỪ T09** |
 
-**HEAD hiện tại của branch `feat/hoi-thoai-23-task`: `6a6017a`.** Baseline test:
-527 pass, 2 fail (cả hai flaky đã biết — xem mục 2c), 1 skip.
+**HEAD code hiện tại của branch `feat/hoi-thoai-23-task`: `ad03887`.** Full suite
+sau T08: **552 pass, 1 skip, 1 xfail**. Xfail duy nhất là P1 `contact_list` phía app.
 
 ### 2b. 🔴 Bug thật đã phát hiện VÀ SỬA trong lúc chạy Đợt 3 — đọc để hiểu vì sao có commit `6a6017a`
 
@@ -94,6 +97,9 @@ sạch), quay lại kiểm `pipeline/router.py` dòng ~443 trước tiên.
   (tải/quota).
 
 **Việc đang treo (không chặn Đợt 4, nhưng phải làm trước khi coi là xong thật):**
+- T08/P1 `contact_list` phía app và bảng đo ngưỡng danh bạ thật
+  (`docs/tasks/measurements/D7-thresholds.md`). Server đã hỗ trợ fuzzy, pending,
+  lựa chọn ordinal/name và payload `contact_id`; ca tên đặt lạ vẫn chờ P1.
 - Số đo phần cứng T22 (`docs/tasks/measurements/F9.md`) — cần board thật + arduino-cli,
   dồn về gần T21 theo Ruling 8.
 - G11 (`docs/tasks/measurements/G11.md`) cần đo lại MỘT MÌNH (không có tải CPU song
@@ -169,6 +175,11 @@ nằm trong `.superpowers/sdd/.../progress.md` nếu file đó còn tồn tại 
     (nếu đổi code T01+), bấm `'p'` qua Serial console (COM8, xem mục 5 dưới) mô
     phỏng giữ nút thật, xem log server có nhận đúng request không, audio có phát về
     không. Làm SAU KHI pytest xanh, không thay thế pytest.
+
+11. **Quyết định Codex mới nhất của người dùng:** không dùng Superpowers/subagent;
+    code các phần độc lập theo batch để tối ưu thời gian, gom test về cuối cụm. Tuy
+    nhiên chỉ đánh dấu DONE/PARTIAL và commit sau khi DoD/full regression tương ứng
+    đã chạy thật. Sau mỗi task cập nhật file handoff này để an toàn qua compaction.
 
 **Quyết định thêm của người dùng (không phải Ruling nhưng cần biết):**
 - Android emulator ĐÃ CÀI SẴN: AVD `test_pixel` (Android 36, google_apis x86_64),
@@ -256,14 +267,13 @@ response về, không crash), không xác nhận được kịch bản STT/inten
 
 ---
 
-## 6. Việc còn lại — 13 task, theo đúng thứ tự RUNBOOK
+## 6. Việc còn lại — 12 task, theo đúng thứ tự RUNBOOK
 
 **Đợt 3: XONG HOÀN TOÀN** (T05, T06, fix router.py — xem mục 2).
 
-**Đợt 4 — 6 nhánh song song (Ruling 3/4 ở mục 3):** T08 (gọi danh bạ, PARTIAL —
-chờ app team P1), T09 (khẩn cấp, 🔴 giữ full rigor), T10 (chỉ đường, PARTIAL — chờ
-T20 D4 đã xong nên có thể gỡ phần đó), T12 (nhạc), T14 (OCR ngữ cảnh — nối phần
-H1/H3/H5 T15 đã xây sẵn), T16 (không gian & vật cản).
+**Đợt 4:** T08 đã PARTIAL đúng dự kiến (server xong, commit `ad03887`; chờ app P1/P2
+và số đo danh bạ thật). Còn T09 (khẩn cấp, 🔴 giữ full rigor), T10 (chỉ đường),
+T12 (nhạc), T14 (OCR ngữ cảnh — nối H1/H3/H5 T15), T16 (không gian & vật cản).
 
 **Đợt 5:** T13 (chat & lịch sử — nối `_remember`/history T14 để dở), T11 (đặt xe,
 🔴 giữ full rigor, PARTIAL chờ Farefeed), T23 (quyền & cấu hình, dùng emulator

@@ -134,7 +134,7 @@ Mỗi task một session độc lập. Chúng chỉ giao nhau ở `slots.py` và
 — **quy ước: mỗi task chỉ thêm ca của mình vào `test_slots.py`, không sửa ca của
 task khác.**
 
-- [ ] **T08** Gọi danh bạ · PARTIAL nếu chưa có P1/P2
+- [x] **T08** Gọi danh bạ · PARTIAL — server xong, chờ app P1/P2 + đo danh bạ thật
 - [ ] **T09** Gọi khẩn cấp · 🔴 khoá an toàn, ưu tiên cao
 - [ ] **T10** Chỉ đường · PARTIAL, D4 xfail chờ T20
 - [ ] **T12** Nhạc
@@ -292,7 +292,7 @@ C2/P9 đã xong một phần, số dòng của `ride.py`/`music.py`/`navigation.
 - [x] T06 Bảng chính sách slot
 
 ### Đợt 4 — chức năng
-- [ ] T08 Gọi danh bạ
+- [x] T08 Gọi danh bạ *(PARTIAL: server xong, chờ app P1/P2 + số đo thật)*
 - [ ] T09 Gọi khẩn cấp
 - [ ] T10 Chỉ đường
 - [ ] T12 Nhạc
