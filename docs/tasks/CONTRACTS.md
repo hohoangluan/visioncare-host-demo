@@ -102,11 +102,13 @@ dùng thường nói 2–4 giây. Phải thay bằng số đo board thật trư�
 ```
 X-Device-Id   BẮT BUỘC
 → text/event-stream, board mở và giữ
-heartbeat mỗi N giây
+heartbeat mỗi 15 giây (PROVISIONAL, chờ đo tunnel 10 phút)
 event types: frame_request | call_incoming | ping
 ```
 
 **Một kênh, hai mục đích.** Không đẻ ra kênh thứ hai.
+Kênh theo device; queue tối đa 8 sự kiện/subscriber, đầy thì bỏ cũ giữ mới.
+Không có subscriber thì `publish()` trả 0 và không giữ sự kiện nào.
 
 ### 2.4 Đầu ra audio cho board — ràng buộc CỨNG (T02/F8)
 

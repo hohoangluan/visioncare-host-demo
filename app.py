@@ -22,6 +22,7 @@ from pipeline import adpcm, intent_local, phrases, router, stt, tts
 from services.action_callbacks import action_callbacks
 from services import capabilities
 from services.frame_buffer import frames
+from services.events_channel import events
 
 logger = logging.getLogger("blind_assist")
 
@@ -721,6 +722,23 @@ async def receive_frame(request: Request) -> Response:
         request.headers.get("x-capture-ts"),
     )
     return Response(status_code=204)
+
+
+@app.get("/events")
+def stream_events(request: Request) -> StreamingResponse:
+    """Keep one bounded, per-device SSE downlink open for the glasses."""
+    device_id = request.headers.get("x-device-id", "").strip()
+    if not device_id:
+        raise HTTPException(status_code=400, detail="Missing X-Device-Id")
+    return StreamingResponse(
+        events.subscribe(device_id),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post("/process")

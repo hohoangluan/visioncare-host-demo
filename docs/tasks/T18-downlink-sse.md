@@ -5,7 +5,7 @@
 | **Mã spec** | F6 · 27.6 |
 | **SPEC gốc** | mục 19 (F6), 27.6 |
 | **Repo đụng** | Server kính · **Firmware** |
-| **Trạng thái** | READY — nhưng **nặng hơn spec giả định** |
+| **Trạng thái** | PARTIAL — server SSE xanh; firmware/đo RAM chờ board COM8 |
 | **Chặn bởi** | **T01** · **T22** (đo RAM phải làm SAU khi bật TLS) |
 | **Chặn** | T17/F5 (xin ảnh tầng cao) · **T19** (cuộc gọi đến) |
 
@@ -168,13 +168,17 @@ Kết quả ghi vào `docs/tasks/measurements/F6-ram.md`.
 pytest tests/test_events_channel.py -q
 ```
 
-- [ ] `GET /events` chạy, theo device, có heartbeat
-- [ ] Board rớt → server dọn, không treo generator, không tích sự kiện
+- [x] `GET /events` chạy, theo device, có heartbeat 15 s provisional
+- [x] Board rớt → server dọn, không treo generator, không tích sự kiện
 - [ ] Board tự nối lại sau khi server restart
 - [ ] **RAM đo được với 2 socket + TLS**, có số trong `measurements/F6-ram.md`
 - [ ] Kênh không làm chậm lượt `/process` thường (đo trước/sau)
-- [ ] Một kênh phục vụ **cả hai** mục đích (frame_request + call_incoming) —
+- [x] Một kênh server phục vụ **cả hai** mục đích (frame_request + call_incoming) —
       không đẻ ra kênh thứ hai
+
+Server test: **10 pass**; T17/router/services regression: **133 pass**. Firmware
+chưa viết theo đúng luật “đo baseline RAM TLS trước”: `arduino-cli board list`
+ngày 2026-08-22 trả `No boards found`.
 
 ---
 

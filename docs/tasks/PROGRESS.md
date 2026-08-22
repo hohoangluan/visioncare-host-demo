@@ -57,7 +57,7 @@ FAILED tests/test_bang_am_thanh.py::test_chat_follow_up_question_uses_previous_t
 | T13 | 5 | 🟠 | Codex | reports/T13.md | code + 33 DoD/134 regression xanh; chờ đo Gemini/prefix thật; commit `0a18376` |
 | T23 | 5 | 🟠 | Codex | reports/T23.md | code 3 lớp xong; 9 DoD/90 regression/Android build+AVD xanh; chờ nạp & manual trên điện thoại thật |
 | T17 | 6 | 🟠 | Codex | reports/T17.md | F3/F4 server+firmware code xanh; 19 DoD/114 regression/build xanh; chờ nạp board + F5 số tầng thật |
-| T18 | 6 | ⬜ | | | |
+| T18 | 6 | 🟠 | Codex | reports/T18.md | server SSE 10 DoD/133 regression xanh; firmware/đo RAM bị chặn vì COM8 vắng |
 | T19 | 6 | ⬜ | | | |
 | T21 | 7 | ⬜ | | | |
 

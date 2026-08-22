@@ -152,10 +152,10 @@ task khác.**
 | # | Task | Ghi chú |
 |---|---|---|
 | 6 | **T17** Tách `/frame` | 🟠 F3/F4 code xanh; 🔴 **F2 KHÔNG thi công**; F5/đo board còn treo |
-| 7 | **T18** Downlink SSE | đo RAM **sau** T22 |
+| 7 | **T18** Downlink SSE | 🟠 server xanh; firmware/đo RAM sau T22 chờ COM8 |
 | 8 | **T19** Cuộc gọi đến | cả 4 repo, từ số không |
 
-- [x] T17 *(PARTIAL: code/build xanh; chờ board + F5)* · [ ] T18 · [ ] T19
+- [x] T17 *(PARTIAL: code/build xanh; chờ board + F5)* · [x] T18 *(PARTIAL: server xanh; chờ board)* · [ ] T19
 
 ### Đợt 7 — chốt số
 
@@ -306,7 +306,7 @@ C2/P9 đã xong một phần, số dòng của `ride.py`/`music.py`/`navigation.
 
 ### Đợt 6 — đường truyền
 - [x] T17 Tách `/frame` *(PARTIAL: chờ board + số phân tầng F5)*
-- [ ] T18 Downlink SSE
+- [x] T18 Downlink SSE *(PARTIAL: server xanh; firmware/đo RAM chờ COM8)*
 - [ ] T19 Cuộc gọi đến
 
 ### Đợt 7

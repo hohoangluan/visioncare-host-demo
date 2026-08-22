@@ -266,6 +266,11 @@ REQUIRE_DEVICE_ID = get("REQUIRE_DEVICE_ID", "0") == "1"
 FRAME_MAX_AGE_MS = float(get("FRAME_MAX_AGE_MS", "6000"))
 FRAME_WAIT_MS = float(get("FRAME_WAIT_MS", "800"))
 
+# T18/F6 — SSE heartbeat keeps Cloudflare/NAT mappings active. The 15-second
+# default is provisional until a 10-minute tunnel run is measured on hardware.
+EVENT_HEARTBEAT_SECONDS = float(get("EVENT_HEARTBEAT_SECONDS", "15"))
+EVENT_QUEUE_SIZE = int(get("EVENT_QUEUE_SIZE", "8"))
+
 # Cửa sổ chống gửi lặp theo `X-Turn-Id`: hai `POST /process` cùng
 # (device_id, turn_id) trong cửa sổ này -> KHÔNG chạy lại pipeline (không gọi
 # STT/Gemini/handler lần hai), chỉ phát lại đúng audio đã tổng hợp lần đầu.
