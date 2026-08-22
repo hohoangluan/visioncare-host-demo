@@ -443,44 +443,54 @@ def _global_stop_target(command_text: str, state: dict) -> str | None:
 def _try_fill_pending_slot(
     pending, image: bytes | None, command_text: str, state: dict
 ) -> Iterator[str] | None:
-    """Pha 4 (21.1) — PENDING ĐIỀN SLOT, qua slot validator.
+    """Pha 4 (21.1) — PENDING ĐIỀN SLOT, qua Gemini có ngữ cảnh pending (B3/T05).
 
     Trả `None` nếu KHÔNG lấp được — bên gọi (`_resolve`) tự bỏ pending
     (`clear_pending()`) và để câu này chảy tiếp xuống bước 6 như một câu nói
     HOÀN TOÀN MỚI. Hai lý do khiến không lấp được:
 
-    1. Câu này thật ra là một Ý ĐỊNH KHÁC HẲN, có nhãn rõ ràng (dùng bộ phân
-       loại CỤC BỘ, rẻ, không mạng — `pipeline/intent_local.py` — chỉ để BIẾT
-       có nên lấp hay không, KHÔNG dùng làm giá trị lấp). Đây là ca
+    1. Câu này thật ra là một Ý ĐỊNH KHÁC HẲN — `detect_with_params(pending=)`
+       (có toàn bộ ngữ cảnh câu hỏi, không chỉ nhãn cục bộ rẻ tiền) trả về
+       intent khác `pending.intent` và khác `chat`/`unknown`. Đây là ca
        `test_unrelated_intent_during_pending`: "gọi cho mẹ" giữa lúc đang chờ
        trả lời `song_title` phải thành `contact_call`, không phải một tên bài
-       hát tên là "gọi cho mẹ" — dù validator riêng của `song_title` (bảng ở
-       đầu file) vốn dĩ RẤT LỎNG ("gần như mọi thứ") và một mình nó sẽ CHẤP
-       NHẬN oan câu này nếu không có bước lọc ý-định-khác ở trên.
-    2. Câu này không rơi vào (1) (nhãn cục bộ là `chat`/`unknown`, hoặc trùng
-       đúng `pending.intent`, hoặc bộ cục bộ không đủ tự tin) NHƯNG bị chính
-       validator của `pending.slot` từ chối (`test_slot_validator_rejects_imperative`,
+       hát tên là "gọi cho mẹ".
+    2. Gemini không trích được `pending.slot` từ câu này (thiếu key trong
+       `params` trả về), hoặc trích được nhưng bị chính validator của
+       `pending.slot` từ chối (`test_slot_validator_rejects_imperative`,
        `test_volume_validator_only_accepts_direction`).
+
+    🔴 SỬA 2026-08-22 — bug thật đã nằm trong code từ bản T04 gốc: hàm này
+    từng dùng `intent_local.classify()` (bộ phân loại cục bộ, KHÔNG trích
+    tham số) chỉ để lọc ý-định-khác, rồi NHÉT NGUYÊN VĂN `command_text` làm
+    giá trị slot. Hậu quả: người dùng trả lời "Tôi muốn nghe bài Nơi này có
+    anh" thì `song_title` = CẢ CÂU, không phải tên bài sạch "Nơi này có anh".
+    `detect_with_params(..., pending=...)` (B3, `pipeline/intent.py`, T05) đã
+    có sẵn từ T05 nhưng CHƯA TỪNG được gọi từ đây cho tới bản sửa này — T05 và
+    T06 độc lập phát hiện gap này (xem `docs/tasks/reports/T05.md`, `T06.md`
+    mục "Lệch với task file"). Giờ nối vào: dùng TRÍCH XUẤT THẬT của Gemini
+    (có khối hỏi-gì trong prompt) thay vì nhét thô, và unrelated-intent check
+    cũng chính xác hơn (Gemini thấy cả ngữ cảnh, không chỉ nhãn cục bộ rẻ).
     """
     text = (command_text or "").strip()
     if not text:
         return None
 
-    local = intent_local.classify(text)
-    if local is not None:
-        resolved = intent_mod._apply_state(local.label, state, text)
-        if (
-            resolved is not None
-            and resolved != pending.intent
-            and resolved not in (Intent.CHAT, Intent.UNKNOWN)
-        ):
-            return None
+    resolved, params = intent_mod.detect_with_params(text, state, pending=pending)
 
-    if not _validate_slot(pending.slot, text):
+    if (
+        resolved is not None
+        and resolved != pending.intent
+        and resolved not in (Intent.CHAT, Intent.UNKNOWN)
+    ):
         return None
 
     known = dict(pending.known)
-    known[pending.slot] = text
+    known.update(params)
+    value = known.get(pending.slot)
+    if value is None or not _validate_slot(pending.slot, value):
+        return None
+
     return _dispatch(pending.intent, image, command_text, known)
 
 
