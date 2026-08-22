@@ -108,6 +108,9 @@ _SCHEMA = {
                 # lời chung chung ("cứ phát", "bài nào cũng được") hoặc chỉ có
                 # tên ca sĩ.
                 "song_is_specific": {"type": "boolean"},
+                # T14/E3: câu này hỏi tiếp về transcript OCR vừa đọc. Handler
+                # chỉ dùng cờ khi cache còn hạn; không có cache thì OCR ảnh mới.
+                "ocr_followup": {"type": "boolean"},
                 "volume": {"type": "integer"},
                 "direction": {"type": "string", "enum": ["up", "down"]},
                 "confirm": {"type": "boolean"},
@@ -218,7 +221,9 @@ _PROMPT_TEMPLATE_LONG = (
 _PROMPT_TEMPLATE = (
     "Phân loại ý định câu lệnh thoại của người khiếm thị dùng kính hỗ trợ.\n"
     "Chọn ĐÚNG MỘT nhãn, trích tham số vào 'params'.\n\n"
-    "ocr: đọc chữ in/viết trong ảnh (sách, giấy tờ, nhãn, biển hiệu).\n"
+    "ocr: đọc chữ in/viết trong ảnh (sách, giấy tờ, nhãn, biển hiệu). Đặt "
+    "ocr_followup=true khi hỏi tiếp về văn bản vừa đọc (dòng/đoạn/mục đó); "
+    "nếu yêu cầu đọc ảnh/tờ giấy mới thì false.\n"
     "find: tìm một ĐỒ VẬT cụ thể trong tầm tay, thường là đồ của người dùng.\n"
     "money: mệnh giá tờ tiền đang cầm.\n"
     "space: phía trước/xung quanh CÓ GÌ (tả khung cảnh).\n"

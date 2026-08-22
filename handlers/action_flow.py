@@ -366,6 +366,40 @@ def recall(key: str) -> str | None:
         return session.last_ids.get(key)
 
 
+def remember_ocr(text: str, taken_at: float | None = None) -> None:
+    """Lưu transcript OCR hoàn chỉnh theo device hiện tại (T14/E2).
+
+    Caller chỉ được gọi sau khi stream kết thúc sạch; hàm này cố ý không nhận
+    các mảnh rời để một lỗi giữa stream không thể để lại cache nửa vời.
+    """
+    session = _get_session()
+    with _SESSIONS_LOCK:
+        session.last_ocr = {
+            "text": text,
+            "taken_at": time.monotonic() if taken_at is None else taken_at,
+        }
+
+
+def get_last_ocr(
+    max_age_seconds: float = 300.0, now: float | None = None
+) -> dict | None:
+    """Transcript OCR còn hạn của device hiện tại, hoặc ``None``.
+
+    Cache hết hạn được xóa ngay để T13/E4 và T14/E3 không vô tình dùng lại
+    chữ của một tờ giấy cũ. Trả bản sao để caller không sửa state ngoài lock.
+    """
+    session = _get_session()
+    current = time.monotonic() if now is None else now
+    with _SESSIONS_LOCK:
+        cached = session.last_ocr
+        if cached is None:
+            return None
+        if current - float(cached.get("taken_at", 0.0)) > max_age_seconds:
+            session.last_ocr = None
+            return None
+        return dict(cached)
+
+
 def forget(key: str) -> None:
     """Xoá id sau khi nó đã được dùng xong (chuyến đã hủy, lộ trình đã dừng)."""
     session = _get_session()

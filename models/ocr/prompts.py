@@ -38,14 +38,33 @@ _RAW = _COMMON + (
 )
 
 
-def build(mode: str) -> str:
+def build(mode: str, command_text: str = "") -> str:
     from . import Mode
 
     if mode == Mode.SPECIALIZED:
-        return _SPECIALIZED
-    if mode == Mode.RAW:
-        return _RAW
-    return _NORMAL
+        base = _SPECIALIZED
+    elif mode == Mode.RAW:
+        base = _RAW
+    else:
+        base = _NORMAL
+
+    question = (command_text or "").strip().replace('"', "'")
+    return base + (
+        f'\n\nNgười dùng hỏi: "{question}". '
+        "Nếu câu hỏi chỉ định một phần cụ thể (dòng thứ mấy, đoạn nào, mục "
+        "nào), chỉ đọc đúng phần đó. Nếu không chỉ định thì đọc toàn bộ."
+    )
+
+
+def build_followup(transcript: str, command_text: str) -> str:
+    """Prompt text-only trả lời trên đúng transcript của ảnh trước (T14/E3)."""
+    return (
+        "Bạn đang hỗ trợ người khiếm thị hỏi tiếp về văn bản vừa được đọc. "
+        "Chỉ dùng transcript bên dưới; không bịa phần không có. Trả lời trực "
+        "tiếp, ngắn gọn, dễ nghe.\n\n"
+        f"TRANSCRIPT:\n{transcript}\n\n"
+        f"CÂU HỎI: {command_text}"
+    )
 
 
 # ─── T15/H3 — hướng dẫn chụp lại, tăng dần theo attempt ────────────────────

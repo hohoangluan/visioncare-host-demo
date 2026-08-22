@@ -492,6 +492,18 @@ def _try_fill_pending_slot(
     if not text:
         return None
 
+    # `ocr_retry` không phải slot cần trích giá trị. Phân loại câu mới bình
+    # thường để một intent khác (ví dụ hazard) vẫn thoát pending; nếu vẫn là
+    # OCR thì chuyển attempt sang handler và chụp lại.
+    if pending.slot == "ocr_retry":
+        resolved, params = intent_mod.detect_with_params(text, state)
+        if resolved == pending.intent:
+            known = dict(pending.known)
+            known.update(params)
+            known["_ocr_attempt"] = pending.attempt
+            return _dispatch(pending.intent, image, command_text, known)
+        return None
+
     resolved, params = intent_mod.detect_with_params(text, state, pending=pending)
 
     if (
@@ -683,7 +695,14 @@ def _resolve(
     # Chất lượng ảnh chỉ xét được khi đã biết câu hỏi cần gì ở ảnh. Đặt trước
     # gate này thì "gọi cho mẹ" bị một tấm ảnh xấu chặn mất, dù handler gọi
     # điện không hề mở ảnh ra xem.
-    reject_reason = image_quality.reject_reason(intent_name, image)
+    # T14/E3: follow-up OCR dùng transcript cũ, không được để ảnh lượt mới (có
+    # thể đã lệch khung hoặc không có) chặn trước khi handler bỏ ảnh đó đi.
+    ocr_text_only = (
+        intent_name == Intent.OCR
+        and params.get("ocr_followup") is True
+        and action_flow.get_last_ocr(ocr.OCR_CACHE_TTL_SECONDS) is not None
+    )
+    reject_reason = None if ocr_text_only else image_quality.reject_reason(intent_name, image)
     if reject_reason is not None:
         logger.info(
             "nghe='%s' intent=%s | stt=%.2fs phân-loại=%.2fs -> từ chối ảnh",

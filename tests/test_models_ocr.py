@@ -7,9 +7,10 @@ def _capture(monkeypatch, *pieces: str):
     """Thay Gemini bằng generator giả, trả dict ghi lại prompt và ảnh đã gửi."""
     captured = {}
 
-    def fake_generate_stream(prompt, image=None):
+    def fake_generate_stream(prompt, image=None, **kwargs):
         captured["prompt"] = prompt
         captured["image"] = image
+        captured.update(kwargs)
         captured["pulled"] = 0
         for piece in pieces:
             captured["pulled"] += 1
@@ -27,6 +28,8 @@ def test_read_sends_image_to_gemini_in_one_call(monkeypatch):
 
     assert result == "Xin chào thế giới"
     assert captured["image"] == IMG
+    import config
+    assert captured["model"] == config.GEMINI_OCR_MODEL
 
 
 def test_normal_mode_asks_for_vietnamese_translation(monkeypatch):
