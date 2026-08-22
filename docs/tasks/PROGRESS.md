@@ -45,8 +45,8 @@ FAILED tests/test_bang_am_thanh.py::test_chat_follow_up_question_uses_previous_t
 | T15 | 2 | ✅ | a297bab | reports/T15.md | H1/H3/H5 xây xong, CHƯA nối production (nợ T14) |
 | T20 (còn lại) | 2 | ✅ | a8ce029 | reports/T20.md | _DEFAULT_POLICY xong |
 | T22 | 2 | 🟠 | a32e461 | reports/T22.md | code xong, số đo phần cứng chờ controller |
-| T05 | 3 | ⬜ | | | |
-| T06 | 3 | ⬜ | | | |
+| T05 | 3 | ✅ | af90284 | reports/T05.md | phát hiện + fix bug router.py điền pending (nhét thô transcript) |
+| T06 | 3 | ✅ | a623f26 | reports/T06.md | 6 slot trọn, emergency_number assert module-level |
 | T08 | 4 | ⬜ | | | PARTIAL nếu chưa P1/P2 |
 | T09 | 4 | ⬜ | | | 🔴 khoá an toàn |
 | T10 | 4 | ⬜ | | | |

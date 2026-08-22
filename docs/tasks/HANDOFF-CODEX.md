@@ -38,7 +38,9 @@ Firmware đang trên branch `net-stream-adpcm` sẵn có (không phải branch t
 
 ## 2. Trạng thái hiện tại — task nào xong, task nào đang chạy
 
-Xem bảng đầy đủ ở `docs/tasks/PROGRESS.md` (đã commit). Tóm tắt tới lúc viết file này:
+Xem bảng đầy đủ ở `docs/tasks/PROGRESS.md` (đã commit). **DỪNG Ở ĐÂY theo yêu cầu
+người dùng (sắp hết token) — Đợt 0-3 xong hoàn toàn (11/23 task), Đợt 4 CHƯA
+dispatch.** Tóm tắt:
 
 | Đợt | Task | Trạng thái | Commit |
 |---|---|---|---|
@@ -52,16 +54,54 @@ Xem bảng đầy đủ ở `docs/tasks/PROGRESS.md` (đã commit). Tóm tắt t
 | 2 | T15 OCR chất lượng | ✅ | `675efa8` |
 | 2 | T20 Hợp đồng mã lỗi | ✅ | `42d4ea9` |
 | 2 | T22 Bật TLS | ✅ (code); ⬜ (số đo phần cứng) | server `80b1853`, firmware `302db96` |
-| 3 | T06 Bảng chính sách slot | ✅ | **CHƯA COMMIT** — đợi T05 xong để commit cùng đợt |
-| 3 | T05 Intent & schema slot | 🟡 **ĐANG CHẠY** — agent bị giới hạn phiên giết 2 lần, đã resume, chưa có kết quả cuối |
-| 4-7 | T08-T23 còn lại | ⬜ chưa bắt đầu |
+| 3 | T05 Intent & schema slot | ✅ | `bd528c1` |
+| 3 | T06 Bảng chính sách slot | ✅ | `995a431` |
+| 3 | **Fix router.py** (xem mục 2b) | ✅ | `6a6017a` |
+| 4-7 | T08-T23 còn lại | ⬜ **BẮT ĐẦU TỪ ĐÂY** |
 
-**Việc đang treo (không chặn, nhưng phải làm trước khi coi là xong thật):**
+**HEAD hiện tại của branch `feat/hoi-thoai-23-task`: `6a6017a`.** Baseline test:
+527 pass, 2 fail (cả hai flaky đã biết — xem mục 2c), 1 skip.
+
+### 2b. 🔴 Bug thật đã phát hiện VÀ SỬA trong lúc chạy Đợt 3 — đọc để hiểu vì sao có commit `6a6017a`
+
+`pipeline/router.py::_try_fill_pending_slot` (code T04, đã commit từ Đợt 1) có bug
+thật: khi người dùng trả lời một câu hỏi "fill" (VD "Bạn muốn nghe bài hát nào?"),
+nó nhét **NGUYÊN VĂN transcript** làm giá trị slot thay vì trích xuất sạch. Người
+dùng nói "Tôi muốn nghe bài Nơi này có anh" thì `song_title` = cả câu, không phải
+"Nơi này có anh". T05 và T06 (Đợt 3) độc lập phát hiện ra cùng gap này khi build
+`detect_with_params(pending=)` (B3) mà thấy nó không được router gọi tới.
+
+Controller (Claude) đã sửa trực tiếp (không qua vòng dispatch riêng, vì user yêu
+cầu và thời gian gấp) — nối `_try_fill_pending_slot` gọi
+`intent_mod.detect_with_params(text, state, pending=pending)` thay vì
+`intent_local.classify()` + nhét thô. Verify: 69/69 test router pass KHÔNG CẦN SỬA
+TEST (test đã mock sẵn đúng interface từ trước). Chi tiết đầy đủ trong commit message
+`6a6017a` và `docs/tasks/reports/T05.md` mục "Fix note".
+
+**Codex: đây LÀ MẪU cho loại bug cần cảnh giác khi dispatch Đợt 4** — 6 agent Đợt 4
+đều fill slot qua CHÍNH cơ chế này (`_try_fill_pending_slot`). Giờ đã sửa nên KHÔNG
+cần lo nữa, nhưng nếu review Đợt 4 thấy giá trị slot "bẩn" (còn nguyên câu, không
+sạch), quay lại kiểm `pipeline/router.py` dòng ~443 trước tiên.
+
+### 2c. Hai test flaky đã biết — đừng tưởng là regression
+
+- `tests/test_bang_am_thanh.py` — một test NGẪU NHIÊN trong file này có thể đỏ do
+  hết quota Gemini free-tier hoặc timing thật (không phải lỗi code). Test cụ thể nào
+  đỏ THAY ĐỔI giữa các lần chạy.
+- `tests/test_intent_slots.py::test_stt_error_unrecognizable_name_not_invented` —
+  đánh dấu `@pytest.mark.llm`, gọi Gemini thật trên một câu vô nghĩa để test chống
+  bịa địa danh. Pass khi chạy riêng, có thể flaky khi chạy cùng lúc nhiều test khác
+  (tải/quota).
+
+**Việc đang treo (không chặn Đợt 4, nhưng phải làm trước khi coi là xong thật):**
 - Số đo phần cứng T22 (`docs/tasks/measurements/F9.md`) — cần board thật + arduino-cli,
   dồn về gần T21 theo Ruling 8.
 - G11 (`docs/tasks/measurements/G11.md`) cần đo lại MỘT MÌNH (không có tải CPU song
   song) trước khi chốt số cho T21 — số hiện tại dao động 0.94x-2.59x vì đo lúc 5 agent
   khác chạy cùng máy.
+
+**Ba task không cần đợi Đợt 4's dependencies, có thể dispatch bất cứ lúc nào (xem
+mục 9 dưới để biết chi tiết):** T23, T14, T17.
 
 ---
 
@@ -216,11 +256,9 @@ response về, không crash), không xác nhận được kịch bản STT/inten
 
 ---
 
-## 6. Việc còn lại — 18 task, theo đúng thứ tự RUNBOOK
+## 6. Việc còn lại — 13 task, theo đúng thứ tự RUNBOOK
 
-**Đợt 3 (đang dở):** T05 (đang chạy, bị giới hạn phiên giết 2 lần, đã resume lần
-cuối lúc viết file này — kiểm agent đó trước khi dispatch gì mới) ‖ T06 (DONE, chưa
-commit — commit CÙNG LÚC với T05 khi cả hai xong, vì cùng review một wave).
+**Đợt 3: XONG HOÀN TOÀN** (T05, T06, fix router.py — xem mục 2).
 
 **Đợt 4 — 6 nhánh song song (Ruling 3/4 ở mục 3):** T08 (gọi danh bạ, PARTIAL —
 chờ app team P1), T09 (khẩn cấp, 🔴 giữ full rigor), T10 (chỉ đường, PARTIAL — chờ
@@ -241,6 +279,26 @@ thật, nghĩa là làm số đo phần cứng T22 CÒN TREO ở đây trước)
 RUNBOOK mục 7, viết `FINAL-REPORT.md`, final whole-branch review (dùng model mạnh
 nhất có), rồi mới `superpowers:finishing-a-development-branch` (hoặc tương đương
 nếu Codex không có skill đó — về cơ bản: xin merge/PR, không tự merge vào main).
+
+---
+
+## 9. Ba task ĐỘC LẬP — không cần đợi Đợt 4, người dùng đồng ý "để Codex làm"
+
+Theo `docs/tasks/00-INDEX.md`, ba task này có "Chặn bởi: —" hoặc chỉ chặn bởi task
+ĐÃ XONG, nên có thể dispatch NGAY, không cần chờ Đợt 4 xong trước:
+
+- **T23 Quyền & cấu hình** (`docs/tasks/T23-capabilities.md`) — chặn bởi: KHÔNG CÓ.
+  Dùng Android emulator đã cài sẵn (mục 3, "Quyết định thêm") để verify app-side
+  trước khi cần điện thoại thật.
+- **T14 OCR ngữ cảnh** (`docs/tasks/T14-ocr-context.md`) — chặn bởi: T03 (đã xong).
+  Nối phần H1/H3/H5 mà T15 đã xây sẵn trong `models/ocr/prompts.py` (có comment 🔴
+  đánh dấu chỗ cần nối, xem `docs/tasks/reports/T15.md`).
+- **T17 Tách `/frame`** (`docs/tasks/T17-frame-channel.md`) — chặn bởi: T01 (đã
+  xong). 🔴 F2 (đảo thứ tự part multipart) KHÔNG được thi công — đã đo, làm chậm đi.
+
+Cả ba dùng đúng quy trình ở mục 4. Có thể dispatch độc lập, không cần chờ Đợt 4's
+6 task song song (T08/T09/T10/T12/T14/T16) hoàn tất — nhưng T14 TRÙNG với Đợt 4's
+T14, nên nếu dispatch T14 riêng thì ĐỪNG dispatch lại T14 trong Đợt 4.
 
 ---
 

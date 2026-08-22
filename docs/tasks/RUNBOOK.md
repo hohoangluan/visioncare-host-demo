@@ -288,8 +288,8 @@ C2/P9 đã xong một phần, số dòng của `ride.py`/`music.py`/`navigation.
 - [x] T22 Bật TLS *(code xong, số đo phần cứng chờ controller)*
 
 ### Đợt 3 — intent/slot
-- [ ] T05 Intent & schema slot
-- [ ] T06 Bảng chính sách slot
+- [x] T05 Intent & schema slot
+- [x] T06 Bảng chính sách slot
 
 ### Đợt 4 — chức năng
 - [ ] T08 Gọi danh bạ
