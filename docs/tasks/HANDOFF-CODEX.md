@@ -40,9 +40,9 @@ Firmware đang trên branch `net-stream-adpcm` sẵn có (không phải branch t
 ## 2. Trạng thái hiện tại — task nào xong, task nào đang chạy
 
 Xem bảng đầy đủ ở `docs/tasks/PROGRESS.md` (đã commit). Đợt 0-3 xong hoàn toàn;
-Codex đã làm tiếp T08-T23 theo các task đã ghi ở bảng dưới. Hiện **20/23 task có
+Codex đã làm tiếp T08-T23 theo các task đã ghi ở bảng dưới. Hiện **21/23 task có
 code xong hoặc PARTIAL đúng dự kiến**. Android AVD `test_pixel` đã build/test/cài
-và khởi động app thành công; T17 server + firmware đã checkpoint, tiếp theo **T18**.
+và khởi động app thành công; T18 server đã checkpoint, tiếp theo **T19**.
 Tóm tắt:
 
 | Đợt | Task | Trạng thái | Commit |
@@ -70,9 +70,10 @@ Tóm tắt:
 | 5 | T11 Đặt xe | 🟠 server fail-closed; chờ Farefeed/geocode/app | `11662ac` |
 | 5 | T23 Quyền & cấu hình | 🟠 code/AVD xong; chờ điện thoại thật | `2520017` |
 | 6 | T17 Tách `/frame` | 🟠 F3/F4 code/build xanh; chờ board + F5 | server `50b53e8`, firmware `61f81e7` |
-| 6-7 | T18/T19/T21 còn lại | ⬜ **BẮT ĐẦU TỪ T18** |
+| 6 | T18 Downlink SSE | 🟠 server 10 test xanh; firmware/đo RAM chờ COM8 | `84dcd40` |
+| 6-7 | T19/T21 còn lại | ⬜ **BẮT ĐẦU TỪ T19** |
 
-**HEAD code chức năng hiện tại của branch `feat/hoi-thoai-23-task`: `50b53e8`.**
+**HEAD code chức năng hiện tại của branch `feat/hoi-thoai-23-task`: `84dcd40`.**
 T17: **19 DoD + 114 regression pass**; firmware compile
 **1 295 623 B (41%) / RAM tĩnh 77 520 B (23%)**.
 Regression T14/T16: **94 pass**. T12 có **16 DoD + 35 services + 109 regression
@@ -321,7 +322,7 @@ response về, không crash), không xác nhận được kịch bản STT/inten
 
 ---
 
-## 6. Việc còn lại — 3 task chưa chạy + phần PARTIAL, theo RUNBOOK
+## 6. Việc còn lại — 2 task chưa chạy + phần PARTIAL, theo RUNBOOK
 
 **Đợt 3: XONG HOÀN TOÀN** (T05, T06, fix router.py — xem mục 2).
 
@@ -342,7 +343,10 @@ thay đổi Spotify/backend có sẵn. Tiếp theo T17.
 **Đợt 6:** T17 đã PARTIAL đúng bằng chứng: server `/frame` + FrameBuffer,
 firmware hai socket, 19 test/114 regression/build xanh; 🔴 F2 không thi công.
 Chưa nạp board, chưa chốt F5/RTT/max-age. Tiếp theo theo thứ tự:
-T18 (SSE downlink) → T19 (cuộc gọi đến, cả 4 repo).
+T18 server đã xong 10 test + 133 regression; firmware bị chặn đúng luật vì
+`arduino-cli board list` trả `No boards found`, chưa được phép viết trước số RAM
+TLS baseline. T19 có thể xây tiếp server/app trên chính EventHub này; firmware
+T18/T19 quay lại khi COM8 xuất hiện.
 
 **Đợt 7:** T21 (ngân sách độ trễ — 🔴 PHẢI SAU T02+T22, và phải đo TRÊN BẢN TLS=1
 thật, nghĩa là làm số đo phần cứng T22 CÒN TREO ở đây trước).
