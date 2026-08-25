@@ -130,3 +130,49 @@ def test_channel_survives_process_request(monkeypatch: pytest.MonkeyPatch) -> No
     events.request_frame("device-a", "turn-after-request")
     assert _payload(next(stream))["turn_id"] == "turn-after-request"
     stream.close()
+
+
+# ─── kênh ma (2026-08-25) ──────────────────────────────────────────────────
+def test_a_stalled_generator_is_pruned_so_events_reach_the_live_board():
+    """🔴 Đo được trên board: `sse_subscribers` của một kính lên 3 và còn tăng.
+
+    `subscribe()` chỉ gỡ đăng ký trong `finally:` của generator, mà generator
+    đó là ĐỒNG BỘ và Starlette chạy nó trong threadpool — nó không phải lúc nào
+    cũng đóng generator khi client biến mất. Mỗi lần kính rớt để lại một kênh
+    ma, và `publish()` ghi sự kiện vào cả những cái ma đó.
+    """
+    import time as _time
+    from services.events_channel import EventHub
+
+    hub = EventHub(heartbeat_seconds=0.05, queue_size=4)
+
+    ghost = hub.subscribe("glasses-01")
+    next(ghost)                      # chạy tới `yield` đầu rồi NGHẼN ở đó
+    assert hub.subscriber_count("glasses-01") == 1
+
+    # Không ai tiêu thụ `ghost` nữa -> `_alive_at` của nó đứng yên.
+    _time.sleep(0.05 * 3 + 0.05)
+
+    live = hub.subscribe("glasses-01")
+    next(live)
+    assert hub.subscriber_count("glasses-01") == 2
+
+    # Lần publish kế tiếp phải dọn con ma đi, và CHỈ còn kênh sống nhận.
+    delivered = hub.publish("glasses-01", {"type": "hazard_watch", "action": "start"})
+    assert delivered == 1, "sự kiện vẫn đi vào kênh ma"
+    assert hub.subscriber_count("glasses-01") == 1
+    assert "hazard_watch" in next(live)
+
+
+def test_a_slow_but_live_board_is_not_pruned():
+    """Một nhịp mạng xấu KHÔNG được bị coi là chết — hạn là 3 nhịp tim."""
+    import time as _time
+    from services.events_channel import EventHub
+
+    hub = EventHub(heartbeat_seconds=0.2, queue_size=4)
+    live = hub.subscribe("glasses-01")
+    next(live)
+    _time.sleep(0.2)                 # chậm hơn một nhịp, nhưng chưa tới ba
+
+    assert hub.publish("glasses-01", {"type": "call_ended"}) == 1
+    assert hub.subscriber_count("glasses-01") == 1

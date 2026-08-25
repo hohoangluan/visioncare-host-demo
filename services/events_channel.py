@@ -4,11 +4,15 @@ from __future__ import annotations
 
 from collections.abc import Iterator, Mapping
 import json
+import logging
 import queue
 import threading
+import time
 import uuid
 
 import config
+
+logger = logging.getLogger("blind_assist.events")
 
 
 # Danh sách đóng, không phải gợi ý: `publish()` từ chối mọi loại lạ. Kính chỉ
@@ -58,6 +62,8 @@ class EventHub:
         self._queue_size = queue_size
         self._lock = threading.Lock()
         self._subscribers: dict[str, dict[str, queue.Queue[dict[str, object]]]] = {}
+        # 🔴 Sổ "generator này còn sống lúc nào" — xem `_prune_dead_locked()`.
+        self._alive_at: dict[str, dict[str, float]] = {}
 
     def subscribe(self, device_id: str) -> Iterator[str]:
         if not device_id:
@@ -66,6 +72,7 @@ class EventHub:
         inbox: queue.Queue[dict[str, object]] = queue.Queue(maxsize=self._queue_size)
         with self._lock:
             self._subscribers.setdefault(device_id, {})[token] = inbox
+            self._alive_at.setdefault(device_id, {})[token] = time.monotonic()
 
         def stream() -> Iterator[str]:
             try:
@@ -75,6 +82,14 @@ class EventHub:
                     except queue.Empty:
                         event = {"type": "ping"}
                     yield self._encode(event)
+                    # Chỉ tới được dòng này khi bên tiêu thụ ĐÃ nhận mảnh vừa
+                    # yield. Generator của một socket đã chết sẽ nghẽn ngay ở
+                    # `yield` phía trên và không bao giờ chạm vào đây nữa — đó
+                    # chính là thứ `_prune_dead_locked()` dùng để nhận ra nó.
+                    with self._lock:
+                        alive = self._alive_at.get(device_id)
+                        if alive is not None and token in alive:
+                            alive[token] = time.monotonic()
             finally:
                 self._unsubscribe(device_id, token)
 
@@ -86,6 +101,7 @@ class EventHub:
             raise ValueError(f"unsupported event type: {event_type!r}")
         payload = dict(event)
         with self._lock:
+            self._prune_dead_locked(device_id)
             inboxes = tuple(self._subscribers.get(device_id, {}).values())
         for inbox in inboxes:
             try:
@@ -168,8 +184,48 @@ class EventHub:
         with self._lock:
             self._subscribers.clear()
 
+    def _prune_dead_locked(self, device_id: str) -> int:
+        """Gỡ những subscriber mà generator của nó đã nghẽn — PHẢI giữ `_lock`.
+
+        🔴 Vì sao cần, đo được trên board 2026-08-25: `sse_subscribers` của
+        `glasses-01` lên **3 và còn tăng** sau mỗi lần kính nối lại, trong khi
+        kính chỉ có MỘT kênh. `subscribe()` chỉ gỡ đăng ký trong `finally:` của
+        generator, mà generator đó là **đồng bộ** và Starlette chạy nó trong
+        threadpool — nó không phải lúc nào cũng đóng generator khi client biến
+        mất. Mỗi lần rớt để lại một subscriber ma, và `publish()` ghi sự kiện
+        vào cả những cái ma đó.
+
+        Cách nhận ra một cái ma: generator sống cập nhật `_alive_at` sau MỖI
+        lần yield được nhận, tức ít nhất mỗi `heartbeat_seconds`. Một generator
+        có socket đã chết thì nghẽn ngay ở `yield` và **ngừng cập nhật**.
+
+        Hạn 3 nhịp tim (không phải 1): một board chậm hoặc một nhịp mạng xấu
+        không được phép bị coi là chết.
+        """
+        alive = self._alive_at.get(device_id)
+        if not alive:
+            return 0
+        cutoff = time.monotonic() - 3 * self._heartbeat_seconds
+        dead = [token for token, at in alive.items() if at < cutoff]
+        for token in dead:
+            alive.pop(token, None)
+            device_subscribers = self._subscribers.get(device_id)
+            if device_subscribers is not None:
+                device_subscribers.pop(token, None)
+        if dead:
+            logger.info(
+                "events: gỡ %d kênh ma của %s (generator nghẽn > %.0fs)",
+                len(dead), device_id, 3 * self._heartbeat_seconds,
+            )
+        return len(dead)
+
     def _unsubscribe(self, device_id: str, token: str) -> None:
         with self._lock:
+            alive = self._alive_at.get(device_id)
+            if alive is not None:
+                alive.pop(token, None)
+                if not alive:
+                    self._alive_at.pop(device_id, None)
             device_subscribers = self._subscribers.get(device_id)
             if device_subscribers is None:
                 return
