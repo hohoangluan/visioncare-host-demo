@@ -54,6 +54,8 @@ Cột **Repo**: 🔵 server kính · 🟢 server app · 🟡 app Android · 🔴
 | [T21 Ngân sách độ trễ](T21-latency-budget.md) | G1 G3 G5 G6 G9 | 🔵 | READY | T02 T22 T17 |
 | [T22 Bật lại TLS](T22-firmware-tls.md) | **F9**, 27.3 | 🔴 | READY | — |
 | [T23 Quyền & cấu hình](T23-capabilities.md) | P10 P11, 26.7 | 🟡🔵 | READY | — |
+| [T24 Cảnh báo vật cản thời gian thực](T24-hazard-watch.md) | W1-W6 | 🔵🔴 | 🟠 PARTIAL | ⛔ thiếu model YOLO |
+| [T25 OTA, cấu hình mạng, số máy](T25-ota-provisioning.md) | O1-O7 | 🔵🔴🟡 | 🟠 PARTIAL | ⛔ mạng chặn 443 |
 
 **Không có task:** `find_object`, `read_money` — spec mục 7 ghi rõ **ngoài phạm
 vi**, hai handler này đang đúng. TTS, ADPCM, STT, benchmark cũng không đụng.
@@ -112,6 +114,14 @@ vi**, hai handler này đang đúng. TTS, ADPCM, STT, benchmark cũng không đ�
 | | 27.4 27.8 | T02 |
 | | 27.6 | T18 |
 | | 27.7 | T21 |
+| **W** vật cản realtime | W1-W6 | T24 |
+| **28** cảnh báo realtime | toàn mục | T24 |
+| **O** OTA & cấu hình *(mới 2026-08-24, không có trong SPEC gốc)* | O1 partition + hai đường OTA | T25 |
+| | O2 O3 OTA kéo qua internet | T25 |
+| | O4 số máy trong NVS — **chốt câu hỏi mở #2 của T01** | T25 |
+| | O5 cấu hình Wi-Fi từ app (SSE + SoftAP) | T25 |
+| | O6 `X-Fw-Version` + `X-Wifi-Ssid` mỗi request | T25 |
+| | O7 ghép đôi kính ↔ điện thoại | T25 |
 
 ---
 
@@ -141,6 +151,25 @@ vi**, hai handler này đang đúng. TTS, ADPCM, STT, benchmark cũng không đ�
 | `handlers/describe_hazard.py` | T16 (**chỉ comment**) |
 | `handlers/find_object.py`, `read_money.py` | **không đụng** |
 | `requirements.txt` | T08 (`rapidfuzz`) |
+| `services/turn_trace.py` **(mới)** | **T21** — trace G9, khoá bằng `turn_id` |
+| `services/hazard_risk.py` **(mới)** | **T24** — risk engine 3 tầng |
+| `handlers/hazard_watch.py` **(mới)** | **T24** |
+| `services/firmware.py` **(mới)** | **T25** — kho firmware, fail-closed |
+| `services/device_registry.py` **(mới)** | **T25** — sổ kính, `wifi_ssid`, ghép đôi |
+| `tools/publish_firmware.py` **(mới)** | **T25** — phát hành một bản |
+| `tools/measure_budget.py` **(mới)** | **T21** — dựng bảng G1 |
+| `pytest.ini` **(mới)** | T21 — đăng ký mark `perf`/`llm` |
+
+### File firmware mới (2026-08-24)
+
+| File | Task |
+|---|---|
+| `src/net/device_identity.{h,cpp}` | **T25/O4** — số máy trong NVS |
+| `src/net/wifi_provision.{h,cpp}` | **T25/O5** — NVS + SoftAP + `/wifi/*` |
+| `src/net/ota_manager.{h,cpp}` | **T25/O2,O3** — hai đường OTA |
+| `src/net/event_stream.{h,cpp}` | **T18/F6** — SSE client (phần còn treo) |
+| `src/camera/hazard_watch.{h,cpp}` | **T24/W5** — vòng chụp liên tục |
+| `src/audio/hazard_tone.{h,cpp}` | **T24/W6** — tông cảnh báo cục bộ |
 
 ---
 
@@ -176,6 +205,8 @@ vi**, hai handler này đang đúng. TTS, ADPCM, STT, benchmark cũng không đ�
 | F6 kênh SSE | T18 |
 | Phát tiếng khi không bấm nút | T19 |
 | Sửa tài liệu 1280×720 | T15 |
+| Vòng lặp chụp liên tục (W5) | T24 |
+| Tông cảnh báo cục bộ theo mức (W6) | T24 |
 
 ---
 

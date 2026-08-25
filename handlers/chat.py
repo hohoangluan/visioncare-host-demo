@@ -467,15 +467,28 @@ def handle(image: bytes, command_text: str, params: dict | None = None) -> Itera
     riêng (ocr/find/money/space) bắt trước. Gửi kèm ảnh ở đây chỉ làm mỗi lượt
     chat chậm thêm và tốn token mà không đổi được câu trả lời.
 
-    `params` không còn được đọc. Trước đây nó mang `needs_location`/`needs_web`
-    do một lượt gọi Gemini RIÊNG sinh ra, nằm nối tiếp trước handler — người
-    dùng chờ trắng ~0.9s chỉ để lấy hai giá trị boolean. Cả hai giờ đã bỏ:
-    vị trí do thread nền giữ nóng nên cứ nhét vào, còn có tra cứu hay không thì
-    chính model quyết lúc sinh chữ. Giữ tham số lại để không phải sửa `router`
-    và các handler khác cho khớp chữ ký.
+    `params` đọc đúng MỘT cờ: `needs_web`.
+
+    `needs_location` đã bỏ hẳn — vị trí do thread nền giữ nóng nên cứ nhét vào
+    prompt, không phân loại nữa.
+
+    `needs_web` thì QUAY LẠI, nhưng bằng một cơ chế khác hẳn lần trước. Bản cũ
+    lấy cờ này từ một lượt gọi Gemini RIÊNG nằm nối tiếp trước handler: người
+    dùng chờ trắng ~0.9s chỉ để lấy một boolean, đắt hơn thứ nó tiết kiệm được.
+    Bản này lấy từ head cục bộ dùng LẠI embedding mà bước phân loại nhãn đã
+    tính rồi (`pipeline/intent_local.chat_web_params`) — thêm một phép nhân ma
+    trận 768×2, không thêm lượt gọi mạng nào.
+
+    Cờ chỉ có một chiều tác dụng: `False` thì bỏ vòng grounding. Thiếu cờ hoặc
+    `True` đều chạy y như trước. Xem `config.INTENT_LOCAL_WEB_MIN_CONF` cho số
+    đo và lý do chọn ngưỡng.
     """
     device_key = (params or {}).get("_device_key")
-    if not config.CHAT_ALWAYS_SEARCH:
+    # `needs_web is False` — so sánh THẲNG với False, không dùng `not`. Thiếu cờ
+    # (`None`) là "head không chắc", và nó phải cho ra hành vi CŨ (có tra), chứ
+    # không được gộp chung với "chắc chắn khỏi tra".
+    skip_search = (params or {}).get("needs_web") is False
+    if not config.CHAT_ALWAYS_SEARCH or skip_search:
         # `search_failed=True`, không phải prompt trần. Tắt tra cứu bằng cấu hình
         # và tra cứu hỏng vì 429 là CÙNG MỘT tình huống với model: nó không có
         # dữ liệu mới. Không nói ra thì nó lấp chỗ trống — đo thật trên đúng

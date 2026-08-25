@@ -64,6 +64,18 @@ def _guess_mime(image: bytes) -> str:
     return "image/jpeg"
 
 
+def _http_options(seconds: float):
+    """`HttpOptions` với trần thời gian tính bằng MILI giây.
+
+    SDK nhận mili giây còn `config.py` khai bằng giây — quy đổi ở đúng một chỗ
+    này. Nhầm đơn vị ở đây thì trần 8 giây thành 8 mili giây và MỌI lượt gọi
+    đều hỏng, nên đừng nội suy số ra chỗ gọi.
+    """
+    from google.genai import types
+
+    return types.HttpOptions(timeout=int(seconds * 1000))
+
+
 def _generation_config(search: bool = False):
     """Cấu hình cho một lần gọi Gemini.
 
@@ -78,12 +90,14 @@ def _generation_config(search: bool = False):
     có nắng nhẹ" cho một nơi model không hề biết.
     """
     override_thinking = config.GEMINI_THINKING_BUDGET >= 0
-    if not search and not override_thinking:
-        return None
 
     from google.genai import types
 
-    kwargs = {}
+    # LUÔN trả config, không còn `return None` cho nhánh "không search, không
+    # đè thinking". Trần thời gian phải đi kèm MỌI lượt gọi — nhánh rỗng đó
+    # chính là nhánh phổ biến nhất (`space`/`find`/`money`/`hazard`), tức là
+    # nhánh mà bỏ sót trần sẽ đau nhất.
+    kwargs = {"http_options": _http_options(config.GEMINI_TIMEOUT_SECONDS)}
     if override_thinking:
         kwargs["thinking_config"] = types.ThinkingConfig(
             thinking_budget=config.GEMINI_THINKING_BUDGET
@@ -163,7 +177,11 @@ def generate_json(
     from google.genai import types
 
     cfg = types.GenerateContentConfig(
-        response_mime_type="application/json", response_schema=schema
+        response_mime_type="application/json",
+        response_schema=schema,
+        # Trần CHẶT hơn nhánh stream: hàm này là bước chờ trắng, nó không sinh
+        # ra chữ nào để đọc lên trong lúc chờ. Xem `config.py`.
+        http_options=_http_options(config.GEMINI_INTENT_TIMEOUT_SECONDS),
     )
     if config.GEMINI_THINKING_BUDGET >= 0:
         cfg.thinking_config = types.ThinkingConfig(

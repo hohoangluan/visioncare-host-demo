@@ -111,14 +111,25 @@ def test_hazard_ignores_command_text(monkeypatch):
 
 
 def test_hazard_ignores_focus(monkeypatch):
+    """🔴 ĐỔI 2026-08-25: `hazard` không còn dựng prompt nào để mà bỏ qua slot.
+
+    Test cũ khoá "hazard dùng đúng `_PROMPT`, không chèn `focus` vào". Giờ
+    `hazard` bật chế độ canh liên tục, nên `focus` bị bỏ qua theo một cách
+    mạnh hơn hẳn: không có prompt nào cả, và `describe_hazard` không còn ai
+    gọi tới.
+
+    Điều đáng khoá còn lại: slot `focus` KHÔNG được làm hỏng lượt đó.
+    """
     calls = _capture(monkeypatch, describe_hazard)
     with (
         patch("pipeline.stt.transcribe", return_value="bên trái có nguy hiểm không"),
         patch("pipeline.intent.detect_with_params", return_value=("hazard", {"focus": "left"})),
         patch("pipeline.image_quality.reject_reason", return_value=None),
     ):
-        list(router.resolve_speech(IMG, b"audio"))
-    assert calls[0]["prompt"] == describe_hazard._PROMPT
+        out = "".join(router.resolve_speech(IMG, b"audio"))
+
+    assert calls == [], "describe_hazard vẫn bị gọi — định tuyến chưa đổi"
+    assert "cảnh báo vật cản" in out, f"slot focus làm hỏng lượt: {out!r}"
 
 
 def test_hazard_ignores_history(monkeypatch):

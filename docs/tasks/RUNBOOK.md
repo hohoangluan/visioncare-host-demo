@@ -33,7 +33,12 @@ LUẬT BẮT BUỘC
    câu đó, rồi HỎI. Đừng tự chốt thay người dùng những câu đánh dấu 🔴.
 
 7. Không mở rộng phạm vi. find_object và read_money KHÔNG ĐỤNG (spec mục 7).
-   handlers/describe_hazard.py chỉ được thêm comment (E6).
+   ~~handlers/describe_hazard.py chỉ được thêm comment (E6).~~
+   🔴 GỠ 2026-08-25, người dùng chốt tường minh: intent `hazard` giờ BẬT CHẾ
+   ĐỘ CANH (T24) thay vì gọi Gemini trả lời một câu. Lý do là bản chất câu
+   hỏi — câu trả lời một lần chỉ đúng cho khoảnh khắc bấm nút, mà vật cản thì
+   gặp trong lúc ĐANG ĐI. `describe_hazard.py` không còn ai gọi tới; file giữ
+   lại, chưa xoá.
 
 8. Ba nguyên tắc xuyên suốt ở CONTRACTS mục 0 thắng mọi tối ưu. Đặc biệt:
    emergency_call không đi qua bất kỳ bước xác minh nào.
@@ -310,14 +315,53 @@ C2/P9 đã xong một phần, số dòng của `ride.py`/`music.py`/`navigation.
 - [x] T19 Cuộc gọi đến *(PARTIAL: server/host/Android + AVD xanh; firmware chờ board)*
 
 ### Đợt 7
-- [ ] T21 Ngân sách độ trễ
+- [x] T21 Ngân sách độ trễ *(PARTIAL: trace G9 + bảng số thật; **15/16 dòng VƯỢT** — xem `measurements/G1.md`)*
+
+### Đợt 8 — 2026-08-24
+- [x] **T25** OTA + cấu hình mạng + số máy *(PARTIAL: OTA **LAN** đã chạy thật trên board; OTA **kéo qua internet** chưa chạy trên phần cứng lần nào)*
+- [x] **T24** Cảnh báo vật cản realtime *(PARTIAL: 4 tầng có code, 26 test xanh; ⛔ thiếu model YOLO nên luôn từ chối bật)*
 
 ### Cổng phát hành
-- [ ] 🔴 T22 xong — **HTTPS bật, bắt gói xác nhận**
+- [x] 🔴 T22 — `API_USE_TLS 1` đã bật, board đã chạy bản TLS
+- [ ] 🔴 T22 — **bắt gói xác nhận** vẫn chưa làm
 - [ ] 🔴 T11: P4/P5 xong — không còn chuyến nào đi tới toạ độ hằng số
 - [x] 🔴 T09: 3 test khoá emergency xanh
-- [ ] T21: mọi dòng ngân sách có số đo **trên bản TLS**
+- [ ] T21: mọi dòng ngân sách có số đo trên bản TLS — 🔴 đo rồi, **15/16 VƯỢT**
 - [x] T20: không mã lỗi nào rơi vào im lặng
+- [ ] 🔴 **T21 câu #16/#17 phải chốt** — preroll vs ngân sách, và earcon phía server
+
+---
+
+## 9. 🔴 Đọc trước khi lập kế hoạch tiếp (phiên 2026-08-24)
+
+**1. Board nạp lại được.** Mọi ghi chú "board chưa nạp lại được" ở T17/T18/
+T19/T24 **đã hết hiệu lực**. Cổng **COM10**, partition **`min_spiffs`**
+(`huge_app` = *"3MB **No OTA**"*). Xem `T25-ota-provisioning.md`.
+
+**2. Hai đường OTA, đừng lẫn.**
+
+| | `espota` (ĐẨY) | HTTP pull (KÉO) |
+|---|---|---|
+| Mạng | **bắt buộc cùng LAN** (mDNS) | khác mạng vẫn chạy |
+| Đã chạy thật trên board? | ✅ rồi | ❌ **chưa lần nào** — mới nghiệm thu nửa phía server bằng curl đóng giả kính |
+
+**3. Bảng ngân sách G1 mâu thuẫn với `AUDIO_PREROLL_SECONDS = 2.0`.** Đã sửa
+được nửa quan trọng nhất (`AUDIO_PREROLL_MAX_WAIT_SECONDS` — mức đệm giờ có
+hạn giờ), nhưng con số 2.0 s vẫn còn và vẫn mâu thuẫn với mọi dòng ≤ 1200 ms.
+
+**4. G8 đang bị vi phạm** — server phát earcon (`AUDIO_PREROLL_MODE` mặc định
+`"warm_melodic"`) trong khi board đã kêu `cueSent()` ở 0 ms → bíp hai lần.
+Bảng mục 7 của chính file này cấm đúng chuyện đó.
+
+**5. Cách đo end-to-end ĐÚNG.** `bench_e2e.py` giờ **có TLS**:
+
+```powershell
+python tools/bench_e2e.py --host api.visioncare-host.uk --port 443 --repeat 2
+```
+
+Đo qua `127.0.0.1:8000` là đo một đường không tồn tại với board thật. Bản
+trước gửi socket trần lên 443 và nhận **400 cho cả 16 chức năng** — nhìn bảng
+thì tưởng server hỏng.
 
 ---
 
@@ -328,7 +372,7 @@ C2/P9 đã xong một phần, số dòng của `ride.py`/`music.py`/`navigation.
 | **F2** đảo thứ tự part multipart | làm **chậm đi** 289 ms, không nhanh lên | 27.1 / T17 |
 | **Earcon phía server** | board đã có `cueSent()` ở 0 ms → bíp hai lần | 27.7 / T21 |
 | Thêm bước xác minh cho **`emergency_call`** | nguyên tắc xuyên suốt #3 | mục 10 / T09 |
-| Nhét `command_text` vào **`describe_hazard`** | giảm báo cáo vật cản người dùng không hỏi — đúng cái sắp làm họ vấp | E6 / T16 |
+| ~~Nhét `command_text` vào **`describe_hazard`**~~ | *Hết hiệu lực 2026-08-25: `describe_hazard` không còn nằm trên đường chạy nào. `hazard` bật chế độ canh.* | E6 / T16 |
 | Nhét `command_text` nguyên văn vào **`describe_space`** | thổi bay ngân sách 40 từ + bộ luật đã đo | E5 / T16 |
 | Đưa **lịch sử hội thoại** vào `space`/`hazard` | ảnh mới mỗi lượt; mô tả cũ **là thông tin sai** | nguyên tắc #2 / T16 |
 | Thay chỗ hở "**bài tự hết**" bằng TTL đoán mò | đã đo, đã chấp nhận | `action_flow.py:78-86` / T12 |

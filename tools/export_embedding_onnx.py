@@ -21,6 +21,15 @@ import sys
 import time
 from pathlib import Path
 
+# 🔴 Windows: stdout mặc định là cp1252, và MỌI dòng in của tool này đều có
+# tiếng Việt. Không có ba dòng dưới thì tool chạy XONG việc rồi chết ở lệnh
+# `print` cuối — nhìn từ ngoài giống hệt "tool hỏng", trong khi file đã ghi.
+# Đã dính thật với `publish_firmware.py` (bản đã phát hành, chỉ crash lúc in).
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 PROJ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJ))
 

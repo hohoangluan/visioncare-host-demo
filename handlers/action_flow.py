@@ -12,6 +12,9 @@ import config
 from pipeline import tts
 from handlers import result_speech, slots as slot_policy
 from services import capabilities
+# G9/T21: chặng `action` — thời gian chờ điện thoại, chặng duy nhất server
+# không điều khiển được.
+from services import turn_trace
 from handlers.waiting import wait_for
 from services.visioncare_client import (
     VisionCareAPIError,
@@ -416,19 +419,27 @@ def forget(key: str) -> None:
         session.last_ids.pop(key, None)
 
 
-def device_state() -> dict:
+def device_state(device_key: str | None = None) -> dict:
     """Cái gì đang chạy trên điện thoại lúc này.
 
     Dùng cho bước phân loại ý định, không phải để hiển thị. `most_recent` là
     việc vừa bật gần đây nhất trong số đang chạy — chỗ dựa duy nhất khi cả nhạc
     lẫn chỉ đường cùng chạy và người dùng chỉ nói "tắt đi".
+
+    `device_key`: truyền TƯỜNG MINH khi người gọi đã có sẵn khoá thiết bị —
+    cùng lý do với `_get_session()`. Bỏ trống thì đọc ambient ContextVar như
+    trước, nên mọi chỗ gọi cũ không đổi một dòng nào.
     """
-    session = _get_session()
+    session = _get_session(device_key)
     with _SESSIONS_LOCK:
         running = sorted(session.active.items(), key=lambda kv: kv[1])
         return {
             "music_playing": "music_playing" in session.active,
             "navigating": "navigating" in session.active,
+            # T24/W1 + B7: cờ THỨ BA, độc lập hai cờ trên. Vừa nghe nhạc vừa
+            # được chỉ đường vừa bật canh vật cản là một ca dùng thật — đó
+            # chính là lúc người dùng đang đi bộ ngoài đường.
+            "hazard_watching": "hazard_watching" in session.active,
             "ride_quote_pending": "quote_id" in session.last_ids,
             "most_recent": running[-1][0] if running else None,
         }
@@ -875,6 +886,16 @@ def run_action(
 
     remaining = config.VISIONCARE_FAST_ACTION_SECONDS - (time.monotonic() - started)
     final = action_callbacks.wait(request_id, remaining)
+    # G9/T21: chặng `action` — từ lúc gửi lệnh xuống điện thoại tới lúc có
+    # `ActionResult`. Đây là chặng DUY NHẤT của một lượt mà server không điều
+    # khiển được: nó phụ thuộc app Android, mạng của điện thoại, và cả người
+    # dùng có chạm màn hình hay không.
+    #
+    # Ghi kể cả khi hết giờ (`final is None`) — một chặng action 25 giây rồi
+    # bỏ cuộc là con số quan trọng nhất của lượt đó, và bảng độ trễ mà thiếu nó
+    # sẽ báo `contact_call` "nhanh" trong khi người dùng đứng chờ nửa phút.
+    turn_trace.stage("action", time.monotonic() - started)
+    turn_trace.annotate(action_op=operation, action_ok=final is not None)
     if final is not None:
         # T06/D4 + T08/D6: lỗi có nguồn hỏi lại thật -> đặt pending TRƯỚC khi
         # đọc câu báo lỗi và câu hỏi, để lượt kế tiếp của người dùng đã có sẵn

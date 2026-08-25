@@ -5,9 +5,9 @@
 | **Mã spec** | F6 · 27.6 |
 | **SPEC gốc** | mục 19 (F6), 27.6 |
 | **Repo đụng** | Server kính · **Firmware** |
-| **Trạng thái** | PARTIAL — server SSE xanh; firmware/đo RAM chờ board COM8 |
+| **Trạng thái** | ✅ DONE (2026-08-25) — SSE chạy trên board thật, RAM đã đo |
 | **Chặn bởi** | **T01** · **T22** (đo RAM phải làm SAU khi bật TLS) |
-| **Chặn** | T17/F5 (xin ảnh tầng cao) · **T19** (cuộc gọi đến) |
+| **Chặn** | T17/F5 (xin ảnh tầng cao) · **T19** (cuộc gọi đến) · **T24** (cảnh báo vật cản thời gian thực) |
 
 > ⚠️ Spec phần II xếp F6 như một việc vừa. **27.6 sửa lại: đây là một module
 > mạng MỚI trên firmware**, không phải cấu hình thêm. Xếp lại công trước khi lên
@@ -72,6 +72,10 @@ Sự kiện:
 
 // heartbeat
 { "type": "ping" }
+
+// cảnh báo vật cản thời gian thực (T24) — thêm sau, cùng kênh này
+{ "type": "hazard_watch", "action": "start" | "stop" }
+{ "type": "hazard_level", "level": "SAFE" | "LOW" | "MEDIUM" | "HIGH" }
 ```
 
 Yêu cầu:
@@ -170,9 +174,9 @@ pytest tests/test_events_channel.py -q
 
 - [x] `GET /events` chạy, theo device, có heartbeat 15 s provisional
 - [x] Board rớt → server dọn, không treo generator, không tích sự kiện
-- [ ] Board tự nối lại sau khi server restart
-- [ ] **RAM đo được với 2 socket + TLS**, có số trong `measurements/F6-ram.md`
-- [ ] Kênh không làm chậm lượt `/process` thường (đo trước/sau)
+- [x] Board tự nối lại sau khi server restart — đo 2026-08-25: server khởi động lại, `/devices` thấy `glasses-01` sau **2.3 s**
+- [x] **RAM đo được với 2 socket + TLS** → [`measurements/F6-ram.md`](measurements/F6-ram.md). 🔴 Khối liền lớn nhất **36 852 B**, không phải ~106 KB như ước cũ. Trần cứng: **2 phiên TLS**, phiên thứ ba luôn chết ở `malloc`
+- [x] Kênh không làm chậm lượt `/process` thường — đo 2026-08-25 với `/events` đang mở: `stt_ms=105.4 intent_ms=15.9 handler_ms=0.1 ttfb_ms=24.0 total_ms=1790.5`. Nhưng nó CÓ tranh RAM, và đó mới là chỗ đau — xem `F6-ram.md` mục 3
 - [x] Một kênh server phục vụ **cả hai** mục đích (frame_request + call_incoming) —
       không đẻ ra kênh thứ hai
 

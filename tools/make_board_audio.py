@@ -18,6 +18,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pipeline import adpcm, stt, tts  # noqa: E402
 
+# 🔴 Windows: stdout mặc định là cp1252, và MỌI dòng in của tool này đều có
+# tiếng Việt. Không có ba dòng dưới thì tool chạy XONG việc rồi chết ở lệnh
+# `print` cuối — nhìn từ ngoài giống hệt "tool hỏng", trong khi file đã ghi.
+# Đã dính thật với `publish_firmware.py` (bản đã phát hành, chỉ crash lúc in).
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 OUT_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "board_audio")
 
 # Một câu cho mỗi intent, viết như người dùng thật nói.

@@ -262,3 +262,95 @@ def test_read_params_none_for_span_labels(monkeypatch):
     for label in (Intent.CONTACT_CALL, Intent.NAV_START, Intent.MUSIC_PLAY,
                   Intent.RIDE_QUOTE, Intent.EMERGENCY_CALL):
         assert intent_local.read_params(label, pred) is None
+
+
+# ── Head `chat_web`: có được bỏ vòng grounding hay không ───────────────────
+
+
+def _stub_web_head(monkeypatch, p_false):
+    """Giả head `chat_web` trả đúng `p_false` cho lớp "false".
+
+    Dựng qua `coef`/`intercept` thật chứ không vá thẳng `_probabilities`: chính
+    chỗ sigmoid-hay-softmax của head nhị phân từng là bug (xem docstring của
+    `_probabilities`), nên test phải đi qua nó.
+    """
+    logit = float(np.log(p_false / (1.0 - p_false)))
+    monkeypatch.setattr(intent_local, "_load", lambda: {
+        "param_heads": {
+            "chat_web": (
+                np.array([[-logit]], dtype=np.float32),
+                np.zeros(1, dtype=np.float32),
+                np.array(["false", "true"]),
+            )
+        }
+    })
+
+
+def _chat_pred():
+    return intent_local.LocalPrediction(
+        Intent.CHAT, 0.99, 0.9, np.array([1.0], dtype=np.float32)
+    )
+
+
+def test_chat_web_skips_grounding_when_head_is_sure(monkeypatch):
+    """Chắc chắn không cần dữ liệu tươi -> nói thẳng ra để chat bỏ grounding.
+
+    Đây là toàn bộ phần lợi tốc độ: đo trên chính prompt production, cùng một
+    câu hỏi mất 4207ms TTFB khi bật grounding và 868ms khi tắt.
+    """
+    monkeypatch.setattr(config, "INTENT_LOCAL_WEB_MIN_CONF", 0.70)
+    _stub_web_head(monkeypatch, p_false=0.85)
+    assert intent_local.chat_web_params(_chat_pred()) == {"needs_web": False}
+
+
+def test_chat_web_stays_silent_when_head_is_unsure(monkeypatch):
+    """Không chắc thì KHÔNG nói gì, để chat giữ nguyên hành vi cũ (có tra).
+
+    Trả `{"needs_web": True}` ở đây cũng cho ra hành vi đúng, nhưng nó biến một
+    lần "tôi không biết" thành một lời khẳng định — người đọc log sau này sẽ
+    tưởng head đã kết luận là cần tra.
+    """
+    monkeypatch.setattr(config, "INTENT_LOCAL_WEB_MIN_CONF", 0.70)
+    _stub_web_head(monkeypatch, p_false=0.60)
+    assert intent_local.chat_web_params(_chat_pred()) == {}
+
+
+def test_chat_web_stays_silent_when_head_is_sure_it_is_needed(monkeypatch):
+    """Chắc chắn CẦN tra cũng không nói gì — cần tra vốn đã là mặc định."""
+    monkeypatch.setattr(config, "INTENT_LOCAL_WEB_MIN_CONF", 0.70)
+    _stub_web_head(monkeypatch, p_false=0.05)
+    assert intent_local.chat_web_params(_chat_pred()) == {}
+
+
+def test_chat_web_stays_silent_without_embedding(monkeypatch):
+    """Nhãn tới từ Gemini (không có embedding) -> không có gì để chấm."""
+    monkeypatch.setattr(config, "INTENT_LOCAL_WEB_MIN_CONF", 0.70)
+    _stub_web_head(monkeypatch, p_false=0.99)
+    assert intent_local.chat_web_params(_fake_local(Intent.CHAT)) == {}
+    assert intent_local.chat_web_params(None) == {}
+
+
+def test_chat_web_stays_silent_when_head_missing(monkeypatch):
+    """`heads_params.npz` dựng từ bản cũ chưa có head này -> không được vỡ."""
+    monkeypatch.setattr(intent_local, "_load", lambda: {"param_heads": {}})
+    assert intent_local.chat_web_params(_chat_pred()) == {}
+
+
+def test_local_chat_carries_web_flag_to_handler(monkeypatch):
+    """Cờ phải đi được hết đường từ head cục bộ ra tới `params` của handler.
+
+    `chat` vẫn ở trong `_PARAM_FREE` — cờ này KHÔNG được kéo nó ngược về đường
+    Gemini, vì cả giây tiết kiệm được ở bước phân loại mới là phần lợi lớn nhất.
+    """
+    called = []
+    monkeypatch.setattr(config, "INTENT_LOCAL_WEB_MIN_CONF", 0.70)
+    _stub_web_head(monkeypatch, p_false=0.90)
+    monkeypatch.setattr(intent_local, "classify", lambda t: _chat_pred())
+    monkeypatch.setattr(intent_mod.vlm, "generate_json",
+                        lambda *a, **k: called.append(1) or {"intent": "chat"})
+
+    name, params = intent_mod.detect_with_params("kể chuyện cười đi")
+
+    assert name == Intent.CHAT
+    assert params == {"needs_web": False}
+    assert called == [], "vẫn không được gọi Gemini để phân loại"

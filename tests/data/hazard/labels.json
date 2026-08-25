@@ -1,0 +1,120 @@
+{
+  "_doc": [
+    "Nhãn NGƯỜI XÁC NHẬN, ghi sau khi mở từng ảnh ra xem. Đây mới là nhãn bộ",
+    "đo dùng — thư mục blocked/ và clear/ chỉ phản ánh TỪ KHOÁ tìm kiếm, và từ",
+    "khoá sai 6/25 ảnh, sai theo CẢ HAI chiều.",
+    "",
+    "Câu hỏi khi dán nhãn: 'người đi bộ đi thẳng tới thì có đâm vào cái gì",
+    "trong vài bước tới không'. KHÔNG phải 'trong ảnh có vật thể nào không' —",
+    "một cây cột cách 15 m nằm bên kia đường thì không phải vật cản.",
+    "",
+    "Ba nhãn chứ không hai. 'borderline' là những cảnh mà chính người xem cũng",
+    "không chốt được ở cự ly nào thì gọi là chắn — ép chúng vào hai nhóm sẽ",
+    "sinh ra một con số chính xác giả. Chúng được đo và in ra RIÊNG, không tính",
+    "vào tỉ lệ đúng/sai."
+  ],
+  "_source_note": "Ảnh từ Wikimedia Commons, giấy phép tự do. Xem sources.json.",
+  "_reviewed": "2026-08-24",
+
+  "blocked/2014_08_30_08_34_53_Utility_pole_and_street_ligh.jpg": {
+    "label": "borderline",
+    "why": "cột điện ở giữa khung nhưng chân cột cách ~10 m, bên kia lòng đường"
+  },
+  "blocked/Bollards_on_Bridgefield_Street___geograph_org_uk.jpg": {
+    "label": "clear",
+    "why": "trụ chắn thấp và ở xa hai bên; lối đi phía trước rộng và trống"
+  },
+  "blocked/Hill_Street_bollard_2013_10_13.jpg": {
+    "label": "blocked",
+    "why": "trụ chắn gang ngay trước mặt, cự ly vài bước, cộng hàng rào sát trái"
+  },
+  "blocked/Path_leading_to_gate_in_fence___geograph_org_uk_.jpg": {
+    "label": "clear",
+    "why": "lối mòn trống hẳn; cây và hàng rào đều ở xa"
+  },
+  "blocked/Pedestrian_passage_without_zebra_stripes.jpg": {
+    "label": "blocked",
+    "why": "hai trụ chắn ở tiền cảnh, một cái sát mép dưới khung"
+  },
+  "blocked/Sidewalk_construction_VT_Rte_114_downtown_East_B.jpg": {
+    "label": "borderline",
+    "why": "máy xúc to choán giữa khung nhưng cách ~10 m; mặt đường trước mặt trống"
+  },
+  "blocked/Sidewalk_guy_wire.jpg": {
+    "label": "blocked",
+    "why": "cột điện sát ngay lối đi, cao suốt khung — đúng ca YOLO mù hoàn toàn"
+  },
+  "blocked/Staircase_and_Entrance_foyer_of_Reis_Magos_Fort.jpg": {
+    "label": "blocked",
+    "why": "bậc thềm dâng lên ngay trước mặt"
+  },
+  "blocked/Staircase_leading_to_the_balcony_of_the_Chavunda.jpg": {
+    "label": "blocked",
+    "why": "cầu thang hẹp ngay trước mặt, tường sát hai bên"
+  },
+  "blocked/Staircase_to_Church_of_St__Francis_from_Backyard.jpg": {
+    "label": "borderline",
+    "why": "bậc thềm cách ~15 m; nhưng tường rêu sát mép phải dưới"
+  },
+  "blocked/Traffic_bollard_in_Sofia_lets_the_tram_pass_by_t.jpg": {
+    "label": "blocked",
+    "why": "trụ chắn rất gần ở góc dưới trái, một cái nữa ở giữa"
+  },
+  "blocked/Utility_work_123_Main_Street__US_Rte_5__downtown.jpg": {
+    "label": "borderline",
+    "why": "xe cần cẩu và nón giao thông ở cự ly trung bình, lệch phải"
+  },
+  "blocked/Victoria_Street_Bollards___geograph_org_uk___806.jpg": {
+    "label": "blocked",
+    "why": "ba trụ chắn thẳng hàng chắn ngang lối, cự ly vài bước"
+  },
+
+  "clear/An_Open_Road_Through_the_Countryside___geograph_.jpg": {
+    "label": "clear",
+    "why": "đường trống suốt tới chân trời"
+  },
+  "clear/B1115__High_Road_and_views_of_open_countryside__.jpg": {
+    "label": "clear",
+    "why": "đường trống, đồng ruộng hai bên"
+  },
+  "clear/Car_free_Play_Street__49949246568_.jpg": {
+    "label": "clear",
+    "why": "lòng đường trống; người ở cự ly trung bình, lệch sang hai bên"
+  },
+  "clear/EFTA00001268___View_into_a_long_empty_hallway_th.jpg": {
+    "label": "blocked",
+    "why": "🔴 TỪ KHOÁ SAI NGƯỢC: người chụp đứng NGAY trong khung cửa, cánh cửa mở chắn trước mặt — đi thẳng là đâm vào khung cửa"
+  },
+  "clear/Elevated_walkway_between_Perth_Airport_Terminal_.jpg": {
+    "label": "clear",
+    "why": "PHỦ ĐỊNH KHÓ: lan can kính sát hai bên nhưng lối đi thẳng thì trống"
+  },
+  "clear/Empty_Hallway__Tallahassee_Mall.jpg": {
+    "label": "clear",
+    "why": "hành lang trống; ghế băng ở cự ly trung bình, lệch trái"
+  },
+  "clear/Empty_Heidelberg_Road_during_COVID_19__Clifton_H.jpg": {
+    "label": "clear",
+    "why": "lòng đường trống hẳn"
+  },
+  "clear/Empty_hallway_with_exit_sign.jpg": {
+    "label": "clear",
+    "why": "PHỦ ĐỊNH KHÓ: tường và cửa sát bên trái, hành lang hẹp — nhưng đi thẳng thì thông"
+  },
+  "clear/Moving_walkway_at_Terminal_D_of_Boryspil_Airport.jpg": {
+    "label": "borderline",
+    "why": "tay vịn thảm lăn đối diện chính diện ở cự ly gần-trung"
+  },
+  "clear/Open_Countryside_near_Ripley_Road___geograph_org.jpg": {
+    "label": "clear",
+    "why": "đường đất trống, cây ở xa"
+  },
+  "clear/Panorama_in_Paris_Charles_de_Gaulle_Airport___Te.jpg": {
+    "label": "borderline",
+    "why": "ảnh PANORAMA — hình học không giống khung camera kính, không đại diện"
+  },
+  "clear/Shadowed_countryside_road_in_Vias_01.jpg": {
+    "label": "clear",
+    "why": "đường nhựa trống; tán cây cao trên đầu, không chắn tầm đi"
+  }
+}

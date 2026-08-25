@@ -26,3 +26,10 @@ class Intent:
     MUSIC_STOP = "music_stop"
     MUSIC_VOLUME = "music_volume"
 
+    # Canh vật cản thời gian thực (T24/W1). KHÁC `HAZARD` ở trên:
+    #   HAZARD              hỏi một lần, trả lời một lần, theo lượt bấm nút
+    #   HAZARD_WATCH_START  bật một chế độ chạy liên tục cho tới khi tắt
+    # Hai thứ chạy song song, không loại trừ nhau.
+    HAZARD_WATCH_START = "hazard_watch_start"
+    HAZARD_WATCH_STOP = "hazard_watch_stop"
+

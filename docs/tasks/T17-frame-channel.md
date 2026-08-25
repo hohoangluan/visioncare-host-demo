@@ -5,7 +5,7 @@
 | **Mã spec** | F3 F4 F5 · ~~F2 (HUỶ)~~ · 27.1 27.5 |
 | **SPEC gốc** | mục 19 (F3–F5), 27.1, 27.5 |
 | **Repo đụng** | Server kính · **Firmware** |
-| **Trạng thái** | PARTIAL — F3/F4 code + test xanh; F5 và số board thật còn chờ |
+| **Trạng thái** | PARTIAL — F3/F4/**F5 code + test xanh, F5 chạy trên board thật 2026-08-25**; còn nợ ngưỡng blur theo tầng |
 | **Chặn bởi** | **T01** (`X-Turn-Id` để ghép ảnh với lượt) |
 | **Chặn** | T18 (F6 dùng chung hạ tầng downlink) |
 
@@ -249,6 +249,24 @@ pytest tests/test_frame_buffer.py -q
 - [x] Bảng F4 ghi đúng cấu hình hiện tại **1280×720/q18** từ H0; không coi đó
       là số phân tầng đã chốt
 - [ ] Ngưỡng blur đo riêng cho từng tầng, có bảng số trong repo
+      🔴 **Còn nợ DUY NHẤT của T17.** `pipeline/image_quality.py` đang dùng
+      một bộ ngưỡng đo trên 1280×720 cho CẢ hai tầng. Resize huỷ đúng dải tần
+      số cao mà Laplacian đo, nên cùng một cảnh sẽ cho hai con số khác hẳn —
+      tức tầng thấp có thể bị chặn oan là "ảnh mờ". Phải đo trên khung THẬT
+      của OV2640 ở cả VGA lẫn HD.
+- [x] **F5 thi công xong (2026-08-25)** — SPEC mục 19 viết từ đầu nhưng chưa ai
+      làm; trước ngày này MỌI chức năng đều nhận HD 1280×720.
+      - firmware: `photoCapture()` = tầng thấp (VGA 640×480) mặc định mọi lần
+        bấm nút; `photoCaptureHigh()` = HD, chỉ chạy khi server đẩy
+        `frame_request` kèm `tier:"high"`. Header mới `X-Frame-Tier`.
+      - server: `Frame.tier`, `frames.latest(..., tier="high")`,
+        `router` xin tầng cao **chỉ cho `ocr`** rồi chờ
+        `FRAME_HIGH_TIER_WAIT_MS = 2500`; quá hạn thì rơi về tầng thấp chứ
+        không hỏng lượt.
+      - test: `tests/test_frame_tier.py`, 9 ca xanh.
+      - 🔴 Vì sao đáng làm, đo được: model độ sâu resize mọi khung về
+        **308×308**, YOLO letterbox về **640×640**. HD 1280×720 là **~9,7 lần**
+        số pixel mà đường độ sâu nhìn tới — trên một vòng canh chạy liên tục.
 - [x] Đường multipart cũ vẫn chạy được trong giai đoạn chuyển
 
 Build firmware (chưa nạp): **1 295 623 B (41%)**, RAM tĩnh **77 520 B (23%)**.

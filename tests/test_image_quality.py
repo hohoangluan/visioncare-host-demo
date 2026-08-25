@@ -109,6 +109,17 @@ _NO_IMAGE_INTENTS = [
     Intent.MUSIC_PLAY, Intent.MUSIC_STOP, Intent.MUSIC_VOLUME,
     Intent.NAV_START, Intent.NAV_STOP, Intent.RIDE_QUOTE, Intent.RIDE_CONFIRM,
     Intent.UNKNOWN,
+    # T24/W1: bật/tắt chế độ canh vật cản chỉ đổi một cờ và gửi một sự kiện.
+    # Ảnh của LƯỢT NÀY không liên quan — chế độ đọc khung từ luồng riêng
+    # (`X-Stream-Kind: hazard`), không phải từ ảnh kèm lượt bấm nút. Chặn
+    # "bật cảnh báo vật cản" vì tấm ảnh tối là chặn đúng lúc người dùng cần
+    # bật nó nhất.
+    Intent.HAZARD_WATCH_START, Intent.HAZARD_WATCH_STOP,
+    # 🔴 ĐỔI 2026-08-25: `hazard` cũng vào đây. Nó không còn trả lời một câu về
+    # một khung hình — nó BẬT chế độ canh (xem `pipeline/router.py`). Trước khi
+    # gỡ, lượt thật trên board trả về "Không nhận được ảnh từ kính" thay vì bật
+    # chế độ: `intent=hazard nhưng không có ảnh -> từ chối ảnh`.
+    Intent.HAZARD,
 ]
 
 
@@ -126,7 +137,7 @@ def test_intents_that_ignore_the_image_accept_no_image_at_all(intent):
 
 
 @pytest.mark.parametrize(
-    "intent", [Intent.OCR, Intent.FIND, Intent.SPACE, Intent.HAZARD]
+    "intent", [Intent.OCR, Intent.FIND, Intent.SPACE]
 )
 def test_flat_image_passes_for_non_money_intents(intent, monkeypatch):
     """request410 (bức tường trắng, sharpness 0.92) từng bị từ chối bằng câu
@@ -142,8 +153,9 @@ def test_flat_image_still_blocked_for_money(monkeypatch):
     assert image_quality.reject_reason(Intent.MONEY, _flat(127)) == image_quality._TOO_BLURRY
 
 
+# `hazard` đã rời danh sách này 2026-08-25 — nó không đọc ảnh nữa.
 @pytest.mark.parametrize(
-    "intent", [Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE, Intent.HAZARD]
+    "intent", [Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE]
 )
 def test_darkness_still_blocks_every_image_intent(intent, monkeypatch):
     """Đo thật trên ảnh tờ 5.000đ làm tối đi: Gemini đọc thành '2 nghìn đồng',
@@ -154,7 +166,7 @@ def test_darkness_still_blocks_every_image_intent(intent, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "intent", [Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE, Intent.HAZARD]
+    "intent", [Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE]
 )
 def test_missing_image_is_reported_for_intents_that_need_one(intent):
     assert image_quality.reject_reason(intent, None) == image_quality._NO_IMAGE

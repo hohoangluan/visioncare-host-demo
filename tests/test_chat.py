@@ -523,3 +523,48 @@ def test_first_person_pronouns_fixed(monkeypatch):
     captured = _capture(monkeypatch)
     list(chat.handle(IMG, "xin chào"))
     assert 'Luôn xưng "tôi" và gọi người dùng là "bạn"' in captured["prompt"]
+
+
+def test_chat_skips_grounding_when_classifier_is_sure_it_is_unnecessary(monkeypatch):
+    """`needs_web=False` từ head cục bộ -> bỏ hẳn vòng grounding.
+
+    Đây là phần lợi tốc độ, đo trên chính prompt production, cùng một câu hỏi:
+        bật grounding   4207ms TTFB
+        tắt grounding    868ms TTFB
+    `CHAT_ALWAYS_SEARCH=1` bắt MỌI lượt trả giá đó, kể cả "kể chuyện cười".
+
+    Bỏ grounding thì VẪN phải đi nhánh `search_failed` chứ không phải prompt
+    trần: model không được nói ra là nó chưa tra cứu thì nó lấp chỗ trống bằng
+    thứ tự bịa — đúng lý do `test_chat_search_can_be_turned_off...` tồn tại.
+    """
+    captured = _capture(monkeypatch)
+    list(chat.handle(IMG, "kể chuyện cười đi", params={"needs_web": False}))
+
+    assert captured["search"] is False
+    assert "chưa tra cứu được" in captured["prompt"]
+
+
+def test_chat_still_grounds_when_classifier_said_nothing(monkeypatch):
+    """Head không chắc -> giữ NGUYÊN hành vi cũ, không lượt nào tệ hơn hôm nay."""
+    captured = _capture(monkeypatch)
+    list(chat.handle(IMG, "thời tiết hôm nay thế nào", params={}))
+    assert captured["search"] is True
+
+    captured = _capture(monkeypatch)
+    list(chat.handle(IMG, "thời tiết hôm nay thế nào"))
+    assert captured["search"] is True
+
+
+def test_chat_still_grounds_when_classifier_said_it_is_needed(monkeypatch):
+    """`needs_web=True` (đường Gemini vẫn sinh cờ này) -> tra như thường."""
+    captured = _capture(monkeypatch)
+    list(chat.handle(IMG, "giá vàng hôm nay bao nhiêu", params={"needs_web": True}))
+    assert captured["search"] is True
+
+
+def test_chat_web_flag_does_not_resurrect_grounding_when_config_is_off(monkeypatch):
+    """`CHAT_ALWAYS_SEARCH=0` là van chặn cứng: cờ không được ghi đè lên nó."""
+    monkeypatch.setattr(config, "CHAT_ALWAYS_SEARCH", False)
+    captured = _capture(monkeypatch)
+    list(chat.handle(IMG, "giá vàng hôm nay bao nhiêu", params={"needs_web": True}))
+    assert captured["search"] is False

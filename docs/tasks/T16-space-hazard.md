@@ -96,8 +96,13 @@ OCR · vị trí.
 
 ### 2.3 Phạm vi phần II
 
-Spec đã ghi rõ: **cảnh báo vật cản thời gian thực** (vòng lặp nền, phát bíp)
-**đã bị đưa ra khỏi kế hoạch**. `hazard` giữ nguyên dạng **theo lượt**.
+Spec bản đầu ghi: **cảnh báo vật cản thời gian thực** (vòng lặp nền, phát bíp)
+**đã bị đưa ra khỏi kế hoạch**. `hazard` giữ nguyên dạng **theo lượt** — vẫn
+đúng, T16 **không đổi**.
+
+> 🔴 Quyết định loại bỏ ở trên **đã bị lật lại** (2026-08-24) — xem mục 28 của
+> spec + **T24**. T24 là tính năng **song song mới**, không thay thế `hazard`
+> theo lượt của T16 này.
 
 ---
 

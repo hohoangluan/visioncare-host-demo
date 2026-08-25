@@ -1,12 +1,22 @@
-"""Bộ phân loại ý định chạy cục bộ: SetFit đã fine-tune, ONNX int8, CPU.
+"""Bộ phân loại ý định chạy cục bộ: halong_embedding + head logreg, ONNX int8, CPU.
 
 Đứng TRƯỚC Gemini, không thay Gemini. Câu nào nó đủ chắc thì trả lời ngay trong
 ~8ms; câu nào không chắc thì trả `None` để `pipeline/intent.py` rơi xuống Gemini
-như cũ. Đo trên tập eval 236 câu: ngưỡng mặc định nhận 93.2% số câu và đúng
-96.4% trong phần nhận (xem `models/intent_encoder/meta.json`).
+như cũ. Đo trên 1433 câu: ngưỡng mặc định nhận 93.3% số câu và đúng 96.1% trong
+phần nhận (xem `models/intent_encoder/meta.json`).
 
-Model dựng bằng `tools/train_intent_setfit.py`. Ở đây chỉ cần `onnxruntime` +
-`tokenizers`; không cần `torch`, `setfit` hay `optimum`.
+Model dựng bằng HAI bước, theo đúng thứ tự:
+
+    python tools/export_embedding_onnx.py     # encoder GỐC -> ONNX int8
+    python tools/train_param_heads.py         # head nhãn + các head tham số
+
+KHÔNG dùng `tools/train_intent_setfit.py` nữa: contrastive fine-tune kéo mọi câu
+cùng nhãn lại gần nhau, được 0.4% cho bước chọn nhãn nhưng phá các head THAM SỐ
+dùng chung encoder (`volume_direction` 100% -> 40%, dưới cả mức đoán bừa). Bảng
+số đầy đủ nằm trong docstring `tools/train_param_heads.py::_train_intent_head`.
+Script cũ giữ lại để dựng lại được bản trước, không phải để chạy hàng ngày.
+
+Ở đây chỉ cần `onnxruntime` + `tokenizers`; không cần `torch`/`setfit`/`optimum`.
 """
 import json
 import logging
@@ -79,6 +89,39 @@ def _probabilities(vec: np.ndarray, coef: np.ndarray, intercept: np.ndarray) -> 
     return exp / exp.sum()
 
 
+def chat_web_params(prediction: LocalPrediction | None) -> dict:
+    """`{"needs_web": False}` khi chắc chắn lượt chat này khỏi tra Google, `{}` khi không.
+
+    CỐ TÌNH KHÔNG đi qua `read_params`. Bài học cũ đã ghi ở `_PARAM_HEADS`: bắt
+    một nhãn phụ thuộc nhiều head độc lập cùng qua ngưỡng thì coverage nhân lại
+    còn ~4%, và `read_params` trả `None` (= "để Gemini đọc") sẽ kéo `chat` ra
+    khỏi `_PARAM_FREE`, mất đúng cả giây mà bước cục bộ vừa tiết kiệm được.
+    Ở đây "không biết" phải rẻ: trả `{}` và đi tiếp.
+
+    Chỉ nói ra chiều "khỏi tra". Chiều kia đã là mặc định rồi, nên khẳng định
+    thêm không đổi được hành vi mà lại làm log trông như head đã kết luận.
+    """
+    if prediction is None or prediction.embedding is None:
+        return {}
+    loaded = _load()
+    if loaded is None:
+        return {}
+    head = loaded["param_heads"].get("chat_web")
+    if head is None:
+        # `heads_params.npz` dựng bằng bản `tools/train_param_heads.py` cũ chưa
+        # có head này. Thiếu head là mất phần lợi tốc độ, không phải lỗi.
+        return {}
+
+    coef, intercept, classes = head
+    prob = _probabilities(prediction.embedding, coef, intercept)
+    labels = [str(c) for c in classes]
+    if "false" not in labels:
+        return {}
+    if float(prob[labels.index("false")]) < config.INTENT_LOCAL_WEB_MIN_CONF:
+        return {}
+    return {"needs_web": False}
+
+
 def read_params(label: str, prediction: LocalPrediction | None) -> dict | None:
     """Tham số đọc được cục bộ cho `label`, hoặc `None` khi không đủ chắc.
 
@@ -126,8 +169,10 @@ def _load():
     head_path = model_dir / "head.npz"
     if not onnx_path.exists() or not head_path.exists():
         logger.warning(
-            "Chưa có model phân loại cục bộ ở %s — dùng Gemini cho mọi câu. "
-            "Dựng bằng: python tools/train_intent_setfit.py",
+            "Chưa có model phân loại cục bộ ở %s — dùng Gemini cho mọi câu "
+            "(chậm hơn ~1s mỗi lượt). Dựng bằng HAI bước: "
+            "python tools/export_embedding_onnx.py && "
+            "python tools/train_param_heads.py",
             model_dir,
         )
         return None
@@ -152,9 +197,18 @@ def _load():
     meta_path = model_dir / "meta.json"
     if meta_path.exists():
         meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        # `onnx_int8_acc` là khoá của `train_intent_setfit.py` (bản fine-tune,
+        # đã ngừng dùng); `intent_head.acc` là khoá của `train_param_heads.py`.
+        # Đọc thiếu khoá mới thì dòng log này in "acc eval 0.0%" cho một model
+        # đang chạy tốt — trông y hệt model hỏng.
+        acc = meta.get("intent_head", {}).get("acc")
+        if acc is None:
+            acc = meta.get("onnx_int8_acc")
         logger.info(
-            "Phân loại cục bộ: %d nhãn, acc eval %.1f%%",
-            len(head["classes"]), 100 * meta.get("onnx_int8_acc", 0.0),
+            "Phân loại cục bộ: %d nhãn, acc eval %s, head tham số: %s",
+            len(head["classes"]),
+            f"{100 * acc:.1f}%" if acc is not None else "chưa đo",
+            ", ".join(sorted(param_heads)) or "không có",
         )
     return {
         "session": session,

@@ -1,120 +1,177 @@
-{"text": "Ai ghi bàn trận đêm qua", "label": "true"}
-{"text": "Ai thắng trong trận hôm qua", "label": "true"}
-{"text": "Ai đang đứng đó", "label": "false"}
-{"text": "Bài này tên gì", "label": "false"}
-{"text": "Bây giờ mấy giờ", "label": "false"}
-{"text": "Bên trái có gì", "label": "false"}
-{"text": "Bật đèn lên", "label": "false"}
-{"text": "Cho biết giá xăng hôm nay", "label": "true"}
-{"text": "Cho tôi giá vàng sjc", "label": "true"}
-{"text": "Cho xem lịch phim hot", "label": "true"}
-{"text": "Chuyển bài khác", "label": "false"}
-{"text": "Cách trạm xe bao xa", "label": "false"}
-{"text": "Cái này ghi gì đó", "label": "false"}
-{"text": "Cái này màu gì", "label": "false"}
-{"text": "Cái này viết gì", "label": "false"}
-{"text": "Còn bao xa nữa", "label": "false"}
-{"text": "Có bậc thang không", "label": "false"}
-{"text": "Có chữ gì không", "label": "false"}
-{"text": "Có sự kiện gì gần đây", "label": "true"}
-{"text": "Có tin gì nóng không", "label": "true"}
-{"text": "Cảnh báo nguy hiểm", "label": "false"}
-{"text": "Cập nhật giá vàng mới nhất", "label": "true"}
-{"text": "Cập nhật giá vàng sjc", "label": "true"}
-{"text": "Cửa hàng này đóng cửa chưa", "label": "true"}
-{"text": "Dịch câu này sang tiếng anh", "label": "false"}
-{"text": "Dừng phát", "label": "false"}
-{"text": "Ghi chú việc này", "label": "false"}
-{"text": "Giá vàng hôm nay là bao nhiêu", "label": "true"}
-{"text": "Giá vàng thế giới hiện tại bao nhiêu", "label": "true"}
-{"text": "Giá vàng đang lên hay xuống", "label": "true"}
-{"text": "Giá xăng hiện tại tăng hay giảm", "label": "true"}
-{"text": "Giá xăng niêm yết hiện tại", "label": "true"}
-{"text": "Giá xăng tăng thêm bao nhiêu", "label": "true"}
-{"text": "Giải thích từ này", "label": "false"}
-{"text": "Giảm tiếng xuống", "label": "false"}
-{"text": "Giờ hoạt động của thư viện", "label": "true"}
-{"text": "Giờ mở cửa siêu thị gần đây", "label": "true"}
-{"text": "Gọi cho mẹ", "label": "false"}
-{"text": "Gọi cấp cứu", "label": "false"}
-{"text": "Gọi số khẩn cấp", "label": "false"}
-{"text": "Hôm nay có mưa không", "label": "false"}
-{"text": "Hôm nay ngày mấy", "label": "false"}
-{"text": "Hôm nay trời có bão không", "label": "true"}
-{"text": "Hủy lệnh vừa rồi", "label": "false"}
-{"text": "Khi nào cửa hàng mở cửa lại", "label": "true"}
-{"text": "Khi nào trung tâm này làm việc", "label": "true"}
-{"text": "Kiểm tra pin", "label": "false"}
-{"text": "Kết nối wifi đi", "label": "false"}
-{"text": "Kết quả bóng đá vừa xong", "label": "true"}
-{"text": "Kết quả trận đấu vừa rồi là mấy", "label": "true"}
-{"text": "Liệt kê các phim đang công chiếu", "label": "true"}
-{"text": "Lặp lại thông tin vừa nghe", "label": "false"}
-{"text": "Lịch trình hôm nay có gì", "label": "false"}
-{"text": "Mấy giờ trung tâm đóng cửa", "label": "true"}
-{"text": "Nhiệt độ ngoài trời ra sao", "label": "true"}
-{"text": "Nhấc máy", "label": "false"}
-{"text": "Nhắc tôi lúc mười giờ", "label": "false"}
-{"text": "Phim nào đang chiếu tại rạp", "label": "true"}
-{"text": "Phim này có suất chiếu mấy giờ", "label": "true"}
-{"text": "Phát nhạc", "label": "false"}
-{"text": "Phía trước có vật cản không", "label": "false"}
-{"text": "Rạp chiếu phim đang có phim gì", "label": "true"}
-{"text": "Siêu thị còn mở cửa không", "label": "true"}
-{"text": "Soạn tin nhắn", "label": "false"}
-{"text": "Sắp hết pin chưa", "label": "false"}
-{"text": "Sự kiện ngoài trời nào đang diễn ra", "label": "true"}
-{"text": "Thông báo lịch trình hôm nay", "label": "true"}
-{"text": "Thông báo mới nhất là gì", "label": "false"}
+{"text": "Thủ đô của Việt Nam là thành phố nào", "label": "false"}
+{"text": "Thành phố đó có bao nhiêu người sinh sống", "label": "false"}
+{"text": "Nước nào có diện tích lớn nhất thế giới", "label": "false"}
+{"text": "Sông nào dài nhất Việt Nam", "label": "false"}
+{"text": "Ngọn núi cao nhất nước ta tên gì", "label": "false"}
+{"text": "Biển Đông giáp với những nước nào", "label": "false"}
+{"text": "Việt Nam có bao nhiêu tỉnh thành", "label": "false"}
+{"text": "Ai là người phát minh ra bóng đèn", "label": "false"}
+{"text": "Chiến tranh thế giới thứ hai kết thúc năm nào", "label": "false"}
+{"text": "Bác Hồ sinh năm bao nhiêu", "label": "false"}
+{"text": "Kể tôi nghe về lịch sử thành phố Huế", "label": "false"}
+{"text": "Vì sao bầu trời có màu xanh", "label": "false"}
+{"text": "Tại sao nước biển lại mặn", "label": "false"}
+{"text": "Mặt trăng cách trái đất bao xa", "label": "false"}
+{"text": "Con người có bao nhiêu cái xương", "label": "false"}
+{"text": "Vì sao lá cây có màu xanh", "label": "false"}
+{"text": "Ánh sáng đi nhanh cỡ nào", "label": "false"}
+{"text": "Giải thích cho tôi hiện tượng nhật thực", "label": "false"}
+{"text": "Cầu vồng hình thành như thế nào", "label": "false"}
+{"text": "Tại sao mùa đông trời lạnh hơn", "label": "false"}
+{"text": "Một năm ánh sáng là bao nhiêu", "label": "false"}
+{"text": "Trọng lực hoạt động ra sao", "label": "false"}
+{"text": "Định nghĩa của trí tuệ nhân tạo là gì", "label": "false"}
+{"text": "Lạm phát nghĩa là gì", "label": "false"}
+{"text": "Giải thích giúp tôi từ kiên nhẫn", "label": "false"}
+{"text": "Thế nào gọi là hiệu ứng nhà kính", "label": "false"}
+{"text": "Cho tôi biết nghĩa của thành ngữ này", "label": "false"}
+{"text": "Blockchain là cái gì vậy", "label": "false"}
+{"text": "Khác nhau giữa vi khuẩn và virus là gì", "label": "false"}
+{"text": "Dân chủ có nghĩa là gì", "label": "false"}
+{"text": "Hai cộng hai bằng mấy", "label": "false"}
+{"text": "Tính giúp tôi hai trăm nhân ba", "label": "false"}
+{"text": "Một trăm chia bốn được bao nhiêu", "label": "false"}
+{"text": "Ba mươi phần trăm của hai triệu là bao nhiêu", "label": "false"}
+{"text": "Đổi năm cây số ra mét giúp tôi", "label": "false"}
+{"text": "Một ki lô gam bằng bao nhiêu gam", "label": "false"}
+{"text": "Tính tổng từ một đến một trăm", "label": "false"}
+{"text": "Ba mươi độ C là bao nhiêu độ F", "label": "false"}
+{"text": "Kể cho tôi nghe một câu chuyện cười", "label": "false"}
+{"text": "Kể tôi nghe một câu chuyện ngắn về sự kiên trì", "label": "false"}
+{"text": "Kể chuyện cổ tích cho tôi nghe đi", "label": "false"}
+{"text": "Đọc cho tôi một bài thơ", "label": "false"}
+{"text": "Nghĩ giúp tôi một câu đố vui", "label": "false"}
+{"text": "Hát cho tôi nghe một đoạn được không", "label": "false"}
+{"text": "Kể một chuyện gì đó vui vui đi", "label": "false"}
+{"text": "Cho tôi nghe một câu danh ngôn hay", "label": "false"}
+{"text": "Bịa cho tôi một câu chuyện về con mèo", "label": "false"}
+{"text": "Đọc thơ lục bát cho tôi nghe", "label": "false"}
+{"text": "Chào bạn", "label": "false"}
+{"text": "Bạn khỏe không", "label": "false"}
+{"text": "Cảm ơn bạn nhiều", "label": "false"}
+{"text": "Bạn tên là gì", "label": "false"}
+{"text": "Bạn có thể làm được những gì", "label": "false"}
+{"text": "Hôm nay tôi thấy buồn quá", "label": "false"}
+{"text": "Nói chuyện với tôi một chút đi", "label": "false"}
+{"text": "Tôi hơi mệt bạn ạ", "label": "false"}
+{"text": "Bạn có hiểu tôi đang nói gì không", "label": "false"}
+{"text": "Tạm biệt nhé", "label": "false"}
+{"text": "Vừa nãy bạn nói gì vậy", "label": "false"}
+{"text": "Nhắc lại câu trả lời lúc nãy đi", "label": "false"}
+{"text": "Ý bạn là sao", "label": "false"}
+{"text": "Giải thích rõ hơn cái vừa rồi", "label": "false"}
+{"text": "Cái đó là gì vậy", "label": "false"}
+{"text": "Nói ngắn gọn lại giúp tôi", "label": "false"}
+{"text": "Nó nằm ở đâu vậy", "label": "false"}
+{"text": "Người đó làm nghề gì", "label": "false"}
+{"text": "Bây giờ là mấy giờ rồi", "label": "false"}
+{"text": "Hôm nay là ngày bao nhiêu", "label": "false"}
+{"text": "Hôm nay thứ mấy vậy", "label": "false"}
+{"text": "Còn bao nhiêu ngày nữa tới tết", "label": "false"}
+{"text": "Tháng này có bao nhiêu ngày", "label": "false"}
+{"text": "Năm nay là năm con gì", "label": "false"}
+{"text": "Cho tôi biết công thức nấu phở", "label": "false"}
+{"text": "Làm sao để luộc trứng ngon", "label": "false"}
+{"text": "Cách pha nước chanh thế nào", "label": "false"}
+{"text": "Muốn ngủ ngon thì nên làm gì", "label": "false"}
+{"text": "Làm sao để bớt căng thẳng", "label": "false"}
+{"text": "Tôi nên tập thể dục thế nào cho tốt", "label": "false"}
+{"text": "Cho tôi lời khuyên về cách học tiếng anh", "label": "false"}
+{"text": "Uống bao nhiêu nước một ngày là đủ", "label": "false"}
+{"text": "Dịch câu này sang tiếng anh giúp tôi", "label": "false"}
+{"text": "Tiếng anh của từ cảm ơn là gì", "label": "false"}
+{"text": "Chữ này viết thế nào cho đúng chính tả", "label": "false"}
+{"text": "Đặt cho tôi một câu với từ hạnh phúc", "label": "false"}
+{"text": "Từ trái nghĩa với chăm chỉ là gì", "label": "false"}
+{"text": "Người khiếm thị đi xe buýt cần lưu ý gì", "label": "false"}
+{"text": "Gậy dò đường dùng như thế nào", "label": "false"}
+{"text": "Chữ nổi braille có bao nhiêu chấm", "label": "false"}
+{"text": "Làm sao nhận biết tiền giấy bằng tay", "label": "false"}
+{"text": "Mèo sống được bao nhiêu năm", "label": "false"}
+{"text": "Cá voi có phải là cá không", "label": "false"}
+{"text": "Loài chim nào bay nhanh nhất", "label": "false"}
+{"text": "Cây xương rồng sống được bao lâu không tưới", "label": "false"}
+{"text": "Bóng đá có mấy người trên sân", "label": "false"}
+{"text": "Luật việt vị trong bóng đá là gì", "label": "false"}
+{"text": "Cờ vua có bao nhiêu quân", "label": "false"}
+{"text": "Một trận bóng đá đá bao nhiêu phút", "label": "false"}
+{"text": "Ai là tác giả truyện Kiều", "label": "false"}
+{"text": "Bài hát quốc ca tên là gì", "label": "false"}
+{"text": "Nhạc sĩ Trịnh Công Sơn sáng tác những bài nào", "label": "false"}
 {"text": "Thời tiết hôm nay thế nào", "label": "true"}
-{"text": "Thời tiết ngày mai có lạnh không", "label": "true"}
-{"text": "Thời tiết thế nào", "label": "false"}
-{"text": "Tin tức sáng nay có gì đặc biệt", "label": "true"}
-{"text": "Tin tức thế giới có gì mới", "label": "true"}
-{"text": "Tiếp tục đi", "label": "false"}
-{"text": "Trận hôm nay đá mấy giờ", "label": "true"}
-{"text": "Trời có nắng không xem giúp", "label": "true"}
-{"text": "Trời sáng hay tối", "label": "false"}
-{"text": "Tên các bộ phim đang chiếu là gì", "label": "true"}
-{"text": "Tìm phim hay đang chiếu rạp", "label": "true"}
-{"text": "Tìm đường về nhà", "label": "false"}
-{"text": "Tình hình thời tiết chiều nay", "label": "true"}
-{"text": "Tính giúp phép nhân này", "label": "false"}
-{"text": "Tăng âm lượng", "label": "false"}
-{"text": "Tả khung cảnh xung quanh", "label": "false"}
-{"text": "Tắt cuộc gọi", "label": "false"}
-{"text": "Tắt nhạc đi", "label": "false"}
-{"text": "Tắt đèn", "label": "false"}
-{"text": "Tỉ giá ngoại tệ hôm nay", "label": "false"}
-{"text": "Tỉ số bóng đá trực tiếp", "label": "true"}
-{"text": "Tỉ số trận đêm qua", "label": "true"}
-{"text": "Tỉ số đội tuyển việt nam", "label": "true"}
-{"text": "Tổng hợp tin trong ngày", "label": "true"}
-{"text": "Vàng miếng đang bao nhiêu tiền", "label": "true"}
-{"text": "Vị trí hiện tại ở đâu", "label": "false"}
-{"text": "Xem dự báo mưa gió", "label": "true"}
-{"text": "Xem hạn sử dụng", "label": "false"}
-{"text": "Xem sự kiện nào diễn ra lúc này", "label": "true"}
-{"text": "Xem sự kiện nào sắp bắt đầu", "label": "true"}
-{"text": "Xăng a95 giá bao nhiêu", "label": "true"}
-{"text": "Xăng dầu hôm nay giá nhiêu", "label": "true"}
-{"text": "Xăng tăng hay giảm vậy", "label": "true"}
-{"text": "Đang có hội chợ gì gần đây", "label": "true"}
-{"text": "Điểm tin buổi sáng coi", "label": "true"}
-{"text": "Đây là tờ tiền mệnh giá bao nhiêu", "label": "false"}
-{"text": "Đường này đi hướng nào", "label": "false"}
-{"text": "Đếm số bậc", "label": "false"}
-{"text": "Đếm số người trong phòng", "label": "false"}
-{"text": "Đến mấy giờ thì rạp đóng cửa", "label": "true"}
-{"text": "Đến nơi chưa", "label": "false"}
-{"text": "Định nghĩa khái niệm đó", "label": "false"}
-{"text": "Đọc các tiêu đề báo lớn", "label": "true"}
-{"text": "Đọc dự báo thời tiết ba ngày tới", "label": "true"}
-{"text": "Đọc lại câu lệnh gần nhất", "label": "false"}
-{"text": "Đọc nhãn chai", "label": "false"}
-{"text": "Đọc nội dung giấy này", "label": "false"}
-{"text": "Đọc tin nhắn", "label": "false"}
-{"text": "Đọc tin tức mới nhất", "label": "true"}
-{"text": "Đọc tin tức về giao thông", "label": "true"}
-{"text": "Đọc tóm tắt tin tức quan trọng", "label": "true"}
-{"text": "Đọc văn bản này", "label": "false"}
+{"text": "Thời tiết chỗ tôi ra sao", "label": "true"}
+{"text": "Hôm nay trời có mưa không", "label": "true"}
+{"text": "Ngày mai trời có lạnh không", "label": "true"}
+{"text": "Nhiệt độ ngoài trời bây giờ bao nhiêu", "label": "true"}
+{"text": "Chiều nay có mưa không vậy", "label": "true"}
+{"text": "Xem giúp tôi dự báo thời tiết ba ngày tới", "label": "true"}
+{"text": "Hôm nay trời có bão không", "label": "true"}
+{"text": "Tuần này thời tiết thế nào", "label": "true"}
+{"text": "Trời hôm nay nắng hay râm", "label": "true"}
+{"text": "Độ ẩm hôm nay cao không", "label": "true"}
+{"text": "Có cảnh báo bão nào đang hoạt động không", "label": "true"}
+{"text": "Chất lượng không khí hôm nay ra sao", "label": "true"}
+{"text": "Tin tức hôm nay có gì mới", "label": "true"}
+{"text": "Đọc tin tức mới nhất cho tôi", "label": "true"}
+{"text": "Có tin gì nóng không", "label": "true"}
+{"text": "Tin tức thế giới sáng nay thế nào", "label": "true"}
+{"text": "Điểm tin buổi sáng giúp tôi", "label": "true"}
+{"text": "Đọc các tiêu đề báo lớn hôm nay", "label": "true"}
+{"text": "Tóm tắt tin quan trọng trong ngày", "label": "true"}
+{"text": "Có tin gì về giao thông hôm nay không", "label": "true"}
+{"text": "Dạo này có chuyện gì đang xảy ra", "label": "true"}
+{"text": "Tin mới nhất về vụ đó là gì", "label": "true"}
+{"text": "Giá vàng hôm nay bao nhiêu", "label": "true"}
+{"text": "Giá vàng sjc hiện tại thế nào", "label": "true"}
+{"text": "Vàng đang lên hay xuống", "label": "true"}
+{"text": "Giá xăng hôm nay bao nhiêu một lít", "label": "true"}
+{"text": "Xăng vừa tăng hay giảm vậy", "label": "true"}
+{"text": "Tỉ giá đô la hôm nay là bao nhiêu", "label": "true"}
+{"text": "Một đô đổi được bao nhiêu tiền việt", "label": "true"}
+{"text": "Giá bitcoin bây giờ thế nào", "label": "true"}
+{"text": "Lãi suất ngân hàng hiện nay bao nhiêu", "label": "true"}
+{"text": "Giá thịt heo ngoài chợ dạo này thế nào", "label": "true"}
+{"text": "Cổ phiếu hôm nay tăng hay giảm", "label": "true"}
+{"text": "Giá vé máy bay đi Đà Nẵng hiện tại bao nhiêu", "label": "true"}
+{"text": "Tỉ số trận đấu tối qua là bao nhiêu", "label": "true"}
+{"text": "Ai thắng trận đêm qua", "label": "true"}
+{"text": "Ai ghi bàn trận vừa rồi", "label": "true"}
+{"text": "Đội tuyển Việt Nam đá thắng không", "label": "true"}
+{"text": "Tối nay có trận nào đá không", "label": "true"}
+{"text": "Trận đấu hôm nay mấy giờ bắt đầu", "label": "true"}
+{"text": "Bảng xếp hạng hiện tại đội nào đứng đầu", "label": "true"}
+{"text": "Kết quả bóng đá tối qua thế nào", "label": "true"}
+{"text": "Cho tôi tỉ số trực tiếp trận này", "label": "true"}
+{"text": "Siêu thị gần đây còn mở cửa không", "label": "true"}
+{"text": "Mấy giờ thì nhà thuốc đóng cửa", "label": "true"}
+{"text": "Quán này giờ này còn bán không", "label": "true"}
+{"text": "Thư viện hôm nay có mở không", "label": "true"}
+{"text": "Ngân hàng làm việc tới mấy giờ", "label": "true"}
+{"text": "Bưu điện có làm việc chủ nhật không", "label": "true"}
+{"text": "Rạp đang chiếu phim gì", "label": "true"}
+{"text": "Phim này có suất chiếu lúc mấy giờ", "label": "true"}
+{"text": "Liệt kê các phim đang công chiếu", "label": "true"}
+{"text": "Tìm giúp tôi phim hay đang chiếu rạp", "label": "true"}
+{"text": "Gần đây có sự kiện gì đang diễn ra không", "label": "true"}
+{"text": "Có hội chợ nào đang mở không", "label": "true"}
+{"text": "Cuối tuần này có chương trình gì hay", "label": "true"}
+{"text": "Sắp tới có sự kiện nào đáng chú ý", "label": "true"}
+{"text": "Đường Nguyễn Trãi giờ có kẹt xe không", "label": "true"}
+{"text": "Tình hình giao thông lúc này thế nào", "label": "true"}
+{"text": "Có tuyến đường nào đang cấm không", "label": "true"}
+{"text": "Xe buýt số bảy còn chạy giờ này không", "label": "true"}
+{"text": "Tàu điện mấy giờ có chuyến cuối", "label": "true"}
+{"text": "Dịch bệnh dạo này có gì mới không", "label": "true"}
+{"text": "Có lịch cắt điện nào hôm nay không", "label": "true"}
+{"text": "Hôm nay có lịch cúp nước không", "label": "true"}
+{"text": "Điểm chuẩn năm nay công bố chưa", "label": "true"}
+{"text": "Kết quả xổ số hôm nay ra sao", "label": "true"}
+{"text": "Ca sĩ đó vừa ra bài mới nào", "label": "true"}
+{"text": "Phim mới nhất của đạo diễn đó tên gì", "label": "true"}
+{"text": "Điện thoại mới ra mắt giá bao nhiêu", "label": "true"}
+{"text": "Sản phẩm đó hiện còn hàng không", "label": "true"}
+{"text": "Chuyến bay đó có bị hoãn không", "label": "true"}
+{"text": "Tổng thống hiện tại của Mỹ là ai", "label": "true"}
+{"text": "Ai đang giữ chức thủ tướng bây giờ", "label": "true"}
+{"text": "Dân số thế giới hiện nay là bao nhiêu", "label": "true"}
+{"text": "Bây giờ có bao nhiêu quốc gia là thành viên", "label": "true"}

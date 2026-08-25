@@ -6,6 +6,7 @@ thị không nhìn được màn hình nên quãng im đó không phân biệt �
 """
 
 from collections.abc import Callable, Iterator, Sequence
+import contextvars
 import queue
 import threading
 
@@ -98,7 +99,26 @@ def wait_for(
         except BaseException as exc:  # noqa: BLE001 - trả lỗi về luồng chính nguyên vẹn
             channel.put(exc)
 
-    threading.Thread(target=run, daemon=True, name="waiting").start()
+    # 🔴 Chạy `produce()` TRONG bản sao Context của luồng gọi.
+    #
+    # Thread trần không kế thừa `contextvars.Context`, mà `produce()` ở đây là
+    # thân `router._resolve()` — nó chạy TRỌN VẸN trên thread này cho tới yield
+    # đầu tiên, nên `stage("stt")`, `stage("intent")`, `stage("handler")` và
+    # `annotate(intent=...)` đều gọi ở đây. Không chép context thì
+    # `turn_trace.current()` trả `None` và cả bốn dòng đo rơi mất trong im
+    # lặng: trace G9 chỉ còn `ttfb_ms`/`total_ms`, bảng G1 mất ba cột.
+    #
+    # Đây là lần THỨ BA của cùng một lỗi (trước đó: `pipeline/tts.py` và
+    # `app._StallAwareStream`). Hai lần trước được "khoá" bằng test đọc mã tìm
+    # chữ `copy_context` — nên chúng không thấy chỗ này. Test khoá chỗ này đo
+    # hành vi: `test_wait_for_worker_inherits_the_request_context`.
+    #
+    # `copy_context()` gọi NGAY ở đây, còn trong luồng gọi — không phải trong
+    # `run()`, vì lúc `run()` chạy thì đã ở thread mới.
+    context = contextvars.copy_context()
+    threading.Thread(
+        target=context.run, args=(run,), daemon=True, name="waiting"
+    ).start()
 
     delays = notice_delays(opening_seconds)
     index = 0

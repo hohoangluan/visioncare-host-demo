@@ -21,20 +21,37 @@ from pathlib import Path
 
 import numpy as np
 
+# 🔴 Windows: stdout mặc định là cp1252, và MỌI dòng in của tool này đều có
+# tiếng Việt. Không có ba dòng dưới thì tool chạy XONG việc rồi chết ở lệnh
+# `print` cuối — nhìn từ ngoài giống hệt "tool hỏng", trong khi file đã ghi.
+# Đã dính thật với `publish_firmware.py` (bản đã phát hành, chỉ crash lúc in).
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 PROJ = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(PROJ))
 
 DATA_DIR = PROJ / "data" / "intent"
 OUT_DIR = PROJ / "models" / "intent_encoder"
 
-# `chat_location` và `chat_web` ĐÃ BỎ. Hai cờ chúng phục vụ không còn tồn tại:
-# vị trí do thread nền giữ nóng nên luôn nhét vào prompt, còn có tra Google hay
-# không thì chính model quyết lúc sinh chữ (xem `handlers/chat.py`).
+# `chat_location` ĐÃ BỎ: vị trí do thread nền giữ nóng nên luôn nhét vào prompt.
+# Dữ liệu `params_chat_location.jsonl` giữ lại trong repo để dựng lại được nếu
+# quay xe, nhưng không huấn luyện nữa — head không ai đọc mà vẫn nằm trong
+# `heads_params.npz` chỉ làm người sau tưởng nó đang chạy.
 #
-# Dữ liệu `params_chat_location.jsonl` / `params_chat_web.jsonl` giữ lại trong
-# repo để dựng lại được nếu quay xe, nhưng không huấn luyện nữa — head không ai
-# đọc mà vẫn nằm trong `heads_params.npz` chỉ làm người sau tưởng nó đang chạy.
-TASKS = ("volume_direction", "ride_confirm")
+# `chat_web` ĐÃ QUAY LẠI. Trước đây nó bị bỏ cùng `chat_location` vì "model tự
+# quyết lúc sinh chữ" — nhưng quyết định đó KHÔNG miễn phí: bật `google_search`
+# là một vòng grounding, đo trên chính prompt production tốn 3533ms TTFB so với
+# 868ms khi tắt. `CHAT_ALWAYS_SEARCH=1` bắt MỌI lượt chat trả giá đó, kể cả
+# "kể một câu chuyện cười".
+#
+# Lần này nó KHÔNG đi qua `read_params`, nên bài học cũ (nhiều head độc lập
+# cùng phải qua ngưỡng thì coverage nhân nhau, 0/18 câu chat xong được ở bước
+# cục bộ) không lặp lại: đây là head DUY NHẤT cho một cờ DUY NHẤT, và không đủ
+# chắc thì giữ nguyên hành vi cũ (có tra) chứ không chặn nhãn.
+TASKS = ("volume_direction", "ride_confirm", "chat_web")
 
 
 def _train_intent_head(embed, args) -> dict:

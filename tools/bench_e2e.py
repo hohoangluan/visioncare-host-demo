@@ -24,6 +24,7 @@ Chạy:  python tools/bench_e2e.py [--host 127.0.0.1] [--port 8000] [--only ocr,
 import argparse
 import os
 import socket
+import ssl
 import sys
 import time
 
@@ -31,6 +32,15 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from pipeline import adpcm  # noqa: E402
 from tools.make_board_audio import COMMANDS, OUT_DIR  # noqa: E402
+
+# 🔴 Windows: stdout mặc định là cp1252, và MỌI dòng in của tool này đều có
+# tiếng Việt. Không có ba dòng dưới thì tool chạy XONG việc rồi chết ở lệnh
+# `print` cuối — nhìn từ ngoài giống hệt "tool hỏng", trong khi file đã ghi.
+# Đã dính thật với `publish_firmware.py` (bản đã phát hành, chỉ crash lúc in).
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 FIXTURES = os.path.join(ROOT, "tests", "fixtures")
@@ -84,18 +94,38 @@ def _byte_rate(encoding: str) -> float:
 
 
 def run_one(
-    host: str, port: int, name: str, timeout: float = 200.0, accept: str = BOARD_ACCEPT
+    host: str,
+    port: int,
+    name: str,
+    timeout: float = 200.0,
+    accept: str = BOARD_ACCEPT,
+    device_id: str = "",
+    turn_id: str = "",
 ) -> Result:
     audio = open(os.path.join(OUT_DIR, f"{name}.wav"), "rb").read()
     image_name = IMAGES.get(name, _DEFAULT_IMAGE)
     image = open(os.path.join(FIXTURES, image_name), "rb").read()
     body = _multipart(image, image_name, audio)
 
+    # T01/F1: `X-Device-Id`/`X-Turn-Id` là BẮT BUỘC theo CONTRACTS.md mục 2.1.
+    #
+    # 🔴 Bản trước của tool này không gửi hai header đó, tức nó đo một đường
+    # KHÁC với đường board đi: server rơi về `VISIONCARE_DEVICE_ID` mặc định,
+    # nên mọi lượt bench dùng chung một session, và cửa idempotency không hề
+    # được chạm tới. `turn_id` còn là khoá để `tools/report_e2e.py` ghép một
+    # lượt đo với đúng dòng trace của nó.
+    ids = ""
+    if device_id:
+        ids += f"X-Device-Id: {device_id}\r\n"
+    if turn_id:
+        ids += f"X-Turn-Id: {turn_id}\r\n"
+
     request = (
         f"POST /process HTTP/1.1\r\n"
         f"Host: {host}:{port}\r\n"
         f"User-Agent: ESP32S3-VisionCare/1.0\r\n"
         f"Accept: {accept}\r\n"
+        f"{ids}"
         f"Content-Type: multipart/form-data; boundary={BOUNDARY}\r\n"
         f"Content-Length: {len(body)}\r\n"
         f"Connection: close\r\n\r\n"
@@ -112,6 +142,18 @@ def run_one(
 
     sock = socket.create_connection((host, port), timeout=timeout)
     sock.settimeout(timeout)
+    # 🔴 Cổng 443 PHẢI bọc TLS. Bản trước gửi socket trần lên 443 và nhận
+    # **400 cho cả 16 chức năng** — nhìn vào bảng thì tưởng server hỏng, thật
+    # ra Cloudflare từ chối một request không bắt tay TLS. Board thật cũng đi
+    # TLS (`API_USE_TLS 1`), nên đo bản trần là đo một đường không tồn tại.
+    #
+    # `check_hostname`/`verify_mode` giữ mặc định (CÓ xác thực) — khác board,
+    # vốn dùng `setInsecure()` vì ESP32 không có kho chứng chỉ. Ở đây máy tính
+    # có sẵn kho, và tắt xác thực chỉ để "cho giống board" là bỏ đi một phép
+    # kiểm miễn phí.
+    if port == 443:
+        sock = ssl.create_default_context().wrap_socket(sock, server_hostname=host)
+        sock.settimeout(timeout)
     try:
         # Đồng hồ bắt đầu khi gửi xong, giống board: nó đo từ lúc đẩy hết gói.
         sock.sendall(request + body)

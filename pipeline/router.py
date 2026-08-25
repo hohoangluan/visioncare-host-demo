@@ -14,9 +14,13 @@ from handlers import (
 )
 from handlers.waiting import with_progress_notice
 from services import capabilities
+from services import turn_trace
+# F5: `ocr` xin ảnh tầng cao qua kênh downlink T18.
+from services.events_channel import events
 from services.frame_buffer import frames
 from services.incoming_calls import incoming_calls
 from handlers import incoming_call
+from handlers import hazard_watch
 
 logger = logging.getLogger("blind_assist")
 
@@ -25,7 +29,21 @@ _HANDLERS = {
     Intent.FIND: find_object,
     Intent.MONEY: read_money,
     Intent.SPACE: describe_space,
-    Intent.HAZARD: describe_hazard,
+    # 🔴 ĐỔI 2026-08-25, theo quyết định của người dùng: `hazard` KHÔNG còn đi
+    # qua Gemini nữa. "Phía trước có gì nguy hiểm không" giờ **bật chế độ canh
+    # liên tục** thay vì trả lời một câu.
+    #
+    # Vì sao đổi: câu trả lời một lần chỉ đúng cho khoảnh khắc bấm nút, mà vật
+    # cản thì gặp trong lúc ĐANG ĐI. Hỏi một câu rồi bước tiếp năm bước là câu
+    # trả lời đã hết hạn. Chế độ canh trả lời đúng câu người dùng thật sự đang
+    # hỏi: "từ giờ có gì chắn đường thì báo tôi".
+    #
+    # `handlers/describe_hazard.py` vì thế KHÔNG còn ai gọi tới. File giữ lại
+    # (chưa xoá) — xem ghi chú đầu file đó.
+    #
+    # Khoá cũ trong CLAUDE.md/RUNBOOK mục 7 ("describe_hazard.py chỉ được thêm
+    # comment") đã được người dùng gỡ tường minh cùng ngày.
+    Intent.HAZARD: hazard_watch.start,
     Intent.CHAT: chat,
     Intent.NAV_START: nav_start,
     Intent.NAV_STOP: nav_stop,
@@ -38,10 +56,20 @@ _HANDLERS = {
     Intent.MUSIC_VOLUME: music_volume,
     Intent.CALL_ANSWER: incoming_call,
     Intent.CALL_REJECT: incoming_call,
+    # T24/W1. Hai intent này KHÔNG cần ảnh và KHÔNG gọi Gemini — chúng chỉ bật
+    # tắt một cờ và gửi một sự kiện xuống board.
+    Intent.HAZARD_WATCH_START: hazard_watch.start,
+    Intent.HAZARD_WATCH_STOP: hazard_watch.stop,
 }
 
+# 🔴 `Intent.HAZARD` đã RỜI danh sách này (2026-08-25). Nó không còn là một câu
+# hỏi về một khung hình — nó bật một chế độ. Bắt nó chờ ảnh nghĩa là: cộng
+# nguyên một vòng chụp+truyền vào việc bật cờ, VÀ tệ hơn — cổng chất lượng ảnh
+# (`pipeline/image_quality.py`) có quyền chặn, tức "ảnh mờ quá" sẽ ngăn người
+# dùng bật được chế độ cảnh báo vật cản. Đúng lúc trời tối/rung tay là lúc
+# người ta cần bật nhất.
 _IMAGE_REQUIRED_INTENTS = frozenset(
-    {Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE, Intent.HAZARD}
+    {Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE}
 )
 
 # Chỉ còn HAI câu, và cả hai đều nói về một trạng thái LỖI của hệ thống, không
@@ -105,6 +133,14 @@ _LOCAL_EMERGENCY = re.compile(
 # vừa vô ích vừa dễ nuốt nhầm câu khác không liên quan tới dừng cái gì cả.
 _LOCAL_STOP = re.compile(
     r"tắt nhạc|dừng nhạc|dừng chỉ đường|dừng lại|thôi|im lặng", re.I
+)
+
+# T24/W1: tắt canh vật cản, 0 ms, không qua Gemini. Regex RIÊNG chứ không gộp
+# vào `_LOCAL_STOP` — xem khối ghi chú ở bước 3 của `resolve_speech()`.
+_HAZARD_WATCH_OFF = re.compile(
+    r"tắt cảnh báo|dừng cảnh báo|tắt an toàn|tắt chế độ cảnh báo|"
+    r"thôi cảnh báo|không cảnh báo nữa",
+    re.I,
 )
 
 # ─── Pha 2 — PENDING TẤT ĐỊNH: câu trả lời ĐÓNG, khớp tất định, không LLM ──
@@ -308,6 +344,64 @@ def resolve_speech(
     )
 
 
+def resolve_panic(image: bytes | None = None) -> Iterator[str]:
+    """Bấm nút 3 lần trên kính -> `emergency_call`, KHÔNG qua STT.
+
+    Vì sao có đường riêng thay vì để nó nói "gọi cấp cứu"
+    ------------------------------------------------------
+    Bước 1 của `_resolve()` đã là cổng khẩn cấp tuyệt đối, nhưng nó vẫn phải
+    **nghe được một câu nói** trước đã. Đúng lúc cần dùng thì đó là điều kiện
+    dễ vỡ nhất trong cả hệ:
+
+      - người ngã, đau, hoảng — nói không thành tiếng;
+      - có người thứ hai đang la hét át tiếng;
+      - mic tắc, gió lớn, hoặc STT nghe ra chữ khác.
+
+    Ba lần bấm không cần tiếng, không cần mạng đủ tốt để tải 26 KB audio, và
+    không có bước nào ở giữa có thể nghe nhầm. Nó là đường **song song** với
+    cổng từ khoá, không thay thế: người nói được vẫn nói.
+
+    Vẫn `bump_generation()` như một lượt bình thường
+    ------------------------------------------------
+    Bấm khẩn cấp PHẢI cắt ngang mọi thứ đang phát — nhạc, chỉ đường, câu trả
+    lời dài của Gemini. Đó chính xác là việc `bump_generation()` làm, nên
+    đường này bump y hệt `_resolve()`; bỏ đi thì tiếng cấp cứu chen vào giữa
+    một bản nhạc còn đang chạy.
+
+    KHÔNG nhận `emergency_number`: nút không mang được con số. Handler tự lùi
+    về số mặc định — cùng nhánh với câu nói "gọi cấp cứu" trống số.
+    """
+    from handlers import action_flow
+
+    device_key = _capture_device_key()
+    action_flow.bump_generation(device_key)
+
+    # Không có chặng `stt` để ghi, và đó là điểm đáng đo nhất của đường này:
+    # trace của một lượt panic thiếu hẳn `stt` là DẤU HIỆU ĐÚNG, không phải
+    # lỗ hổng đo đạc.
+    turn_trace.stage("stt", 0.0)
+    logger.info(
+        "PANIC: bấm nút 3 lần -> EMERGENCY (bỏ qua STT/intent/pending hoàn toàn)"
+    )
+
+    first, rest = _with_bargein(
+        _dispatch(
+            Intent.EMERGENCY_CALL,
+            image,
+            # Handler chỉ đọc `params`, còn chuỗi này đi vào lịch sử hội thoại
+            # và log. Ghi rõ nguồn để đọc log biết ngay lượt đó do nút sinh ra
+            # chứ không phải do nghe nhầm một câu nói nào.
+            "[nút khẩn cấp bấm 3 lần]",
+            {},
+            device_key=device_key,
+        ),
+        action_flow, device_key,
+    )
+    if first:
+        yield first
+    yield from rest
+
+
 def _dispatch(
     intent_name: str,
     image: bytes | None,
@@ -324,6 +418,19 @@ def _dispatch(
         handler = incoming_call.handle_answer
     elif intent_name == Intent.CALL_REJECT:
         handler = incoming_call.handle_reject
+    elif not hasattr(handler_mod, "handle"):
+        # 🔴 Vài mục trong `_HANDLERS` là HÀM chứ không phải module: các intent
+        # chỉ bật/tắt một cờ (`hazard_watch.start`/`.stop`) không đáng một file
+        # riêng với hàm `handle()` nhận ảnh và câu lệnh mà nó không dùng tới.
+        #
+        # Nhánh này đã THIẾU từ lúc T24 thêm hai intent đó vào bảng: mọi lượt
+        # nói "bật cảnh báo vật cản" đi qua router đều nổ `AttributeError:
+        # 'function' object has no attribute 'handle'`. Không test nào bắt được
+        # vì test T24 gọi thẳng `hazard_watch.start()`, không đi qua dispatch.
+        #
+        # Chúng chỉ nhận `device_key`, nên trả về ngay ở đây thay vì rơi xuống
+        # phần dò chữ ký `(image, command_text)` bên dưới.
+        return handler_mod(device_key)
     else:
         handler = handler_mod.handle
     sig = inspect.signature(handler)
@@ -672,6 +779,10 @@ def _resolve(
     started = time.monotonic()
     command_text = stt.transcribe(audio)
     stt_seconds = time.monotonic() - started
+    # G9/T21: cùng con số vừa đo, nhưng vào trace của lượt thay vì chỉ vào một
+    # dòng log riêng. Các dòng log của một lượt nằm rải rác giữa các lượt chạy
+    # song song, nên cộng tay từ log không trả lời được "lượt này chậm ở đâu".
+    turn_trace.stage("stt", stt_seconds)
 
     # ─── 1. EMERGENCY (21.1) — tuyệt đối, không qua bước nào khác ─────────
     if _LOCAL_EMERGENCY.search(command_text or ""):
@@ -732,6 +843,33 @@ def _resolve(
             return
 
     # ─── 3. STOP / LỆNH TOÀN CỤC (21.1) — chèn GIỮA hai pha pending ────────
+    #
+    # T24/W1: "tắt cảnh báo" đi TRƯỚC `_global_stop_target()` và có regex
+    # riêng. Không gộp vào `_LOCAL_STOP` được vì hai lý do:
+    #   1. `_global_stop_target()` chỉ chạy khi nhạc HOẶC chỉ đường đang chạy.
+    #      Canh vật cản là cờ thứ ba, độc lập — người dùng có thể bật nó mà
+    #      không nghe nhạc và không đi theo chỉ đường.
+    #   2. `_apply_state()` gỡ mơ hồ giữa nhạc và chỉ đường. Nhét thêm một
+    #      tác vụ thứ ba vào đó sẽ làm "tắt đi" trở nên mơ hồ ba chiều, trong
+    #      khi "tắt cảnh báo" vốn không hề mơ hồ.
+    if state.get("hazard_watching") and _HAZARD_WATCH_OFF.search(command_text or ""):
+        logger.info(
+            "nghe='%s' -> TẮT CANH VẬT CẢN (bước 3/6, 0 ms, bỏ qua Gemini)",
+            command_text,
+        )
+        action_flow.clear_pending()
+        first, rest = _with_bargein(
+            _dispatch(
+                Intent.HAZARD_WATCH_STOP, image, command_text, device_key=device_key
+            ),
+            action_flow,
+            device_key,
+        )
+        if first:
+            yield first
+        yield from rest
+        return
+
     stop_target = _global_stop_target(command_text, state)
     if stop_target is not None:
         logger.info(
@@ -791,6 +929,7 @@ def _resolve(
     # nối tiếp giữa STT và handler, và người dùng chờ hết nó trước khi công việc
     # thật bắt đầu. Gộp vào chỗ khác thì không ai thấy nó tốn bao nhiêu.
     intent_seconds = time.monotonic() - intent_started
+    turn_trace.stage("intent", intent_seconds)
     if isinstance(res, tuple):
         intent_name, params = res
     else:
@@ -831,6 +970,44 @@ def _resolve(
             turn_id=turn_id,
             wait_ms=config.FRAME_WAIT_MS,
         )
+
+    # ── F5: `ocr` xin ảnh TẦNG CAO ───────────────────────────────────────
+    #
+    # SPEC mục 19/F5: mọi lần bấm nút gửi tầng thấp (VGA) ngay, không hỏi; chỉ
+    # `ocr` mới trả giá một vòng hỏi-đáp để lấy tầng cao (HD). Lý do là chi phí
+    # nằm ở phía kính: gửi HD cho MỌI lượt nghĩa là `space`/`find`/`money` —
+    # ba intent mà server resize xuống 308-640 trước khi nhìn — cũng phải chờ
+    # đẩy gấp bốn số byte.
+    #
+    # Chỉ `ocr` cần độ nét thật, và `ocr` vốn là intent người dùng chấp nhận
+    # chờ lâu hơn (T15/H1 cố ý làm nó chậm hơn để đọc đúng).
+    #
+    # 🔴 KHÔNG fail nếu tầng cao không tới: rơi về khung tầng thấp đang có còn
+    # hơn là không trả lời gì. Cổng chất lượng ảnh bên dưới sẽ tự nói "ảnh mờ
+    # quá" nếu khung đó thật sự không đọc được.
+    if intent_name == Intent.OCR and not ocr_text_only and turn_id:
+        have = frames.latest_frame(device_key, config.FRAME_MAX_AGE_MS, turn_id=turn_id)
+        if have is None or have.tier != "high":
+            requested = events.request_frame(device_key, turn_id, tier="high")
+            if requested:
+                logger.info(
+                    "F5: xin ảnh tầng cao cho ocr (device=%s turn=%s)",
+                    device_key, turn_id,
+                )
+                high = frames.latest(
+                    device_key,
+                    config.FRAME_MAX_AGE_MS,
+                    turn_id=turn_id,
+                    wait_ms=config.FRAME_HIGH_TIER_WAIT_MS,
+                    tier="high",
+                )
+                if high is not None:
+                    image = high
+                else:
+                    logger.warning(
+                        "F5: ảnh tầng cao không tới trong %.0f ms — dùng tầng thấp",
+                        config.FRAME_HIGH_TIER_WAIT_MS,
+                    )
     reject_reason = None if ocr_text_only else image_quality.reject_reason(intent_name, image)
     if reject_reason is not None:
         logger.info(
@@ -847,10 +1024,12 @@ def _resolve(
 
     first, rest = _with_bargein(pieces, action_flow, device_key)
     # handler đo tới MẢNH ĐẦU, không phải tới lúc Gemini viết xong
+    handler_seconds = time.monotonic() - handler_started
+    turn_trace.stage("handler", handler_seconds)
+    turn_trace.annotate(intent=str(intent_name))
     logger.info(
         "nghe='%s' intent=%s | stt=%.2fs phân-loại=%.2fs handler=%.2fs",
-        command_text, intent_name, stt_seconds, intent_seconds,
-        time.monotonic() - handler_started,
+        command_text, intent_name, stt_seconds, intent_seconds, handler_seconds,
     )
 
     if first:

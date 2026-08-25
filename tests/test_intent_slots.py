@@ -234,9 +234,14 @@ def test_cancel_repeat_under_300ms(monkeypatch):
 # "FILE BẠN ĐƯỢC SỬA" của T05) -> pytest chỉ cảnh báo unregistered-mark, không
 # fail. Skip cứng khi thiếu key thật, đúng pattern `tests/test_bang_am_thanh.py`
 # đã dùng — máy không có key vẫn `pytest -q` xanh, không fail cứng.
-pytestmark_llm = pytest.mark.skipif(
+# 🔴 `llm` KHÔNG chỉ là nhãn cho vui — `pytest.ini` định nghĩa nó đúng cho
+# nhóm này ("gọi Gemini thật. Cần khoá API và mạng, nên KHÔNG chạy trong CI").
+# Thiếu mark thì `pytest tests/` chạy chúng song song với mọi test khác, và
+# đo được 2026-08-25: chạy RIÊNG xanh 16/16, chạy trong cả suite thì 3 ca đỏ
+# vì hạn mức/độ trễ Gemini. Một test đỏ ngẫu nhiên sẽ bị tắt trong một tuần.
+pytestmark_llm = pytest.mark.llm(pytest.mark.skipif(
     not config.GEMINI_API_KEY, reason="cần GEMINI_API_KEY thật để đo A2"
-)
+))
 
 
 @pytest.mark.llm

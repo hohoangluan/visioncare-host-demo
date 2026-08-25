@@ -1,4 +1,4 @@
-# PROGRESS — trạng thái 23 task
+# PROGRESS — trạng thái 25 task
 
 Chỉ phiên điều phối ghi file này. Agent ghi `reports/<Txx>.md`.
 
@@ -56,12 +56,75 @@ FAILED tests/test_bang_am_thanh.py::test_chat_follow_up_question_uses_previous_t
 | T11 | 5 | 🟠 | Codex | reports/T11.md | server fail-closed; 151 pass/9 xfail; AVD build/install/start xanh; chờ Farefeed/geocode/app contract; commit `11662ac` |
 | T13 | 5 | 🟠 | Codex | reports/T13.md | code + 33 DoD/134 regression xanh; chờ đo Gemini/prefix thật; commit `0a18376` |
 | T23 | 5 | 🟠 | Codex | reports/T23.md | code 3 lớp xong; 9 DoD/90 regression/Android build+AVD xanh; chờ nạp & manual trên điện thoại thật |
-| T17 | 6 | 🟠 | Codex | reports/T17.md | F3/F4 server+firmware code xanh; 19 DoD/114 regression/build xanh; chờ nạp board + F5 số tầng thật |
-| T18 | 6 | 🟠 | Codex | reports/T18.md | server SSE 10 DoD/133 regression xanh; firmware/đo RAM bị chặn vì COM8 vắng |
+| T17 | 6 | 🟠 | phiên 2026-08-25 | reports/T17.md | **F5 thi công xong + chạy trên board** (`X-Frame-Tier`, VGA mặc định / HD chỉ cho `ocr`); còn nợ DUY NHẤT: ngưỡng blur đo riêng theo tầng |
+| T18 | 6 | ✅ | phiên 2026-08-25 | reports/T18.md | **DoD đóng hết**: SSE chạy trên board, tự nối lại sau restart (2.3 s), RAM đã đo → `measurements/F6-ram.md` (khối liền **36 852 B**, trần **2 phiên TLS**) |
 | T19 | 6 | 🟠 | Codex | reports/T19.md | server/host/Android code xanh; AVD TelephonyCallback + PhoneLookup xác nhận; SSE nay mang `audio_url`, server có `GET /incoming-call/audio` phát PCM cache theo contact (commit `7758a65`); firmware phía kính (pull audio_url) vẫn chờ COM8 |
-| T21 | 7 | ⬜ | | | |
+| T21 | 7 | 🟠 | phiên 2026-08-24 | reports/T21.md | trace G9 + bảng G1 đo được; **15/16 intent vượt ngân sách**, 11/16 dưới ngưỡng nhả — xem measurements/G1.md |
+| T24 | 8 | 🟠 | phiên 2026-08-25 | reports/T24.md | **worker đã viết + nối dây** (trước đó `risk_engine.evaluate()` KHÔNG có lời gọi nào trong mã production — người dùng nghe "đã bật" rồi im vĩnh viễn). Mức về trong thân `POST /frame`, board giữ 1 phiên keep-alive. `hazard` intent giờ BẬT CHẾ ĐỘ CANH thay vì gọi Gemini. Vẫn nợ: 5/8 bắt được, 2/11 báo oan |
+| T25 | 8 | ✅ | phiên 2026-08-25 | (task file) | **OTA kéo qua internet nghiệm thu 3 lần** (ota7/8/9) trên board thật. Sửa lỗi hỏng im lặng do RAM liền |
+| **Nút khẩn cấp 3 nhịp** | 9 | 🟠 | phiên 2026-08-25 | measurements/T24.md | server 10 test xanh, board kêu đúng; **chưa thấy request tới server** — xem bên dưới |
 
 Ký hiệu: ⬜ chưa · 🟡 đang chạy · ✅ DONE · 🟠 PARTIAL · ⛔ BLOCKED
+
+## 🔴 Ba phát hiện của phiên 2026-08-24 — đọc trước khi lập kế hoạch tiếp
+
+1. **Board nạp lại được, qua OTA.** Ghi chú "board chưa nạp lại được" ở T17/
+   T18/T19/T24 **đã hết hiệu lực**. Cổng là **COM10** (không phải COM8), và
+   partition phải là **`min_spiffs`** — `huge_app` là *"3MB **No OTA**"*.
+   Từ giờ nạp bằng `espota.exe`, không cắm dây. Xem `T25-ota-provisioning.md`.
+
+2. **Bảng ngân sách G1 mâu thuẫn với `AUDIO_PREROLL_SECONDS = 2.0`.**
+   Preroll gom 2000 ms trước byte đầu ⟹ mọi dòng ≤ 1200 ms là không thể đạt,
+   kể cả khi xử lý mất 0 ms. Đo được: `emergency_call` **4820 ms** so với ngân
+   sách 300 ms. Phải chốt bằng người — `reports/T21.md` câu hỏi #1.
+
+3. **G8 đang bị vi phạm.** `AUDIO_PREROLL_MODE="warm_melodic"` nghĩa là server
+   phát earcon, trong khi board đã kêu `cueSent()` ở 0 ms → bíp hai lần.
+   RUNBOOK mục 7 cấm đúng chuyện này. Chưa tự gỡ vì đoạn nhạc còn gánh việc
+   chống hụt tiếng — `reports/T21.md` câu hỏi #2.
+
+## ~~Mạng thử nghiệm đang chặn cổng 443~~ — ĐÃ GIẢI, 2026-08-25
+
+Đổi kính sang mạng `Thanh_Cuong_FI` là hết. Cùng một bản firmware:
+
+| | hotspot `Redmi Note 14` | `Thanh_Cuong_FI` |
+|---|---|---|
+| bắt tay TLS | **HỎNG**, `mbedtls -1` sau 18337 ms | **OK, 616-911 ms** |
+
+Ghi chú cũ đổ cho RAM/mbedtls của board là **đổ oan** — code không đổi một
+dòng nào. Mọi phép đo bị chặn vì lý do này đã mở khoá.
+
+## Đã nghiệm thu TRÊN BOARD THẬT, 2026-08-25
+
+| Việc | Bằng chứng |
+|---|---|
+| **OTA kéo qua internet** (T25) | `ota7`, `ota8`, `ota9` — mỗi lần `0%→100%`, sha256 khớp, khởi động lại đúng bản. Đây là việc gác lâu nhất của dự án |
+| **SSE `/events` phía firmware** (T18) | `[SSE] Duong xuong /events da mo`; nhận được `firmware_update` và chạy đúng |
+| Bản `ota3+` lên board | qua espota LAN **và** qua kéo internet |
+| Server thấy kính qua tunnel | `/devices` trả `fw_version`, `wifi_ssid`, `online: true` |
+| `emergency_call` tới điện thoại | `202 Accepted` sau khi ghép đôi (trước đó `404 GLASSES_DEVICE_NOT_LINKED`) |
+| Nút khẩn cấp 3 nhịp — **phía board** | `===== NUT KHAN CAP: 3 NHIP =====` |
+
+🔴 **espota (đẩy qua LAN) hỏng ở 79% trong khi kéo qua internet xong trọn.**
+Đường vòng qua Cloudflare giờ đáng tin hơn đường thẳng trong nhà — ngược hẳn
+giả định ban đầu.
+
+### 🔴 OTA kéo từng hỏng IM LẶNG — nguyên nhân và cách sửa
+
+Lần đầu board in "Server bao co ban firmware moi" rồi tắt tiếng; server không
+nhận request nào. Nhánh `status == 0` trong `otaPullIfAvailable()` **không in
+gì cả**, nên "OTA không chạy" nhìn y hệt "OTA chưa tới lượt".
+
+Nguyên nhân: mbedtls cần **~45 KB LIỀN** mỗi phiên; `/events` + phiên giữ sẵn
+đã chiếm chỗ nên phiên thứ ba chết ngay ở `connect()`. Sửa: `apiDropWarmSession()`
++ `eventStreamPause()` trước khi kéo, và in kèm RAM khi hỏng:
+
+```
+[OTA-PULL] Khong mo duoc phien — DRAM noi con 67912 B,
+           khoi lien lon nhat 36852 B (mbedtls can ~45 KB LIEN)
+```
+
+36852 < 45000. Chẩn đoán nằm trong log, không phải suy đoán.
 
 ## Câu hỏi 🔴 agent đẩy lên (phiên điều phối gom, hỏi người dùng một lượt/đợt)
 

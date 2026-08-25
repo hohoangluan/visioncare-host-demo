@@ -20,3 +20,21 @@ tests/fixtures/*
 tools/board_audio/
 # Ảnh checkpoint 1.5GB, không thuộc mã nguồn.
 checkpoints.zip
+
+# T24: trọng số nhận diện vật cản. `models/*` ở trên đã bao rồi, nhắc lại cho
+# rõ ý định: KHÔNG commit 10 MB nhị phân này. Dựng lại bằng
+#   python tools/fetch_hazard_model.py
+models/od/
+yolo11n.pt
+yolo11n.onnx
+
+# T25: kho firmware phát hành. File .bin ~1.37 MB mỗi bản, không diff được,
+# và mỗi lần phát hành lại thêm một bản nữa vào lịch sử git.
+# `latest.json` GIỮ LẠI: nó là con trỏ, vài trăm byte, và là thứ duy nhất
+# quyết định bản nào đang được phát hành (fail-closed).
+firmware/*.bin
+firmware/*.bin.part
+
+# Ảnh chụp màn hình emulator dùng khi gỡ lỗi app Android. Không phải nguồn của
+# thứ gì, và mỗi lần chụp lại là một blob mới không diff được.
+.artifacts/

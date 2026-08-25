@@ -11,7 +11,39 @@ import uuid
 import config
 
 
-_EVENT_TYPES = frozenset({"frame_request", "call_incoming", "call_ended", "ping"})
+# Danh sách đóng, không phải gợi ý: `publish()` từ chối mọi loại lạ. Kính chỉ
+# biết xử lý đúng những loại này (`onDeviceEvent()` trong sketch), nên một loại
+# gõ sai sẽ đi tới board rồi rơi vào im lặng — bắt ở đây thì lỗi lộ ra ngay tại
+# chỗ gọi sai.
+_EVENT_TYPES = frozenset(
+    {
+        "frame_request",
+        "call_incoming",
+        "call_ended",
+        "ping",
+        # T25: server chủ động yêu cầu kính nạp bản mới. Sự kiện KHÔNG mang
+        # theo byte firmware nào — chỉ báo "có bản mới", kính tự gọi
+        # `GET /firmware/manifest` rồi `GET /firmware/bin`. Đẩy 1.35 MB qua
+        # kênh SSE sẽ chặn hàng đợi của mọi sự kiện khác trong hàng chục giây,
+        # trong đó có `call_incoming`.
+        "firmware_update",
+        # T25: app đổi Wi-Fi cho kính từ xa. Kính lưu vào NVS rồi tự khởi động
+        # lại — sau đó nó nối vào mạng MỚI, nên sự kiện này luôn là điều cuối
+        # cùng đi qua kênh cũ.
+        "wifi_config",
+        # T24/W3: bật/tắt vòng chụp liên tục trên board.
+        "hazard_watch",
+        # T24/W3: mức nguy hiểm hiện tại. Gửi MỖI KHI ĐỔI MỨC, không phải mỗi
+        # khung hình — hàng đợi mỗi thiết bị chỉ có 8 chỗ, và gửi mỗi khung sẽ
+        # đẩy văng `call_incoming` ra khỏi hàng.
+        #
+        # 🔴 KHÔNG mang byte audio nào. Board tự sinh tông theo mức (W6), cùng
+        # triết lý G8: tông cục bộ rẻ và nhanh hơn audio qua mạng, và ở đây
+        # còn quan trọng hơn — cảnh báo vật cản mà đi qua mạng thì độ trễ mạng
+        # nằm thẳng giữa vật cản và cái chân người dùng.
+        "hazard_level",
+    }
+)
 
 
 class EventHub:
@@ -83,6 +115,44 @@ class EventHub:
 
     def call_ended(self, device_id: str) -> int:
         return self.publish(device_id, {"type": "call_ended"})
+
+    def hazard_watch(self, device_id: str, action: str) -> int:
+        """Bảo board bật/tắt vòng chụp liên tục (T24/W3)."""
+        if action not in {"start", "stop"}:
+            raise ValueError(f"hazard_watch action must be start|stop, got {action!r}")
+        return self.publish(device_id, {"type": "hazard_watch", "action": action})
+
+    def hazard_level(self, device_id: str, level: str) -> int:
+        """Báo mức nguy hiểm mới (T24/W3). Chỉ gọi khi mức THẬT SỰ đổi."""
+        if level not in {"SAFE", "LOW", "MEDIUM", "HIGH"}:
+            raise ValueError(f"unsupported hazard level: {level!r}")
+        return self.publish(device_id, {"type": "hazard_level", "level": level})
+
+    def firmware_update(self, device_id: str, version: str) -> int:
+        """Bảo một kính đi lấy bản firmware mới (T25).
+
+        Chỉ mang tên phiên bản để kính ghi log và so với bản nó đang chạy —
+        `url`/`size`/`sha256` nằm ở `GET /firmware/manifest`, là nguồn sự thật
+        duy nhất. Nhét chúng vào đây nghĩa là có hai nguồn, và chúng sẽ lệch
+        nhau đúng vào lúc phát hành lại một bản đã sửa.
+        """
+        if not version:
+            raise ValueError("version is required")
+        return self.publish(device_id, {"type": "firmware_update", "version": version})
+
+    def wifi_config(self, device_id: str, ssid: str, password: str = "") -> int:
+        """Gửi Wi-Fi mới xuống kính (T25).
+
+        🔴 Mật khẩu đi qua kênh này ở dạng chữ thường. Chấp nhận được vì chặng
+        server→Cloudflare→kính đã là TLS từ T22 (`API_USE_TLS 1`) — nhưng
+        KHÔNG được ghi vào log. Chỗ gọi có trách nhiệm không in `password`.
+        """
+        if not ssid:
+            raise ValueError("ssid is required")
+        return self.publish(
+            device_id,
+            {"type": "wifi_config", "ssid": ssid, "password": password},
+        )
 
     def subscriber_count(self, device_id: str | None = None) -> int:
         with self._lock:

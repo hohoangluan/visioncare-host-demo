@@ -6,6 +6,7 @@ import os
 import re
 import hmac
 import ipaddress
+import queue
 import threading
 import time
 import wave
@@ -13,7 +14,7 @@ from collections.abc import Callable, Iterable, Iterator
 from itertools import chain
 
 from fastapi import FastAPI, File, HTTPException, Request, UploadFile
-from fastapi.responses import Response, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 
 import config
 from handlers import chat
@@ -21,8 +22,14 @@ from models import vlm
 from pipeline import adpcm, intent_local, phrases, router, stt, tts
 from services.action_callbacks import action_callbacks
 from services import capabilities
+from services.device_registry import devices
+from services.firmware import firmware
 from services.frame_buffer import frames
 from services.events_channel import events
+from services import turn_trace
+# T24/W5: `/frame` hỏi worker xem thiết bị này còn được chấm không.
+from services import hazard_worker
+from services.hazard_risk import risk_engine
 from services.incoming_calls import (
     announcement_for,
     incoming_call_audio,
@@ -472,6 +479,33 @@ def preload_models() -> None:
     # `location/get` là poll xuống điện thoại tới 12s — đặt nó trong request là
     # bắt người dùng đứng chờ ngần ấy trước khi nghe được chữ nào.
     chat.start_location_refresher()
+
+    # T24/W4: nạp model nhận diện vật cản, nếu máy này có.
+    #
+    # Nạp ở đây chứ không nạp lười lúc người dùng bật chế độ: nạp ONNX mất
+    # ~0.5s, và lúc người dùng nói "bật cảnh báo vật cản" là lúc họ sắp bước
+    # đi — không phải lúc bắt họ đợi.
+    #
+    # Không có model thì `load_default()` trả None và `hazard_watch` từ chối
+    # bật, nói thẳng ra. Server vẫn chạy bình thường: đây là một tính năng
+    # thiếu, không phải một lỗi khởi động.
+    # Độ sâu là tín hiệu CHÍNH, YOLO là phụ (đặt tên cho vật). Thiếu độ sâu
+    # thì lui về YOLO một mình — nhưng lúc đó hệ MÙ với cột/tường/bậc thềm,
+    # và `depth_detector.load_default()` ghi cảnh báo đúng câu đó vào log.
+    from services.depth_detector import load_default as _load_obstacle_detector
+    from services.hazard_detector import load_default as _load_yolo
+    from services.hazard_risk import risk_engine
+
+    risk_engine.set_detector(_load_obstacle_detector(_load_yolo()))
+    # T25: sổ ghép đôi có xuống đĩa từ 2026-08-25 — đọc lại NGAY ở đây.
+    #
+    # 🔴 Không có dòng này thì mọi lần khởi động lại server, mọi chiếc kính lại
+    # `paired_to: null`, và `emergency_call` trả `404 GLASSES_DEVICE_NOT_LINKED`
+    # cho tới khi có người ghép lại bằng tay — mà không ai được báo.
+    restored = devices.load_pairings()
+    if restored:
+        logger.info("Đọc lại %d cặp ghép đôi từ đĩa", restored)
+
     capabilities.start_pairing_refresh()
     tts._load_tts()
     # Tiêu thụ hết generator: warm-up phải đi đúng đường stream mà /process
@@ -611,6 +645,107 @@ async def receive_device_event(request: Request) -> dict:
     raise HTTPException(status_code=422, detail="Unsupported device event type")
 
 
+class _StallAwareStream:
+    """Đọc một luồng byte, nhưng biết được lúc nào nguồn **đang đứng im**.
+
+    🔴 Vì sao phải có (T21, đo được 2026-08-24):
+
+    `_stream_audio()` gom `AUDIO_PREROLL_SECONDS` giây audio rồi mới gửi byte
+    đầu. Câu mở đầu ("Đã tiếp nhận yêu cầu" / `warm_melodic`) đã **dựng sẵn**,
+    ra khỏi TTS gần như tức thì — nhưng nó chỉ dài ~0.94 s, ngắn hơn mức đệm
+    2.0 s. Nên vòng lặp giữ nó lại rồi **chặn ở `next(stream)` chờ mảnh kế
+    tiếp** — mà mảnh kế tiếp chỉ có sau khi STT + Gemini + TTS chạy xong.
+
+    Đo được: trung vị tiếng đầu **3.68 s**, `emergency_call` **4.82 s** so với
+    ngân sách 300 ms. Người dùng đứng im nghe không thấy gì trong gần 4 giây,
+    trong khi audio để phát cho họ **đã nằm sẵn trong RAM từ mili giây thứ 100**.
+
+    Chờ thêm ở đây còn vô ích về mặt kỹ thuật: mức đệm sinh ra để phòng nguồn
+    chậm hơn tốc độ phát, nhưng khi nguồn **dừng hẳn** thì chờ không gom thêm
+    được byte nào — nó chỉ đổi im lặng lấy im lặng.
+
+    Lớp này chạy một thread đọc nguồn và đẩy vào hàng đợi, nhờ vậy
+    `_stream_audio()` đọc được **có hạn giờ**: hết hạn mà nguồn chưa nhả gì
+    thêm thì nhả luôn chỗ đang giữ.
+
+    Lỗi được chuyển nguyên vẹn sang bên đọc, đúng thứ tự với các mảnh trước nó
+    — nhánh phục hồi "nối câu báo lỗi vào cuối" của `_stream_audio()` phụ
+    thuộc vào điều đó.
+
+    🔴 **KHÔNG đọc trước một mảnh nào.** Thread chỉ gọi `next(source)` sau khi
+    bên đọc xin, đúng một lần mỗi lần xin. Bản đầu tiên của lớp này dùng hàng
+    đợi 64 chỗ và thread tự do rút cạn nguồn — nó làm đỏ ngay hai test đã có
+    sẵn từ trước (`test_stream_pcm_yields_each_chunk_before_synthesizing_the_next`
+    và `test_preroll_does_not_wait_for_the_whole_answer`), và hai test đó đúng:
+    tổng hợp trước phần chưa ai cần là đốt CPU cho audio mà người dùng có thể
+    ngắt lời trước khi nghe tới, và là quay về đúng cái "gửi trọn gói" mà cả
+    kiến trúc stream này sinh ra để tránh.
+    """
+
+    def __init__(self, source: Iterator[bytes]) -> None:
+        self._queue: queue.Queue = queue.Queue()
+        self._want = threading.Semaphore(0)
+        self._pending = False
+        self._stop = threading.Event()
+        # 🔴 Chạy bơm TRONG bản sao Context của luồng request.
+        #
+        # Bơm này là thứ ĐẦU TIÊN advance generator của `synthesize_text_stream`,
+        # nên toàn bộ pipeline (STT → intent → handler) thật ra chạy dưới nó.
+        # Không chép context thì `DEVICE_ID_CTX`/`TURN_ID_CTX` (T01) và trace
+        # G9 (T21) đều rỗng ở mọi chặng.
+        #
+        # Đã dính đúng lỗi này HAI lần trong cùng một phiên: sửa ở
+        # `pipeline/tts.py` xong thì chỗ mất context chỉ dịch sang đây, vì lớp
+        # này chen thêm một thread nữa vào giữa. Triệu chứng giống hệt nhau —
+        # `ttfb_ms` đúng còn `stt_ms`/`intent_ms`/`handler_ms` bằng 0 — nên rất
+        # dễ tưởng lần sửa trước không ăn.
+        context = contextvars.copy_context()
+        self._thread = threading.Thread(
+            target=context.run, args=(self._pump, source), name="preroll-pump", daemon=True
+        )
+        self._thread.start()
+
+    def _pump(self, source: Iterator[bytes]) -> None:
+        while True:
+            # Chờ bên đọc xin. Không xin thì KHÔNG chạm vào nguồn — đó là chỗ
+            # giữ tính lười của cả đường stream.
+            self._want.acquire()
+            if self._stop.is_set():
+                return
+            try:
+                self._queue.put(("chunk", next(source)))
+            except StopIteration:
+                self._queue.put(("done", None))
+                return
+            except BaseException as exc:  # noqa: BLE001 - chuyển nguyên vẹn sang consumer
+                self._queue.put(("error", exc))
+                return
+
+    def get(self, timeout: float | None) -> tuple[str, object]:
+        """`("chunk", bytes)` · `("error", exc)` · `("done", …)` · `("stall", None)`.
+
+        `timeout=None` = chờ mãi (dùng sau khi đã gửi byte đầu — lúc đó không
+        còn gì để vội, và trả về sớm chỉ tạo ra một vòng lặp bận).
+
+        Trả `("stall", …)` **không** huỷ lời xin đang treo: thread vẫn đang
+        chờ nguồn nhả mảnh đó. Lần gọi sau nhặt đúng mảnh ấy, không xin thêm —
+        nếu không thì mỗi lần hết giờ lại kéo thêm một mảnh chưa ai cần.
+        """
+        if not self._pending:
+            self._want.release()
+            self._pending = True
+        try:
+            item = self._queue.get(timeout=timeout)
+        except queue.Empty:
+            return ("stall", None)
+        self._pending = False
+        return item
+
+    def close(self) -> None:
+        self._stop.set()
+        self._want.release()   # gỡ thread khỏi acquire() để nó thoát
+
+
 def _stream_audio(
     speech_pieces: Iterable[str],
     idx: int,
@@ -656,9 +791,35 @@ def _stream_audio(
 
     recovered = False
 
+    # 🔴 Mức đệm có HẠN GIỜ, không chờ vô hạn — xem `_StallAwareStream`.
+    # Không có hạn này thì câu mở đầu đã dựng sẵn nằm chờ trọn STT + Gemini,
+    # và đó chính là 3.68 s trung vị đo được ở `measurements/G1.md`.
+    pump = _StallAwareStream(stream)
+
     while True:
         try:
-            chunk = next(stream)
+            # Còn đang gom đệm thì đọc CÓ HẠN GIỜ; đã gửi byte đầu rồi thì
+            # chờ thoải mái (không còn gì để vội, và trả về sớm chỉ tạo ra
+            # một vòng lặp bận đốt CPU của mọi request khác).
+            kind, payload = pump.get(
+                config.AUDIO_PREROLL_MAX_WAIT_SECONDS if first_chunk_at is None else None
+            )
+            if kind == "stall":
+                if holding:
+                    # Nguồn đứng im mà tay đang có audio: nhả ra. Giữ thêm chỉ
+                    # đổi im lặng lấy im lặng — nguồn dừng thì không gom thêm
+                    # được byte nào nữa.
+                    chunk = b"".join(holding)
+                    holding = []
+                    held = 0
+                    first_chunk_at = time.monotonic() - started
+                    yield chunk
+                continue
+            if kind == "done":
+                break
+            if kind == "error":
+                raise payload  # type: ignore[misc]
+            chunk = payload  # type: ignore[assignment]
         except StopIteration:
             break
         except Exception:  # noqa: BLE001
@@ -681,6 +842,10 @@ def _stream_audio(
             stream = tts.synthesize_text_stream([_ERROR_MESSAGE])
             if encode is not None:
                 stream = encode(stream)
+            # Bơm cũ đã hỏng — thay bằng bơm mới trên luồng câu báo lỗi. Dùng
+            # lại bơm cũ thì nó vẫn đang đọc cái nguồn vừa ném lỗi.
+            pump.close()
+            pump = _StallAwareStream(stream)
             continue
 
         collected.append(chunk)
@@ -703,20 +868,39 @@ def _stream_audio(
             first_chunk_at = time.monotonic() - started
         yield b"".join(holding)
 
+    pump.close()
+
     payload = b"".join(collected)
     # ttfb là con số người dùng cảm nhận được (lúc bắt đầu nghe thấy tiếng);
     # tổng chỉ nói khi nào câu nói kết thúc. audio dài hơn (tổng - ttfb) nghĩa
     # là MCU phát kịp, không bị hụt tiếng giữa chừng. `rate` là byte-rate của
     # đúng định dạng đã gửi (PCM, ADPCM hay MP3 — cả ba đều CBR) nên phép chia
     # này luôn ra giây audio thật, không riêng gì PCM.
+    total_seconds = time.monotonic() - started
+    audio_seconds = len(payload) / rate
     logger.info(
         "request%d | xử lý=%.2fs ttfb=%.2fs tổng=%.2fs audio=%.2fs",
         idx,
         processing,
         first_chunk_at if first_chunk_at is not None else 0.0,
-        time.monotonic() - started,
-        len(payload) / rate,
+        total_seconds,
+        audio_seconds,
     )
+
+    # G9 + G11/T21. `ttfb` là dòng thứ nhất của bảng ngân sách; `release_rate`
+    # là dòng thứ hai và nó đo một thứ KHÁC HẲN: (giây tiếng)/(giây đồng hồ)
+    # từ mảnh đầu tới mảnh cuối. TTFB đạt mà tỉ lệ này dưới 1.30× thì board
+    # đợi nhận xong cả câu mới phát — người dùng vẫn không nghe thấy gì sớm.
+    # Hai dòng phải cùng xanh, nên phải cùng có mặt trong một trace.
+    if first_chunk_at is not None:
+        turn_trace.stage("ttfb", first_chunk_at)
+        streaming_seconds = total_seconds - first_chunk_at
+        if streaming_seconds > 0:
+            turn_trace.annotate(
+                release_rate=round(audio_seconds / streaming_seconds, 2),
+                audio_seconds=round(audio_seconds, 2),
+            )
+    turn_trace.finish()
 
     # Ghi ra file MỞ ĐƯỢC BẰNG PLAYER, không phải nguyên xi thứ đã gửi: luồng
     # gửi đi cố tình không mang header (PCM trần) hoặc mang header độ dài giả
@@ -848,32 +1032,479 @@ def get_incoming_call_audio(request: Request):
     )
 
 
+_ORPHAN_HAZARD_STOPS: dict[str, float] = {}
+_ORPHAN_HAZARD_LOCK = threading.Lock()
+
+
+def _stop_orphan_hazard_stream(device_id: str) -> None:
+    """Bảo board thôi canh khi server không còn chấm cho nó — xem `/frame`."""
+    now = time.monotonic()
+    with _ORPHAN_HAZARD_LOCK:
+        last = _ORPHAN_HAZARD_STOPS.get(device_id, 0.0)
+        if now - last < config.HAZARD_ORPHAN_STOP_COOLDOWN_S:
+            return
+        _ORPHAN_HAZARD_STOPS[device_id] = now
+
+    logger.warning(
+        "frame() device=%s đẩy khung hazard nhưng server không canh thiết bị "
+        "này (mất cờ sau restart?) — gửi hazard_watch stop xuống board",
+        device_id,
+    )
+    events.hazard_watch(device_id, "stop")
+
+
 @app.post("/frame", status_code=204)
 async def receive_frame(request: Request) -> Response:
-    """Receive one JPEG on the independent fire-and-forget frame channel."""
+    """Receive one JPEG on the independent fire-and-forget frame channel.
+
+    T24/W2 mở rộng kênh này thay vì làm giao thức mới. ``X-Stream-Kind``:
+
+    ``turn``    mặc định, hành vi cũ nguyên vẹn — cần ``X-Turn-Id``, vào ring
+                1-3 khung của lượt hỏi-đáp (T17).
+    ``hazard``  luồng canh vật cản — **không** cần ``X-Turn-Id`` (nó không
+                thuộc lượt nào), vào ô riêng giữ đúng một khung mới nhất.
+
+    Vì sao mở rộng chứ không tách endpoint: board mở **một** kết nối keep-alive
+    và gọi lại đúng API đã xanh, không phải bắt tay TLS lại mỗi khung và không
+    phải viết một đường mạng mới trên firmware. Cùng lý do đã khiến F2 bị huỷ.
+    """
     device_id = request.headers.get("x-device-id", "").strip()
     turn_id = request.headers.get("x-turn-id", "").strip()
+    stream_kind = (request.headers.get("x-stream-kind") or "turn").strip().lower()
     if not device_id:
         raise HTTPException(status_code=400, detail="Missing X-Device-Id")
-    if not turn_id:
+    if stream_kind not in {"turn", "hazard"}:
+        raise HTTPException(status_code=400, detail="X-Stream-Kind must be turn|hazard")
+    # Chỉ luồng `turn` mới bắt buộc `X-Turn-Id` — giữ nguyên hợp đồng cũ.
+    if stream_kind == "turn" and not turn_id:
         raise HTTPException(status_code=400, detail="Missing X-Turn-Id")
+
     frame_bytes = await request.body()
     if not frame_bytes:
         raise HTTPException(status_code=400, detail="Empty frame body")
+
+    if stream_kind == "hazard":
+        # 🔴 Board đang chụp mà server KHÔNG chấm: bảo nó dừng.
+        #
+        # Cờ `hazard_watching` nằm trong RAM (`action_flow`), nên restart server
+        # giữa lúc đang canh là mất cờ — trong khi board không biết gì và vẫn
+        # đẩy khung. Nó còn tiếp tục kêu tít ở MỨC CUỐI nhận được, vì
+        # `hazard_level` chỉ gửi khi đổi mức. Người dùng nghe cảnh báo về một
+        # cái cột đã đi qua từ trước lúc restart, và pin thì vẫn cạn.
+        #
+        # Đây là chỗ DUY NHẤT server biết được board còn đang canh, nên chỗ
+        # sửa phải ở đây. Nhịp lại bằng `HAZARD_ORPHAN_STOP_COOLDOWN_S`: hàng
+        # đợi SSE 8 chỗ sẽ đầy trong vài giây nếu lệnh dừng đi theo nhịp khung.
+        if device_id not in hazard_worker.worker.watching():
+            _stop_orphan_hazard_stream(device_id)
+            return Response(status_code=204)
+
+        frames.put_hazard(
+            device_id,
+            frame_bytes,
+            capture_ts=request.headers.get("x-capture-ts"),
+        )
+
+        # T24/W5: chấm NGAY và trả mức trong chính response này.
+        #
+        # Board chờ response rồi mới chụp khung kế, nên mỗi thiết bị chỉ có
+        # đúng MỘT request đang bay — không có ca dồn hàng mà một vòng lặp nền
+        # phải cố công tránh. Đổi lại board giữ được MỘT phiên TLS keep-alive
+        # (mức không cần đi đường SSE nữa), và bắt tay 616–911 ms biến mất
+        # khỏi vòng canh. Xem `services/hazard_worker.py` phần đầu file.
+        scored = hazard_worker.worker.score_frame(device_id, frame_bytes)
+        if scored is None:
+            # Chấm hỏng. 204 = "đã nhận, không có mức nào cho anh" — board giữ
+            # nguyên mức cuối thay vì tự cho là an toàn.
+            return Response(status_code=204)
+
+        level, changed = scored
+        # KHÔNG log mỗi khung: luồng này chạy vài khung mỗi giây và sẽ chôn
+        # vùi mọi dòng log khác trong vài phút. `score_frame()` đã log lúc ĐỔI.
+        return JSONResponse(
+            {"level": level, "changed": changed},
+            headers={"Cache-Control": "no-store"},
+        )
+
+    # F5: board tự khai tầng. Thiếu header -> "low", vì tầng thấp là mặc định
+    # của mọi lần bấm nút và là giả định an toàn: nó chỉ khiến server XIN thêm
+    # một khung, chứ không khiến nó dùng nhầm một khung mờ cho `ocr`.
+    tier = (request.headers.get("x-frame-tier") or "low").strip().lower()
+    if tier not in {"low", "high"}:
+        raise HTTPException(status_code=400, detail="X-Frame-Tier must be low|high")
+
     frames.put(
         device_id,
         turn_id,
         frame_bytes,
         capture_ts=request.headers.get("x-capture-ts"),
+        tier=tier,
     )
     logger.info(
-        "frame() nhận device=%s turn=%s bytes=%d capture_ts=%s",
+        "frame() nhận device=%s turn=%s tier=%s bytes=%d capture_ts=%s",
         device_id,
         turn_id,
+        tier,
         len(frame_bytes),
         request.headers.get("x-capture-ts"),
     )
     return Response(status_code=204)
+
+
+# ─── T25: OTA kéo qua internet + sổ thiết bị ──────────────────────────────
+#
+# Kính KHÔNG cùng mạng với server. Đường phát hành duy nhất chạy được là kính
+# tự hỏi rồi tự kéo, qua đúng tên miền/cổng nó vẫn dùng. Xem
+# `services/firmware.py` và `src/net/ota_manager.h` bên repo firmware.
+
+
+def _device_from_headers(request: Request) -> str:
+    """`X-Device-Id` bắt buộc, và ghi nhận luôn bản firmware kính đang chạy.
+
+    KHÔNG rơi về `config.VISIONCARE_DEVICE_ID` như `/process` — RUNBOOK mục 7
+    cấm đúng chuyện đó, và ở đây còn tệ hơn: rơi nhầm nghĩa là đẩy firmware
+    hoặc Wi-Fi của kính này xuống kính khác.
+    """
+    device_id = request.headers.get("x-device-id", "").strip()
+    if not device_id:
+        raise HTTPException(status_code=400, detail="Missing X-Device-Id")
+    devices.seen(
+        device_id,
+        fw_version=request.headers.get("x-fw-version"),
+        wifi_ssid=request.headers.get("x-wifi-ssid"),
+    )
+    return device_id
+
+
+@app.get("/firmware/manifest")
+def firmware_manifest(request: Request) -> dict:
+    """Kính hỏi: có bản mới cho tôi không?
+
+    Trả `{"update": false, ...}` là câu trả lời BÌNH THƯỜNG, không phải lỗi —
+    đó là câu trả lời của gần như mọi lần hỏi.
+    """
+    device_id = _device_from_headers(request)
+    current = (request.headers.get("x-fw-version") or "").strip()
+    manifest = firmware.manifest_for(current or None)
+    logger.info(
+        "firmware_manifest() device=%s dang_chay=%s -> %s",
+        device_id,
+        current or "(không khai báo)",
+        manifest.get("version") if manifest.get("update") else manifest.get("reason"),
+    )
+    return manifest
+
+
+@app.get("/firmware/bin")
+def firmware_binary(request: Request, version: str = ""):
+    """Trả ảnh firmware nhị phân cho kính ghi thẳng vào slot OTA.
+
+    `version` là BẮT BUỘC dù manifest vừa nói bản nào: không có nó thì một
+    kính đang tải dở sẽ nhận nửa bản cũ nửa bản mới khi bản phát hành đổi
+    giữa chừng — và ảnh ghép đó vẫn ghi "thành công", chỉ chết lúc khởi động.
+    """
+    _device_from_headers(request)
+    build = firmware.get(version) if version else firmware.latest()
+    if build is None:
+        raise HTTPException(status_code=404, detail="No such firmware version")
+    return Response(
+        content=build.path.read_bytes(),
+        media_type="application/octet-stream",
+        headers={
+            "Content-Length": str(build.size),
+            # Kính đối chiếu digest TRƯỚC `Update.end()`. Gửi kèm ở header nữa
+            # để `curl -D -` kiểm được mà không phải mở manifest.
+            "X-Firmware-Sha256": build.sha256,
+            "X-Firmware-Version": build.version,
+            "Cache-Control": "no-store",
+        },
+    )
+
+
+@app.post("/internal/firmware/push")
+async def push_firmware_update(request: Request) -> dict:
+    """Bảo một (hoặc mọi) kính đi lấy bản mới ngay, không đợi vòng hỏi 6 giờ.
+
+    Thân: `{"device_id": "glasses-01"}` — thiếu `device_id` thì đẩy cho MỌI
+    kính đang chạy bản khác bản phát hành.
+    """
+    _require_internal_callback(request)
+    envelope = await request.json() if await request.body() else {}
+    if not isinstance(envelope, dict):
+        raise HTTPException(status_code=422, detail="Body must be an object")
+
+    build = firmware.latest()
+    if build is None:
+        raise HTTPException(status_code=409, detail="No firmware released")
+
+    target = str(envelope.get("device_id") or "").strip()
+    if target:
+        candidates = [target]
+    else:
+        candidates = [
+            item["device_id"]
+            for item in devices.snapshot()
+            if item["fw_version"] != build.version
+        ]
+
+    pushed: dict[str, int] = {}
+    for device_id in candidates:
+        pushed[device_id] = events.firmware_update(device_id, build.version)
+        devices.mark_update_pushed(device_id, build.version)
+    return {"status": "ok", "data": {"version": build.version, "pushed": pushed}}
+
+
+@app.post("/internal/device/wifi")
+async def push_wifi_config(request: Request) -> dict:
+    """App đổi Wi-Fi cho kính từ xa, qua kênh `/events`.
+
+    Đường này chỉ chạy khi kính CÒN mạng cũ. Kính đã mất mạng thì lối duy nhất
+    là SoftAP `VisionCare-Setup` ngay trên kính — xem
+    `src/net/wifi_provision.h`.
+    """
+    _require_internal_callback(request)
+    envelope = await request.json()
+    if not isinstance(envelope, dict):
+        raise HTTPException(status_code=422, detail="Body must be an object")
+
+    device_id = str(envelope.get("device_id") or "").strip()
+    ssid = str(envelope.get("ssid") or "").strip()
+    if not device_id or not ssid:
+        raise HTTPException(status_code=422, detail="device_id and ssid are required")
+
+    # 🔴 KHÔNG log `password`. Xem ghi chú ở `EventHub.wifi_config()`.
+    subscribers = events.wifi_config(device_id, ssid, str(envelope.get("password") or ""))
+    logger.info("push_wifi_config() device=%s ssid=%s subscribers=%d", device_id, ssid, subscribers)
+    if subscribers == 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Glasses are not holding an /events channel; use the VisionCare-Setup hotspot",
+        )
+    return {"status": "ok", "data": {"subscribers": subscribers}}
+
+
+def _require_app_token(request: Request) -> None:
+    """Cửa cho **app điện thoại**, khác cửa `/internal/*` của server app.
+
+    `_require_internal_callback()` đòi loopback vì phía gọi nó là server app
+    8001 chạy cùng máy. App điện thoại thì không — nó ở ngoài internet, đi vào
+    qua Cloudflare tunnel. Bắt loopback ở đây nghĩa là tính năng không tồn tại.
+
+    🔴 Đánh đổi đã biết, ghi ra để phiên sau không tưởng là sơ suất: cửa này
+    chỉ có MỘT lớp là bearer token dùng chung. Token lộ = ai đó đổi được Wi-Fi
+    và ép nạp firmware cho kính của người khác. Ba thứ bù lại, và cả ba đều
+    phải còn nguyên:
+      1. chặng vào đã là TLS (Cloudflare tunnel), token không đi bản rõ;
+      2. mọi lệnh đều khoá theo `X-Device-Id` — không có lệnh "cho tất cả";
+      3. firmware kính nạp về vẫn phải khớp `sha256` của server.
+    Muốn chặt hơn thì đổi sang token theo từng thiết bị — xem
+    `docs/tasks/T25-ota-provisioning.md` mục 7 câu 1.
+    """
+    expected = config.DEVICE_CONTROL_TOKEN
+    if not expected:
+        raise HTTPException(status_code=503, detail="Device control token is not configured")
+    supplied = request.headers.get("authorization", "")
+    if not hmac.compare_digest(supplied, f"Bearer {expected}"):
+        raise HTTPException(status_code=401, detail="Invalid device control token")
+
+
+@app.get("/internal/traces")
+def list_traces(request: Request, limit: int = 200) -> dict:
+    """G9/T21: 200 lượt gần nhất, để `tools/measure_budget.py` dựng bảng G1.
+
+    Loopback-only: trace mang `device_id` và nội dung intent của từng lượt —
+    đủ để dựng lại người dùng vừa làm gì, cả ngày.
+
+    Không có endpoint tương ứng cho app: đây là dữ liệu chẩn đoán của người
+    vận hành, không phải của người đeo kính.
+    """
+    _require_internal_callback(request)
+    return {
+        "status": "ok",
+        "data": {"traces": [trace.as_dict() for trace in turn_trace.traces.recent(limit)]},
+    }
+
+
+@app.get("/internal/hazard")
+def hazard_status(request: Request) -> dict:
+    """T24/W5: vòng canh có THẬT SỰ chạy không, trả lời bằng số.
+
+    🔴 Vì sao cần một endpoint riêng cho việc này: luồng canh **cố ý không log
+    mỗi khung** (vài khung mỗi giây sẽ chôn vùi mọi dòng log khác trong vài
+    phút), và `hazard_level` chỉ ghi log khi ĐỔI mức. Nên "board đang đẩy khung
+    đều đặn, cảnh vẫn SAFE" và "board không đẩy khung nào" nhìn từ log là **y
+    hệt nhau** — cả hai đều im lặng.
+
+    Đó chính xác là cách T24 hỏng mà không ai biết: `fps=0.00 (0 khung)` trên
+    board, và server thì không có gì để nói.
+
+    Loopback-only như `/internal/traces`: đây là dữ liệu vận hành.
+    """
+    _require_internal_callback(request)
+    worker = hazard_worker.worker
+    watching = sorted(worker.watching())
+    return {
+        "status": "ok",
+        "data": {
+            "watching": watching,
+            "scored": worker.scored,
+            "errors": worker.errors,
+            "levels": {
+                device_id: risk_engine.current_level(device_id)
+                for device_id in watching
+            },
+            "frames_waiting": {
+                device_id: frames.latest_hazard(
+                    device_id, max_age_ms=config.HAZARD_FRAME_MAX_AGE_MS
+                ) is not None
+                for device_id in watching
+            },
+            # 🔴 Số này phân biệt hai ca nhìn giống hệt nhau từ ngoài:
+            #   0 -> lệnh `hazard_watch start` KHÔNG đi đâu cả (board chưa mở
+            #        `/events`, hoặc kênh của nó đã chết) — lỗi ở đường xuống;
+            #   1 -> lệnh đã ra khỏi server, board nhận rồi mà không chụp —
+            #        lỗi ở phía firmware.
+            # Thiếu nó thì mọi lần gỡ lỗi đều bắt đầu bằng một cuộc đoán.
+            "sse_subscribers": {
+                device_id: events.subscriber_count(device_id)
+                for device_id in watching
+            },
+            "sse_queued": {
+                device_id: events.queued_count(device_id)
+                for device_id in watching
+            },
+        },
+    }
+
+
+@app.get("/devices")
+def list_devices() -> dict:
+    """Danh sách kính đã từng gọi tới — app dùng để hiện trạng thái ghép đôi.
+
+    Mỗi bản ghi có `wifi_ssid`: người dùng phải THẤY kính đang đăng ký mạng
+    nào thì mới biết phải cấp mạng nào cho nó. Không có dòng đó thì họ chỉ
+    thấy "kính không nối được" và chỉ còn cách đoán.
+    """
+    return {"status": "ok", "data": {"devices": devices.snapshot()}}
+
+
+@app.get("/device/status")
+def device_status(request: Request) -> dict:
+    """Trạng thái MỘT kính, kèm câu trả lời "có bản firmware mới không".
+
+    Gộp hai thứ app cần vào một lần gọi: màn hình "Kính của tôi" hiện đủ số
+    máy, mạng đang dùng, bản đang chạy, và nút cập nhật — một vòng mạng.
+    """
+    _require_app_token(request)
+    device_id = request.query_params.get("device_id", "").strip()
+    if not device_id:
+        raise HTTPException(status_code=400, detail="Missing device_id")
+
+    record = devices.get(device_id)
+    build = firmware.latest()
+    return {
+        "status": "ok",
+        "data": {
+            "device_id": device_id,
+            "serial": record.serial if record else device_id.removeprefix("glasses-"),
+            # `known: false` = kính này chưa gọi tới server lần nào. KHÁC hẳn
+            # `online: false` (đã từng gọi, giờ im) — app phải nói hai câu khác
+            # nhau, vì cách xử lý của người dùng khác nhau: một bên là "kiểm
+            # lại số máy", một bên là "kiểm lại mạng của kính".
+            "known": record is not None,
+            "online": devices.is_online(device_id),
+            "wifi_ssid": record.wifi_ssid if record else None,
+            "fw_version": record.fw_version if record else None,
+            "paired_to": record.paired_to if record else None,
+            "seconds_since_seen": (
+                round(time.monotonic() - record.last_seen, 1) if record else None
+            ),
+            "latest_version": build.version if build else None,
+            "update_available": bool(
+                build is not None and record is not None and record.fw_version != build.version
+            ),
+            # Kính đang giữ kênh /events hay không — quyết định đổi Wi-Fi từ xa
+            # có chạy được không. Không mở kênh thì app phải chỉ người dùng
+            # sang hotspot VisionCare-Setup.
+            "downlink_open": events.subscriber_count(device_id) > 0,
+        },
+    }
+
+
+@app.post("/device/wifi")
+async def app_set_wifi(request: Request) -> dict:
+    """App đổi Wi-Fi cho kính từ xa. Cùng đường với `/internal/device/wifi`."""
+    _require_app_token(request)
+    envelope = await request.json()
+    if not isinstance(envelope, dict):
+        raise HTTPException(status_code=422, detail="Body must be an object")
+    device_id = str(envelope.get("device_id") or "").strip()
+    ssid = str(envelope.get("ssid") or "").strip()
+    if not device_id or not ssid:
+        raise HTTPException(status_code=422, detail="device_id and ssid are required")
+
+    # 🔴 KHÔNG log `password`.
+    subscribers = events.wifi_config(device_id, ssid, str(envelope.get("password") or ""))
+    logger.info("app_set_wifi() device=%s ssid=%s subscribers=%d", device_id, ssid, subscribers)
+    if subscribers == 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Glasses are not holding an /events channel; use the VisionCare-Setup hotspot",
+        )
+    return {"status": "ok", "data": {"subscribers": subscribers}}
+
+
+@app.post("/device/firmware-update")
+async def app_request_firmware_update(request: Request) -> dict:
+    """App bấm "cập nhật ngay" — không đợi vòng hỏi 6 giờ của kính."""
+    _require_app_token(request)
+    envelope = await request.json() if await request.body() else {}
+    device_id = str((envelope or {}).get("device_id") or "").strip()
+    if not device_id:
+        raise HTTPException(status_code=422, detail="device_id is required")
+
+    build = firmware.latest()
+    if build is None:
+        raise HTTPException(status_code=409, detail="No firmware released")
+
+    subscribers = events.firmware_update(device_id, build.version)
+    if subscribers == 0:
+        raise HTTPException(
+            status_code=409,
+            detail="Glasses are not holding an /events channel; it will update on its next poll",
+        )
+    devices.mark_update_pushed(device_id, build.version)
+    return {"status": "ok", "data": {"version": build.version, "subscribers": subscribers}}
+
+
+@app.post("/internal/device/pair")
+async def pair_device(request: Request) -> dict:
+    """Ghép một kính (theo số máy hoặc `device_id`) với một điện thoại."""
+    _require_internal_callback(request)
+    envelope = await request.json()
+    if not isinstance(envelope, dict):
+        raise HTTPException(status_code=422, detail="Body must be an object")
+
+    phone = str(envelope.get("phone") or "").strip()
+    device_id = str(envelope.get("device_id") or "").strip()
+    serial = str(envelope.get("serial") or "").strip()
+    if not phone or not (device_id or serial):
+        raise HTTPException(
+            status_code=422, detail="phone and one of device_id/serial are required"
+        )
+
+    if not device_id:
+        # Người dùng gõ số in trên vỏ kính ("01"). Kính chưa từng gọi tới thì
+        # chưa có bản ghi nào để tra — dựng `device_id` theo đúng quy ước của
+        # firmware để ghép trước vẫn chạy được.
+        record = devices.resolve_by_serial(serial)
+        device_id = record.device_id if record else f"glasses-{serial}"
+
+    record = devices.pair(device_id, phone)
+    return {
+        "status": "ok",
+        "data": {"device_id": record.device_id, "serial": record.serial, "paired_to": phone},
+    }
 
 
 @app.get("/events")
@@ -882,6 +1513,11 @@ def stream_events(request: Request) -> StreamingResponse:
     device_id = request.headers.get("x-device-id", "").strip()
     if not device_id:
         raise HTTPException(status_code=400, detail="Missing X-Device-Id")
+    devices.seen(
+        device_id,
+        fw_version=request.headers.get("x-fw-version"),
+        wifi_ssid=request.headers.get("x-wifi-ssid"),
+    )
     return StreamingResponse(
         events.subscribe(device_id),
         media_type="text/event-stream",
@@ -917,6 +1553,24 @@ def process(
     pipeline.
     """
     device_id, turn_id = _resolve_device_turn(request)
+    # Nút khẩn cấp (bấm 3 lần trên gọng kính). Đi chung `/process` chứ KHÔNG
+    # có endpoint riêng, và đó là lựa chọn có chủ đích: `/process` đã có sẵn
+    # idempotency theo `X-Turn-Id`, trace G9, và đường trả audio stream mà
+    # board đã biết đọc. Một endpoint mới phải dựng lại cả bốn thứ đó — bốn
+    # chỗ nữa để sai, trên đúng con đường không được phép sai.
+    #
+    # Idempotency đặc biệt quan trọng ở đây: nút bấm dồn dập rất dễ sinh hai
+    # request cho cùng một sự kiện, và hai cuộc gọi cấp cứu là một sự cố thật.
+    panic = request.headers.get("x-trigger", "").strip().lower() == "emergency"
+    # T25: mỗi lượt bấm nút cũng là một lần điểm danh — server biết kính nào
+    # đang chạy bản firmware nào và đang ở mạng nào mà KHÔNG tốn thêm một
+    # vòng hỏi nào. Đặt sau `_resolve_device_turn()` để dùng đúng `device_id`
+    # đã qua chính sách thiếu-header của T01.
+    devices.seen(
+        device_id,
+        fw_version=request.headers.get("x-fw-version"),
+        wifi_ssid=request.headers.get("x-wifi-ssid"),
+    )
     device_token = DEVICE_ID_CTX.set(device_id)
     turn_token = TURN_ID_CTX.set(turn_id)
     logger.info(
@@ -973,6 +1627,14 @@ def process(
             )
 
         started = time.monotonic()
+        # G9/T21: mở trace cho lượt này. Mọi chặng bên dưới (STT, intent,
+        # handler trong `pipeline/router.py`; TTFB ở `_stream_audio`) ghi vào
+        # đây, và `finish()` in đúng MỘT dòng khoá bằng `turn_id`.
+        #
+        # Mở SAU cửa idempotency: một lượt gửi lặp trả lại audio đã có sẵn thì
+        # không chạy chặng nào cả, và ghi nó vào bảng p50 sẽ kéo mọi con số
+        # xuống một cách vô nghĩa.
+        turn_trace.begin(device_id, turn_id)
         idx = _next_debug_index()
         response_format = config.RESPONSE_FORMAT
         if response_format == "auto":
@@ -981,8 +1643,21 @@ def process(
         encode, byte_rate = plan.encode, plan.byte_rate
 
         try:
-            if audio is None:
-                pieces: Iterable[str] = [_MISSING_AUDIO_MESSAGE]
+            if panic:
+                # Bấm nút 3 lần. Đặt TRƯỚC nhánh `audio is None` vì lượt panic
+                # CỐ Ý không mang audio — rơi xuống dưới thì người đang cần cấp
+                # cứu nghe được đúng câu "không nhận được tiếng nói".
+                #
+                # Ảnh vẫn đọc nếu board kịp gửi: `emergency_call` không dùng
+                # ảnh, nhưng phía tiếp nhận cuộc gọi có thể dùng, và bỏ đi thì
+                # không lấy lại được.
+                image_bytes = image.file.read() if image is not None else None
+                pieces: Iterable[str] = chain(
+                    [_RECEIVED_MESSAGE + "\n"],
+                    router.resolve_panic(image_bytes),
+                )
+            elif audio is None:
+                pieces = [_MISSING_AUDIO_MESSAGE]
             else:
                 # Ảnh không bắt buộc: `resolve_speech` nhận `None` và chỉ than
                 # phiền khi intent thật sự cần ảnh.

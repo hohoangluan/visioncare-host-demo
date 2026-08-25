@@ -1,3 +1,4 @@
+import contextvars
 import io
 import re
 import threading
@@ -298,7 +299,24 @@ def synthesize_text_stream(text_chunks: Iterable[str]) -> Iterator[bytes]:
         finally:
             queue.put(done)
 
-    thread = threading.Thread(target=worker, name="tts-pipeline", daemon=True)
+    # 🔴 Chạy worker TRONG bản sao Context của luồng gọi.
+    #
+    # `threading.Thread` KHÔNG kế thừa `ContextVar`. Mà `text_chunks` ở đây là
+    # generator của `router.resolve_speech()` — nó được KÉO trong chính thread
+    # này, nên toàn bộ pipeline (STT, phân loại ý định, handler) thật ra chạy
+    # ở đây chứ không ở luồng request. Không sao chép context thì:
+    #
+    #   - `DEVICE_ID_CTX`/`TURN_ID_CTX` (T01) đọc ra rỗng giữa pipeline;
+    #   - trace G9 (T21) mất sạch `stt`/`intent`/`handler` — đã đo được đúng
+    #     triệu chứng đó: mọi lượt báo `stt_ms=0 intent_ms=0 handler_ms=0`
+    #     trong khi `ttfb_ms` vẫn đúng, vì `ttfb` được ghi ở luồng request.
+    #
+    # `copy_context()` chép MỘT LẦN ở đây, nên worker thấy đúng thiết bị và
+    # đúng lượt của request sinh ra nó.
+    context = contextvars.copy_context()
+    thread = threading.Thread(
+        target=context.run, args=(worker,), name="tts-pipeline", daemon=True
+    )
     thread.start()
 
     try:

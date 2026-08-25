@@ -552,11 +552,17 @@ def detect_with_params(
         if resolved == Intent.OCR and _has_live_ocr_cache():
             pass
         elif resolved is not None and resolved in _PARAM_FREE:
+            # `chat` param-free nhưng vẫn kèm được MỘT cờ tuỳ chọn: có bỏ vòng
+            # grounding hay không. Nó không phải tham số handler cần để chạy
+            # đúng — thiếu cờ thì chat chạy y như hôm nay — nên nó KHÔNG kéo
+            # `chat` ra khỏi `_PARAM_FREE`, và embedding thì đã tính rồi.
+            extra = intent_local.chat_web_params(local) if resolved == Intent.CHAT else {}
             logger.info(
-                "phân loại cục bộ: %s (conf=%.2f biên=%.2f)",
-                resolved, local.confidence, local.margin,
+                "phân loại cục bộ: %s%s (conf=%.2f biên=%.2f)",
+                resolved, f" {extra}" if extra else "",
+                local.confidence, local.margin,
             )
-            return resolved, {}
+            return resolved, extra
 
         # Nhãn cần tham số, nhưng có nhãn mà tham số của nó là bài PHÂN LOẠI
         # chứ không phải trích chuỗi (`chat` hai cờ, `music_volume` hướng,

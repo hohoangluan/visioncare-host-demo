@@ -41,10 +41,24 @@ task file tương ứng **trước khi** code.
 ### 2.1 `POST /process` — headers (T01/F1)
 
 ```
-X-Device-Id   BẮT BUỘC   string, ổn định theo board
+X-Device-Id   BẮT BUỘC   "glasses-" + số máy (T25/O4 — CHỐT 2026-08-24)
 X-Turn-Id     BẮT BUỘC*  uuid v4, MỚI mỗi lần bấm nút
 X-Capture-Ts  nên có     🔴 KHÔNG PHẢI epoch ms — xem ghi chú dưới
+X-Fw-Version  nên có     bản firmware board đang chạy (T25/O6)
+X-Wifi-Ssid   nên có     tên mạng board đang dùng (T25/O6)
 ```
+
+**`X-Device-Id` = `"glasses-" + số máy`, số máy nằm trong NVS của board**
+(`src/net/device_identity.h`, mặc định `"01"` ghi ở lần khởi động đầu sau khi
+nạp). Đây là câu trả lời cho câu hỏi #15 mục 7 — trước đó là `"glasses-" + MAC`.
+Người dùng **đọc số đó ra miệng** để ghép kính với điện thoại, mà MAC thì
+không đọc được và không chép sang board thay thế được.
+
+Hai header cuối đi kèm **mỗi** request từ kính (`/process`, `/frame`,
+`/events`, `/firmware/*`) và được ghi vào `services/device_registry.py`. Nhờ
+vậy server biết cả đàn kính đang chạy bản gì và đang ở mạng nào **mà không
+tốn thêm một vòng hỏi nào**. `X-Wifi-Ssid` là thứ app hiện lại cho người dùng
+biết phải cấp mạng nào cho kính.
 
 Header **chứ không phải form field**: server đọc được trước khi body upload xong.
 
@@ -83,15 +97,32 @@ dùng `X-Turn-Id` (ổn định xuyên suốt một lượt) làm khoá ghép.
 ### 2.2 `POST /frame` — ảnh, fire-and-forget (T17/F3)
 
 ```
-X-Device-Id   BẮT BUỘC
-X-Turn-Id     BẮT BUỘC   (ghép với lượt audio tương ứng)
-X-Capture-Ts  nên có
+X-Device-Id    BẮT BUỘC
+X-Stream-Kind  "turn" (mặc định, hành vi cũ) | "hazard"      ← T24/W2
+X-Turn-Id      BẮT BUỘC khi Stream-Kind=turn; KHÔNG cần khi =hazard
+X-Capture-Ts   nên có
 body: JPEG
 → 204, KHÔNG trả gì cho board đợi
 ```
 
 Handler đọc qua **một API duy nhất**: `frames.latest(device_id, max_age_ms)`.
 Handler **không được biết** frame tới từ đâu.
+
+**T24/W2 — hai luồng, hai ô nhớ tách hẳn:**
+
+| | `turn` | `hazard` |
+|---|---|---|
+| Chứa ở | ring 1-3 khung/thiết bị | **một** khung mới nhất/thiết bị |
+| Đọc bằng | `frames.latest(..., turn_id=…)` | `frames.latest_hazard(...)` |
+| Nhịp | một khung/lượt bấm nút | vài khung mỗi giây |
+
+Tách vì luồng `hazard` sẽ đẩy văng khung của lượt hỏi-đáp khỏi ring 3 chỗ
+trước khi handler kịp đọc, và vì khung `hazard` **không có `turn_id`** nên
+nhét chung sẽ phá `test_frame_matched_by_turn_id`.
+
+Mở rộng header chứ không tách endpoint mới: board mở **một** kết nối và gọi
+lại đúng API đã xanh, không phải viết đường mạng mới trên firmware — cùng lý
+do đã khiến **F2 bị huỷ**.
 
 Giá trị đang chạy: `FRAME_MAX_AGE_MS=6000`, `FRAME_WAIT_MS=800` — **PROVISIONAL**.
 Con số 800 ms cũ không thể làm freshness vì board chụp lúc bấm nút còn người
@@ -104,9 +135,20 @@ X-Device-Id   BẮT BUỘC
 → text/event-stream, board mở và giữ
 heartbeat mỗi 15 giây (PROVISIONAL, chờ đo tunnel 10 phút)
 event types: frame_request | call_incoming | call_ended | ping
+            | firmware_update | wifi_config          (T25)
+            | hazard_watch    | hazard_level         (T24)
 ```
 
-**Một kênh, hai mục đích.** Không đẻ ra kênh thứ hai.
+Client phía firmware: `src/net/event_stream.{h,cpp}` (T18/F6, viết 2026-08-24).
+Tự nối lại khi đứt, giãn dần 1s → 2s → 4s … trần 30 s.
+
+🔴 **Không sự kiện nào mang byte audio hay byte firmware.** Hàng đợi mỗi thiết
+bị chỉ có 8 chỗ; đẩy 1.35 MB firmware qua đây sẽ chặn hàng đợi hàng chục giây
+và đẩy văng `call_incoming`. `firmware_update` chỉ mang tên phiên bản, board
+tự gọi `GET /firmware/manifest`. `hazard_level` chỉ mang mức, board tự sinh
+tông (T24/W6).
+
+**Một kênh, mọi mục đích.** Không đẻ ra kênh thứ hai.
 Kênh theo device; queue tối đa 8 sự kiện/subscriber, đầy thì bỏ cũ giữ mới.
 Không có subscriber thì `publish()` trả 0 và không giữ sự kiện nào.
 
@@ -443,15 +485,26 @@ phải tự đếm và so, không copy con số 22 này.)*
 
 ⚠️ **Mọi số dưới đây phải đo lại trên bản `API_USE_TLS 1`** (quyết định #7).
 
-| Đường | Mục tiêu |
-|---|---|
-| `emergency_call` ack | **< 300 ms** |
-| `cancel` / `repeat` / stop | **< 300 ms** |
-| trả lời pending tất định | **< 400 ms** |
-| `contact_call` ack | **< 600 ms** |
-| `hazard` | < 800 ms |
-| `chat` | < 1.0 s |
-| `ocr` / `space` / `find` / `money` | < 1.2 s · 🔴 `ocr` **chưa chốt riêng** |
+🔴 **ĐÃ ĐO 2026-08-24 — 15/16 dòng VƯỢT ngân sách.** Bảng "Mục tiêu" dưới đây
+vẫn là mục tiêu, nhưng nó **không phải mô tả hệ thống đang chạy**. Số thật:
+`docs/tasks/measurements/G1.md`. Bảng ngân sách trong code:
+`tests/test_latency_budget.py::BUDGET_MS` (nguồn sự thật, phủ mọi intent).
+
+| Đường | Mục tiêu | Đo được (localhost) |
+|---|---|---|
+| `emergency_call` ack | **< 300 ms** | 🔴 **4820 ms** |
+| `cancel` / `repeat` / stop | **< 300 ms** | `nav_stop` 150 ms ✅ · `music_stop` 5220 ms 🔴 |
+| trả lời pending tất định | **< 400 ms** | chưa tách được khỏi trace |
+| `contact_call` ack | **< 600 ms** | 🔴 6440 ms |
+| `hazard` | < 800 ms | 🔴 3440 ms |
+| `chat` | < 1.0 s | 🔴 1740 ms |
+| `ocr` / `space` / `find` / `money` | < 1.2 s · 🔴 `ocr` **chưa chốt riêng** | 🔴 7740 / 2840 / 2560 / 3930 ms |
+| `hazard_watch_start/stop` (T24) | < 300 ms | chưa đo |
+
+🔴 **Nguyên nhân gốc, và nó là mâu thuẫn thiết kế chứ không phải hồi quy:**
+`config.AUDIO_PREROLL_SECONDS = 2.0` nghĩa là server **cố ý** gom 2000 ms
+audio trước khi gửi byte đầu ⟹ **mọi dòng ≤ 1200 ms là không thể đạt**, kể cả
+khi xử lý mất 0 ms. Phải chốt bằng người — xem mục 7 câu #16.
 
 **Dòng thứ hai, đo khác hẳn (T02/G11):**
 
@@ -463,6 +516,85 @@ TTFB đạt mà tỉ lệ này không đạt thì người dùng **vẫn không 
 sinh xong cả câu.
 
 **Mọi lời gọi ngoài có deadline.** Quá deadline → câu dựng sẵn, không treo im lặng.
+
+---
+
+## 6b. Nạp firmware & cấu hình mạng (T25)
+
+### 6b.1 Hai đường OTA — dùng cho hai hoàn cảnh khác hẳn
+
+| | ArduinoOTA (ĐẨY) | HTTP pull (KÉO) |
+|---|---|---|
+| Ai bắt đầu | máy nạp | **chính kính** |
+| Mạng | phải **cùng LAN** (mDNS) | khác mạng vẫn chạy |
+| Dùng khi | đang ngồi trong phòng lab | **phát hành thật** |
+| Lệnh | `espota.exe -i <ip> -p 3232 -a <pass> -f <bin>` | sự kiện SSE `firmware_update`, hoặc vòng hỏi 6 giờ |
+
+🔴 **Partition phải là `min_spiffs`.** `huge_app` là *"3MB **No OTA**/1MB
+SPIFFS"* — không có slot OTA thì `ArduinoOTA.begin()` chạy nhưng mọi phiên nạp
+chết ở `OTA_BEGIN_ERROR`. Bản dựng 1369419 B (69%) vừa slot 1966080 B.
+
+### 6b.2 Hợp đồng OTA kéo
+
+```
+GET /firmware/manifest      X-Device-Id (bắt buộc) · X-Fw-Version
+  → {"update":true,"version":"…","url":"/firmware/bin?version=…",
+     "size":1369419,"sha256":"<64 hex>"}
+  → {"update":false,"reason":"NO_RELEASE"|"UP_TO_DATE"}
+
+GET /firmware/bin?version=  X-Device-Id (bắt buộc)
+  → thân nhị phân + X-Firmware-Sha256, X-Firmware-Version
+```
+
+Ba nguyên tắc, mỗi cái trả giá cho một cách hỏng:
+
+1. **Fail-closed.** Không có `latest.json` trong `FIRMWARE_DIR` thì **không
+   phát hành gì** — file `.bin` lạc vào thư mục KHÔNG tự thành bản phát hành.
+2. **`sha256` bắt buộc**, board đối chiếu **TRƯỚC `Update.end()`**. Ảnh đứt
+   giữa chừng vẫn "ghi thành công", chỉ chết lúc khởi động lại — mà lúc đó
+   kính đã ở trong túi người dùng.
+3. **So phiên bản bằng `!=`, không phải `>`.** `FW_VERSION` là chuỗi ngày-tháng
+   người viết đặt, không phải semver. `!=` cho phép **rollback** — thứ cần
+   nhất khi một bản phát hành hỏng.
+
+Phát hành: `python tools/publish_firmware.py --bin <path> --version <tên>`.
+
+### 6b.3 Cấu hình mạng cho kính — hai đường
+
+| Kính **còn** mạng | Kính **mất** mạng |
+|---|---|
+| `POST /device/wifi` → SSE `wifi_config` → NVS → reboot | kính tự bật SoftAP **`VisionCare-Setup`**, điện thoại vào `http://192.168.4.1/` |
+
+Kính mất mạng thì đường thứ nhất trả **409**, không phải 200 — trả 200 là nói
+dối: sự kiện rơi vào hư không và người dùng ngồi đợi một chiếc kính không bao
+giờ đổi mạng.
+
+Ba endpoint **trên chính kính** (cổng 80, có ở cả SoftAP lẫn lúc online):
+
+```
+GET  /wifi/status  → serial, device_id, fw_version, ssid, from_nvs,
+                     ap_mode, connected, ip, rssi, ota_hostname, ota_protected
+GET  /wifi/scan    → danh sách AP 2.4 GHz kính THẤY (không phải điện thoại thấy)
+POST /wifi/config  → ssid + password (query HOẶC thân JSON) → NVS → reboot
+```
+
+### 6b.4 Endpoint cho app điện thoại
+
+```
+GET  /devices                  danh sách kính (serial, fw_version, wifi_ssid, online)
+GET  /device/status            một kính + "có bản mới không" + "kênh mở không"
+POST /device/wifi              đổi Wi-Fi từ xa
+POST /device/firmware-update   "cập nhật ngay"
+```
+
+Cả bốn dùng `Authorization: Bearer <DEVICE_CONTROL_TOKEN>`, **không** đòi
+loopback — app đi từ internet vào qua tunnel. 🔴 Đánh đổi đã biết: một lớp
+bảo vệ duy nhất là token dùng chung. Xem `_require_app_token()` trong `app.py`
+và câu #19 mục 7.
+
+Bản song song `/internal/firmware/push`, `/internal/device/wifi`,
+`/internal/device/pair`, `/internal/traces` giữ **loopback + Bearer** cho
+server app 8001 và cho người vận hành.
 
 ---
 
@@ -484,7 +616,13 @@ sinh xong cả câu.
 | 12 | **Cửa sổ idempotency 60 s?** Cùng con số này còn dùng làm hạn "bỏ hoang" cho một lượt đang chạy dở (mục 4.4) — chốt một lần cho cả hai nghĩa, hay tách riêng? | T01 |
 | 13 | **Ngưỡng so khớp danh bạ 88/70/margin 8** — cần danh bạ thật để đo lại | T08 |
 | 14 | 🔴 **`X-Turn-Id` thiếu có nên có cờ `REQUIRE_TURN_ID`** (như `REQUIRE_DEVICE_ID`) để tới lúc nào đó ép buộc, hay mãi mãi chỉ cảnh báo? Hiện KHÔNG enforce — mọi board đã có sẽ gửi thiếu header này cho tới khi lên firmware mới. | T01 · T04 (barge-in phụ thuộc) |
-| 15 | **`device_id` firmware lấy từ MAC WiFi hay NVS?** Đang dùng MAC WiFi làm TẠM (ổn định, không cần cấu hình) — không đổi được lúc ghép kính↔tài khoản nếu sau này cần. | T01 |
+| ~~15~~ | ~~**`device_id` firmware lấy từ MAC WiFi hay NVS?**~~ ✅ **CHỐT 2026-08-24: NVS.** `X-Device-Id = "glasses-" + số máy`, mặc định `"01"`. Xem mục 2.1 và `T25-ota-provisioning.md`. | ~~T01~~ |
+| 16 | 🔴 **`AUDIO_PREROLL_SECONDS = 2.0` hay bảng ngân sách G1 — bỏ cái nào?** Hai thứ không cùng đúng được (mục 6). Ba lựa chọn: hạ preroll và chịu rủi ro board hụt tiếng · nới bảng G1 cho khớp thực tế · preroll **theo intent** (`emergency_call` gần 0, `ocr` giữ 2.0 s). | T21 · T15 nghiệm thu |
+| 17 | 🔴 **Đoạn nhạc đệm `warm_melodic` có giữ không?** Nó vi phạm **G8** (board đã kêu `cueSent()` ở 0 ms → bíp hai lần, RUNBOOK mục 7 cấm) nhưng đang gánh việc chống hụt tiếng. Phải **nghe trên board thật** mới chốt. | T21 |
+| 18 | 🔴 **Lấy model nhận diện vật cản ở đâu?** Không có file YOLO11n ONNX thì `hazard_watch` **luôn từ chối bật** (fail-closed, cố ý). | T24 |
+| 19 | **`OTA_PASSWORD` và `WIFI_SETUP_AP_PASSWORD` viết cứng trong `app_config.h`** ⟹ mọi kính xuất xưởng dùng chung một mật khẩu. Sinh theo số máy? | T25 |
+| 20 | **Số máy do ai cấp khi sản xuất nhiều chiếc?** Mọi bản dựng đều mang `DEVICE_SERIAL_DEFAULT="01"`, nên kính thứ hai nạp cùng bản firmware sẽ **trùng `device_id`**. | T25 |
+| 21 | **Sổ ghép đôi (`paired_to`) lưu ở đâu?** Hiện trong RAM, mất khi server khởi động lại. Postgres của server app, hay file bên server kính? | T25 |
 
 ---
 
