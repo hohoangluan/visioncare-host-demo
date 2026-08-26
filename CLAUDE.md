@@ -120,9 +120,53 @@ curl.exe -s http://192.168.2.88/diag/log       # serial monitor qua mạng
 
 # 🔴 VIỆC CÒN GÁC — đọc trước khi lập kế hoạch
 
-*Cập nhật 2026-08-26 (phiên tối). Board `glasses-01` chạy `2026.08.26-ota25`
-trên mạng **`Redmi Note 14`** (`172.20.51.254`). Board đã **lên PCB, không cắm
-COM thường xuyên** — mọi việc đi qua mạng.*
+*Cập nhật 2026-08-26 (phiên tối). Board `glasses-01` chạy **`2026.08.26-demo1`**
+trên mạng **`Redmi Note 14`** (`172.20.51.254`, pass `29102006` — viết cứng
+trong `.ino`, xem mục bảo mật). Board đã **lên PCB**.*
+
+## 🔴 BẢN DEMO `demo1` — hai chức năng bị TẮT có chủ đích
+
+Người dùng chốt 2026-08-26: một bản duy nhất, ưu tiên các luồng chính, bỏ
+phần ăn RAM không cần.
+
+| công tắc trong `app_config.h` | hệ quả |
+|---|---|
+| `ENABLE_DOWNLINK 0` | kính **không báo cuộc gọi đến** (T19); đổi Wi-Fi từ app **qua máy chủ trả 409** |
+| `ENABLE_HAZARD_WATCH 0` | hai task `hazard_cap`/`hazard_tone` không dựng (đã là code chết từ khi `hazard` về LLM) |
+
+**Vẫn chạy:** bấm nút → mô tả / đọc chữ / vật cản / tìm đồ / đọc tiền / nhạc /
+chỉ đường / gọi điện / khẩn cấp 3 nhịp, đổi Wi-Fi qua **BLE + SoftAP + LAN
+`/wifi/config`**, OTA qua `POST /ota/pull` và vòng hỏi 6 giờ.
+
+**Vì sao phải tắt kênh xuống** — phiên TLS "ấm" và nó **loại trừ nhau tuyệt
+đối**. Đo trên board, từng dòng một:
+
+```
+[MEM] moc dau: khoi lien 110580 B
+  TCP/TLS OK (768 ms)
+[MEM] khoi lien 63476 B (mat 47104 B) sau "sau openTls"
+[DOWN] Poll hong — thu lai sau 4000 ms
+[DOWN] Poll hong — thu lai sau 8000 ms
+```
+
+Sau khi audio cấp phát, khối liền lớn nhất còn **31 732 B**; một phiên TLS cần
+**45 056 B**. Giữ phiên ấm ⟹ poll không bao giờ cấp phát nổi.
+
+🔴 **Một cách đã thử và KHÔNG ăn gì:** hạ `TLS_KEEPALIVE_MS` 60 → 20 s để
+nhường khe cho poll. `loop()` mở lại phiên ấm ngay khi nó hết hạn, nên phiên
+ấm gần như luôn được giữ. Đừng thử lại cách đó.
+
+Kết quả đo được sau khi tắt:
+
+| | ota25 | demo1 |
+|---|---|---|
+| trước audio — trống | 80 584 B | 95 012 B |
+| trước audio — **liền** | 38 900 B | **53 236 B** |
+| sau audio — trống | 49 232 B | 63 660 B |
+
+53 236 B > 45 056 B ⟹ phiên ấm vào thoải mái.
+
+## 🔴 Ba điều phải biết trước khi chạm vào board
 
 ## 🔴 Ba điều phải biết trước khi chạm vào board
 
