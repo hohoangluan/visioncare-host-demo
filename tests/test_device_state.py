@@ -249,20 +249,19 @@ def test_navigating_still_allows_hazard():
     with (
         patch("pipeline.stt.transcribe", return_value="phía trước có gì không"),
         patch("pipeline.intent.detect_with_params", return_value=(Intent.HAZARD, {})),
-        # 🔴 `hazard` KHÔNG còn đi qua Gemini (đổi 2026-08-25) — nó bật chế độ
-        # canh. Điều test này khoá vẫn nguyên: đang chỉ đường thì câu hỏi về
-        # vật cản KHÔNG bị nuốt thành "dừng chỉ đường".
-        #
-        # Không patch `hazard_watch.start`: `router._HANDLERS` giữ THAM CHIẾU
-        # trực tiếp tới hàm từ lúc nhập module, nên patch thuộc tính module
-        # không ăn. Dùng luôn câu thật — máy test không có model nhận diện nên
-        # nó rơi vào nhánh fail-closed, và đó vẫn là bằng chứng câu đã tới đúng
-        # handler.
+        # `hazard` quay về LLM 2026-08-26 nên patch `handle` được như cũ.
+        # Điều test này khoá không đổi qua cả hai lần đảo quyết định: đang chỉ
+        # đường thì câu hỏi về vật cản KHÔNG bị nuốt thành "dừng chỉ đường".
+        patch(
+            "handlers.describe_hazard.handle",
+            return_value=iter(["Lối đi phía trước thoáng."]),
+        ) as mock_hazard,
         patch("handlers.nav_stop.handle") as mock_stop,
     ):
         out = "".join(router.resolve_speech(b"img", b"dummy"))
 
-    assert "cảnh báo vật cản" in out, "câu hỏi vật cản bị nuốt mất"
+    mock_hazard.assert_called_once()
+    assert "thoáng" in out, f"câu hỏi vật cản bị nuốt mất: {out!r}"
     mock_stop.assert_not_called()
 
 

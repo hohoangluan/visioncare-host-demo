@@ -277,22 +277,43 @@ def test_handler_refuses_and_does_not_register_without_a_model():
         action_flow.reset_state()
 
 
-def test_hazard_needs_no_image_in_either_gate():
+def test_hazard_is_in_both_image_gates_or_neither():
     """🔴 HAI danh sách, và chúng đã lệch nhau một lần trên board thật.
 
     `router._IMAGE_REQUIRED_INTENTS` quyết định có ĐI LẤY ảnh không;
     `image_quality._READS_IMAGE` quyết định có TỪ CHỐI khi thiếu ảnh không.
-    Gỡ `hazard` khỏi cái đầu mà quên cái sau thì lượt thật trả về "Không nhận
-    được ảnh từ kính" thay vì bật chế độ canh — đo được 2026-08-25:
+    Sửa một cái mà quên cái kia thì lượt thật trả về "Không nhận được ảnh từ
+    kính" thay vì chạy — đo được 2026-08-25:
 
         intent=hazard nhưng không có ảnh -> từ chối ảnh
 
     Test này khoá CẢ HAI trong một chỗ, để lần sau không sửa được một nửa.
+    Nó cố ý KHÔNG khoá chiều nào đúng — quyết định đó đã đảo hai lần
+    (2026-08-25 gỡ ra, 2026-08-26 thêm lại) và có thể đảo nữa. Thứ không được
+    phép đổi là hai danh sách phải khớp nhau.
     """
     from pipeline import image_quality
     from pipeline.router import _IMAGE_REQUIRED_INTENTS
     from schemas import Intent
 
-    assert Intent.HAZARD not in _IMAGE_REQUIRED_INTENTS
-    assert Intent.HAZARD not in image_quality._READS_IMAGE
-    assert image_quality.reject_reason(Intent.HAZARD, None) is None
+    assert (Intent.HAZARD in _IMAGE_REQUIRED_INTENTS) == (
+        Intent.HAZARD in image_quality._READS_IMAGE
+    ), (
+        "hai cổng ảnh lệch nhau về `hazard` — lượt thật sẽ trả 'Không nhận "
+        "được ảnh từ kính' thay vì chạy"
+    )
+
+
+def test_hazard_currently_reads_the_image():
+    """Chiều HIỆN TẠI của quyết định trên, tách riêng khỏi bất biến hai-danh-sách.
+
+    Tách ra vì hai thứ này hỏng vì hai lý do khác nhau: test trên đỏ khi ai đó
+    sửa nửa vời, test này đỏ khi ai đó đảo quyết định. Gộp lại thì một lần đỏ
+    không nói được là cái nào.
+    """
+    from pipeline import image_quality
+    from pipeline.router import _IMAGE_REQUIRED_INTENTS
+    from schemas import Intent
+
+    assert Intent.HAZARD in _IMAGE_REQUIRED_INTENTS
+    assert image_quality.reject_reason(Intent.HAZARD, None) == image_quality._NO_IMAGE

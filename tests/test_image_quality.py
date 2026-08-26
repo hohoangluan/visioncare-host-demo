@@ -115,12 +115,41 @@ _NO_IMAGE_INTENTS = [
     # "bật cảnh báo vật cản" vì tấm ảnh tối là chặn đúng lúc người dùng cần
     # bật nó nhất.
     Intent.HAZARD_WATCH_START, Intent.HAZARD_WATCH_STOP,
-    # 🔴 ĐỔI 2026-08-25: `hazard` cũng vào đây. Nó không còn trả lời một câu về
-    # một khung hình — nó BẬT chế độ canh (xem `pipeline/router.py`). Trước khi
-    # gỡ, lượt thật trên board trả về "Không nhận được ảnh từ kính" thay vì bật
-    # chế độ: `intent=hazard nhưng không có ảnh -> từ chối ảnh`.
-    Intent.HAZARD,
+    # 🔴 `Intent.HAZARD` đã RỜI danh sách này lại (2026-08-26). Nó quay về là
+    # một câu hỏi về một khung hình, trả lời qua LLM, nên nó lại đọc ảnh và
+    # lại chịu cổng chất lượng ảnh. Xem `test_hazard_reads_the_image_again`.
 ]
+
+
+def test_hazard_reads_the_image_again():
+    """Chiều ngược của quyết định 2026-08-26 — `hazard` lại là intent đọc ảnh.
+
+    Khoá tường minh vì đây là ô đã lật hai lần:
+      2026-08-25  hazard bật chế độ canh -> KHÔNG đọc ảnh
+      2026-08-26  hazard quay về LLM     -> ĐỌC ảnh
+    """
+    assert Intent.HAZARD in image_quality._READS_IMAGE
+    assert image_quality.reject_reason(Intent.HAZARD, None) == image_quality._NO_IMAGE
+
+
+def test_hazard_dark_image_is_rejected():
+    """Ảnh tối thì `hazard` bị chặn — và đó là câu trả lời ĐÚNG bây giờ.
+
+    Khác hẳn thời chế độ canh: lúc đó chặn vì ảnh tối là chặn đúng lúc người
+    dùng cần bật nhất. Giờ `hazard` mô tả MỘT khung hình, và mô tả một khung
+    tối thui bằng LLM là bịa ra một lối đi không ai nhìn thấy.
+    """
+    assert image_quality.reject_reason(Intent.HAZARD, _flat(2)) == image_quality._TOO_DARK
+
+
+def test_hazard_flat_image_still_passes():
+    """Nhưng ảnh PHẲNG thì vẫn cho đi — `hazard` không nằm trong `_NEEDS_SHARPNESS`.
+
+    request410 (bức tường trắng, sharpness 0.92) từng bị từ chối bằng câu "giữ
+    chắc tay" — chẩn đoán sai. Với `hazard` thì "trước mặt là một bề mặt
+    phẳng" là câu trả lời hữu ích, không phải lỗi.
+    """
+    assert image_quality.reject_reason(Intent.HAZARD, _flat(127)) is None
 
 
 @pytest.mark.parametrize("intent", _NO_IMAGE_INTENTS)

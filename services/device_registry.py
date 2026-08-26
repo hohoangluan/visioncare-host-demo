@@ -133,6 +133,31 @@ class DeviceRegistry:
             return False
         return (time.monotonic() - record.last_seen) <= self._online_window
 
+    def current_device_id(self) -> str | None:
+        """Chiếc kính vừa gọi tới gần nhất và còn trong cửa sổ online.
+
+        Dành cho những luồng chạy NGOÀI request — vòng làm mới vị trí ở nền là
+        ca duy nhất hiện nay. Ở trong request thì đã có `app.DEVICE_ID_CTX`,
+        chính xác hơn hẳn, và người gọi phải ưu tiên nó.
+
+        🔴 Đòi CÒN ONLINE, không chỉ "có trong sổ". Kính tắt từ hôm qua vẫn
+        nằm trong sổ cho tới lần restart; trả về nó nghĩa là vòng nền cứ 240 s
+        lại đi hỏi app hộ một thiết bị không tồn tại, và mỗi lần là một lượt
+        đánh thức điện thoại vô ích.
+
+        Trả `None` khi chưa kính nào gọi tới, để người gọi rơi tiếp xuống bậc
+        dưới thay vì nhận một chuỗi bịa.
+        """
+        now = time.monotonic()
+        with self._lock:
+            fresh = [
+                record for record in self._devices.values()
+                if (now - record.last_seen) <= self._online_window
+            ]
+        if not fresh:
+            return None
+        return max(fresh, key=lambda record: record.last_seen).device_id
+
     def pair(self, device_id: str, phone: str) -> DeviceRecord:
         """Ghép kính với một điện thoại. Kính chưa từng gọi tới cũng ghép được.
 

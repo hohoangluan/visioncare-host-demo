@@ -111,14 +111,15 @@ def test_hazard_ignores_command_text(monkeypatch):
 
 
 def test_hazard_ignores_focus(monkeypatch):
-    """🔴 ĐỔI 2026-08-25: `hazard` không còn dựng prompt nào để mà bỏ qua slot.
+    """T16/E6: `hazard` là chức năng AN TOÀN — prompt CỐ ĐỊNH, `focus` bị bỏ qua.
 
-    Test cũ khoá "hazard dùng đúng `_PROMPT`, không chèn `focus` vào". Giờ
-    `hazard` bật chế độ canh liên tục, nên `focus` bị bỏ qua theo một cách
-    mạnh hơn hẳn: không có prompt nào cả, và `describe_hazard` không còn ai
-    gọi tới.
+    Thu hẹp khung nhìn theo đúng thứ người dùng vừa hỏi làm model giảm báo cáo
+    thứ họ KHÔNG hỏi — có thể chính là vật sắp làm họ vấp.
 
-    Điều đáng khoá còn lại: slot `focus` KHÔNG được làm hỏng lượt đó.
+    🔴 Đã đảo hai lần, ghi cả hai chiều để lần sau đọc không tưởng là lỗi:
+      2026-08-25  hazard -> bật chế độ canh, test này khoá "describe_hazard
+                  KHÔNG bị gọi"
+      2026-08-26  hazard -> quay về LLM, test này khoá lại điều ban đầu
     """
     calls = _capture(monkeypatch, describe_hazard)
     with (
@@ -128,8 +129,53 @@ def test_hazard_ignores_focus(monkeypatch):
     ):
         out = "".join(router.resolve_speech(IMG, b"audio"))
 
-    assert calls == [], "describe_hazard vẫn bị gọi — định tuyến chưa đổi"
-    assert "cảnh báo vật cản" in out, f"slot focus làm hỏng lượt: {out!r}"
+    assert len(calls) == 1, f"hazard không tới describe_hazard: {calls!r}"
+    assert calls[0]["prompt"] == describe_hazard._PROMPT
+    assert "BÊN TRÁI" not in calls[0]["prompt"], "slot focus đã lọt vào prompt an toàn"
+    assert (
+        hashlib.sha256(calls[0]["prompt"].encode()).hexdigest() == _HAZARD_BASELINE_SHA256
+    ), "prompt hazard đã đổi — nếu cố ý thì cập nhật _HAZARD_BASELINE_SHA256"
+    assert out == "mô tả"
+
+
+def test_hazard_reaches_the_llm_through_the_router(monkeypatch):
+    """Bản thân việc định tuyến, tách khỏi chuyện `focus`.
+
+    Có test riêng vì hai thứ hỏng độc lập nhau: bảng `_HANDLERS` trỏ sai thì
+    test này đỏ, còn prompt bị chèn slot thì test trên đỏ. Gộp lại thì một lần
+    đỏ không nói được là cái nào.
+    """
+    calls = _capture(monkeypatch, describe_hazard)
+    with (
+        patch("pipeline.stt.transcribe", return_value="phía trước có an toàn không"),
+        patch("pipeline.intent.detect_with_params", return_value=("hazard", {})),
+        patch("pipeline.image_quality.reject_reason", return_value=None),
+    ):
+        out = "".join(router.resolve_speech(IMG, b"audio"))
+
+    assert len(calls) == 1
+    assert calls[0]["image"] == IMG, "hazard phải nhận ĐÚNG ảnh của lượt đó"
+    assert out == "mô tả"
+
+
+def test_hazard_no_longer_starts_the_watch_mode(monkeypatch):
+    """Chiều ngược lại của quyết định 2026-08-26: KHÔNG được bật chế độ canh.
+
+    Khoá riêng vì đây là thứ một lần đảo quyết định nữa sẽ phá âm thầm: nếu
+    `_HANDLERS[Intent.HAZARD]` bị trỏ lại về `hazard_watch.start`, test trên
+    đỏ ngay, nhưng nếu ai đó gọi CẢ HAI thì chỉ test này bắt được.
+    """
+    _capture(monkeypatch, describe_hazard)
+    with (
+        patch("pipeline.stt.transcribe", return_value="phía trước có an toàn không"),
+        patch("pipeline.intent.detect_with_params", return_value=("hazard", {})),
+        patch("pipeline.image_quality.reject_reason", return_value=None),
+    ):
+        list(router.resolve_speech(IMG, b"audio"))
+
+    assert not action_flow.device_state(None).get("hazard_watching"), (
+        "hazard đã bật chế độ canh — quyết định 2026-08-26 nói nó phải gọi LLM"
+    )
 
 
 def test_hazard_ignores_history(monkeypatch):

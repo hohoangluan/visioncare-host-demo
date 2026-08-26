@@ -15,8 +15,9 @@ from handlers import (
 from handlers.waiting import with_progress_notice
 from services import capabilities
 from services import turn_trace
-# F5: `ocr` xin ảnh tầng cao qua kênh downlink T18.
-from services.events_channel import events
+# 🔴 `events` (kênh xuống) KHÔNG còn được import ở đây từ 2026-08-26. Người
+# gọi duy nhất là F5 — `ocr` xin ảnh tầng cao — và F5 đã xoá. Router không
+# đẩy gì xuống board nữa; nó chỉ trả lời qua stream audio của chính lượt đó.
 from services.frame_buffer import frames
 from services.incoming_calls import incoming_calls
 from handlers import incoming_call
@@ -29,21 +30,20 @@ _HANDLERS = {
     Intent.FIND: find_object,
     Intent.MONEY: read_money,
     Intent.SPACE: describe_space,
-    # 🔴 ĐỔI 2026-08-25, theo quyết định của người dùng: `hazard` KHÔNG còn đi
-    # qua Gemini nữa. "Phía trước có gì nguy hiểm không" giờ **bật chế độ canh
-    # liên tục** thay vì trả lời một câu.
+    # 🔴 ĐỔI 2026-08-26, theo quyết định của người dùng: `hazard` QUAY VỀ bản
+    # gốc — một câu hỏi về một khung hình, trả lời bằng LLM
+    # (`handlers/describe_hazard.py`), y như trước 2026-08-25.
     #
-    # Vì sao đổi: câu trả lời một lần chỉ đúng cho khoảnh khắc bấm nút, mà vật
-    # cản thì gặp trong lúc ĐANG ĐI. Hỏi một câu rồi bước tiếp năm bước là câu
-    # trả lời đã hết hạn. Chế độ canh trả lời đúng câu người dùng thật sự đang
-    # hỏi: "từ giờ có gì chắn đường thì báo tôi".
+    # Đây là lần đảo THỨ HAI của cùng một quyết định, nên ghi cả hai chiều:
+    #   2026-08-25  hazard -> hazard_watch.start  (bật chế độ canh liên tục)
+    #   2026-08-26  hazard -> describe_hazard     (quay lại LLM, bản gốc)
     #
-    # `handlers/describe_hazard.py` vì thế KHÔNG còn ai gọi tới. File giữ lại
-    # (chưa xoá) — xem ghi chú đầu file đó.
-    #
-    # Khoá cũ trong CLAUDE.md/RUNBOOK mục 7 ("describe_hazard.py chỉ được thêm
-    # comment") đã được người dùng gỡ tường minh cùng ngày.
-    Intent.HAZARD: hazard_watch.start,
+    # Chế độ canh liên tục (T24) không bị xoá, chỉ GỠ KHỎI LUỒNG: các file
+    # `handlers/hazard_watch.py`, `services/hazard_worker.py`,
+    # `services/hazard_risk.py` và test của chúng vẫn còn và vẫn xanh — chỉ
+    # không đường nào từ câu nói của người dùng tới được chúng nữa. Giữ lại
+    # đúng vì quyết định này đã đảo một lần rồi.
+    Intent.HAZARD: describe_hazard,
     Intent.CHAT: chat,
     Intent.NAV_START: nav_start,
     Intent.NAV_STOP: nav_stop,
@@ -62,14 +62,17 @@ _HANDLERS = {
     Intent.HAZARD_WATCH_STOP: hazard_watch.stop,
 }
 
-# 🔴 `Intent.HAZARD` đã RỜI danh sách này (2026-08-25). Nó không còn là một câu
-# hỏi về một khung hình — nó bật một chế độ. Bắt nó chờ ảnh nghĩa là: cộng
-# nguyên một vòng chụp+truyền vào việc bật cờ, VÀ tệ hơn — cổng chất lượng ảnh
-# (`pipeline/image_quality.py`) có quyền chặn, tức "ảnh mờ quá" sẽ ngăn người
-# dùng bật được chế độ cảnh báo vật cản. Đúng lúc trời tối/rung tay là lúc
-# người ta cần bật nhất.
+# 🔴 `Intent.HAZARD` đã QUAY LẠI danh sách này (2026-08-26), sau khi rời nó
+# đúng một ngày. Nó lại là một câu hỏi về một khung hình, nên nó lại cần ảnh
+# và lại chịu cổng chất lượng ảnh (`pipeline/image_quality.py`).
+#
+# Danh sách này và `image_quality._READS_IMAGE` là HAI nơi khác nhau và đã
+# lệch nhau đúng một lần — gỡ ở đây xong quên gỡ ở kia, và lượt thật trên
+# board trả về "Không nhận được ảnh từ kính" thay vì chạy. Đổi một cái thì
+# PHẢI đổi cái kia; `tests/test_pipeline_e2e.py` có assert riêng cho việc hai
+# danh sách này khớp nhau.
 _IMAGE_REQUIRED_INTENTS = frozenset(
-    {Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE}
+    {Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE, Intent.HAZARD}
 )
 
 # Chỉ còn HAI câu, và cả hai đều nói về một trạng thái LỖI của hệ thống, không
@@ -971,43 +974,17 @@ def _resolve(
             wait_ms=config.FRAME_WAIT_MS,
         )
 
-    # ── F5: `ocr` xin ảnh TẦNG CAO ───────────────────────────────────────
+    # 🔴 F5 (hai tầng ảnh + vòng xin ảnh tầng cao cho `ocr`) đã XOÁ 2026-08-26.
     #
-    # SPEC mục 19/F5: mọi lần bấm nút gửi tầng thấp (VGA) ngay, không hỏi; chỉ
-    # `ocr` mới trả giá một vòng hỏi-đáp để lấy tầng cao (HD). Lý do là chi phí
-    # nằm ở phía kính: gửi HD cho MỌI lượt nghĩa là `space`/`find`/`money` —
-    # ba intent mà server resize xuống 308-640 trước khi nhìn — cũng phải chờ
-    # đẩy gấp bốn số byte.
+    # Board giờ gửi đúng MỘT ảnh XGA 1024×768 cho mọi lần bấm nút, và `ocr`
+    # dùng luôn ảnh đó. Đổi lại `ocr` mất hẳn một vòng hỏi-đáp: trước đây nó
+    # phải đẩy `frame_request` xuống board rồi chờ tới 2500 ms
+    # (`FRAME_HIGH_TIER_WAIT_MS`) cho ảnh HD đi lên. Giá phải trả nằm ở phía
+    # kính — mọi lượt đẩy 43 KB thay vì 21 KB — và nằm SONG SONG với lúc người
+    # dùng đang nói, nên chưa đo được là nó có lộ ra hay không.
     #
-    # Chỉ `ocr` cần độ nét thật, và `ocr` vốn là intent người dùng chấp nhận
-    # chờ lâu hơn (T15/H1 cố ý làm nó chậm hơn để đọc đúng).
-    #
-    # 🔴 KHÔNG fail nếu tầng cao không tới: rơi về khung tầng thấp đang có còn
-    # hơn là không trả lời gì. Cổng chất lượng ảnh bên dưới sẽ tự nói "ảnh mờ
-    # quá" nếu khung đó thật sự không đọc được.
-    if intent_name == Intent.OCR and not ocr_text_only and turn_id:
-        have = frames.latest_frame(device_key, config.FRAME_MAX_AGE_MS, turn_id=turn_id)
-        if have is None or have.tier != "high":
-            requested = events.request_frame(device_key, turn_id, tier="high")
-            if requested:
-                logger.info(
-                    "F5: xin ảnh tầng cao cho ocr (device=%s turn=%s)",
-                    device_key, turn_id,
-                )
-                high = frames.latest(
-                    device_key,
-                    config.FRAME_MAX_AGE_MS,
-                    turn_id=turn_id,
-                    wait_ms=config.FRAME_HIGH_TIER_WAIT_MS,
-                    tier="high",
-                )
-                if high is not None:
-                    image = high
-                else:
-                    logger.warning(
-                        "F5: ảnh tầng cao không tới trong %.0f ms — dùng tầng thấp",
-                        config.FRAME_HIGH_TIER_WAIT_MS,
-                    )
+    # Xem `docs/superpowers/specs/2026-08-26-bo-sse-poll-downlink-design.md`
+    # phần 2 trước khi thêm lại bất cứ tầng ảnh nào.
     reject_reason = None if ocr_text_only else image_quality.reject_reason(intent_name, image)
     if reject_reason is not None:
         logger.info(

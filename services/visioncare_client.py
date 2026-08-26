@@ -91,7 +91,32 @@ def call_service_api(endpoint_path: str, payload: dict) -> dict:
             ctx_device_id = DEVICE_ID_CTX.get()
         except ImportError:
             ctx_device_id = None
-        request_payload["device_id"] = ctx_device_id or config.VISIONCARE_DEVICE_ID
+
+        # Bậc GIỮA, thêm 2026-08-26. ContextVar rỗng không chỉ xảy ra trong
+        # test: vòng làm mới vị trí ở nền (`handlers/chat._location_refresh_
+        # loop`) chạy ngoài mọi request, nên nó rơi thẳng xuống hằng số
+        # `VISIONCARE_DEVICE_ID` — một chuỗi giữ chỗ (`"glasses-123"`) chưa
+        # từng ứng với chiếc kính nào đang chạy. Đo được trên host thật:
+        #
+        #     POST /api/v1/service/location/get  ->  404
+        #     GLASSES_DEVICE_NOT_LINKED  {"device_id": "glasses-123"}
+        #
+        # trong khi cùng lúc `glasses-01` hỏi thẳng thì có toạ độ dưới 2 giây.
+        # Tức vòng nền chưa bao giờ làm được việc của nó, và hỏng lặng: mọi
+        # lỗi vị trí đều được nuốt thành `None` theo đúng thiết kế.
+        #
+        # Sổ thiết bị biết chiếc kính nào vừa bấm nút, nên nó là câu trả lời
+        # đúng cho "kính nào đang dùng" khi không có request nào đang chạy.
+        # Hằng số vẫn giữ, nhưng lùi xuống bậc cuối.
+        registry_device_id = None
+        if not ctx_device_id:
+            from services.device_registry import devices
+
+            registry_device_id = devices.current_device_id()
+
+        request_payload["device_id"] = (
+            ctx_device_id or registry_device_id or config.VISIONCARE_DEVICE_ID
+        )
     if "request_id" not in request_payload:
         request_payload["request_id"] = str(uuid.uuid4())
 

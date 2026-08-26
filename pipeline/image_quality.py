@@ -47,17 +47,16 @@ STATIC_SPEECH: tuple[str, ...] = (_TOO_DARK, _TOO_BRIGHT, _TOO_BLURRY, _NO_IMAGE
 # thoại) vẫn nhận tham số `image` nhưng bỏ qua nó, nên chất lượng ảnh không đổi
 # được một chữ nào trong câu trả lời — chặn chúng chỉ là từ chối oan.
 #
-# 🔴 `Intent.HAZARD` đã RỜI danh sách này (2026-08-25) cùng lúc với
-# `router._IMAGE_REQUIRED_INTENTS`. Hai danh sách này là HAI nơi khác nhau và
-# đã lệch nhau đúng một lần: gỡ ở router xong, cổng này vẫn chặn, và lượt thật
-# trên board trả về *"Không nhận được ảnh từ kính"* thay vì bật chế độ canh —
-# `intent=hazard nhưng không có ảnh -> từ chối ảnh`.
+# 🔴 `Intent.HAZARD` đã QUAY LẠI danh sách này (2026-08-26) cùng lúc với
+# `router._IMAGE_REQUIRED_INTENTS`. Nó lại là một câu hỏi về một khung hình,
+# trả lời qua LLM (`handlers/describe_hazard.py`) — nên nó lại đọc ảnh.
 #
-# `hazard` không còn đọc ảnh nào cả: nó bật một chế độ. Bắt nó có ảnh nghĩa là
-# "ảnh mờ quá / trời tối quá" sẽ NGĂN người dùng bật cảnh báo vật cản — đúng
-# lúc tối và rung tay là lúc người ta cần bật nhất.
+# Hai danh sách này là HAI nơi khác nhau và đã lệch nhau đúng một lần: gỡ ở
+# router xong, cổng này vẫn chặn, và lượt thật trên board trả về *"Không nhận
+# được ảnh từ kính"* thay vì chạy. Đổi một cái thì PHẢI đổi cái kia —
+# `tests/test_pipeline_e2e.py` có assert riêng cho việc hai danh sách khớp.
 _READS_IMAGE = frozenset({
-    Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE,
+    Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE, Intent.HAZARD,
 })
 
 # Chỉ `money` mới chặn thêm theo độ nét, và đây là ngưỡng phòng xa chứ không

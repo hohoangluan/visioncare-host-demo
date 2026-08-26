@@ -30,6 +30,14 @@ def test_call_service_api_success(monkeypatch):
     `MockTransport` thì không đường nào ra được mạng.
     """
     import httpx
+    from services.device_registry import devices
+
+    # Hằng số `VISIONCARE_DEVICE_ID` là bậc CUỐI, sau `DEVICE_ID_CTX` rồi tới
+    # sổ thiết bị (xem `tests/test_background_device_id.py`). Sổ là biến toàn
+    # cục và test khác trong suite có gọi `devices.seen()`, nên phải nói rõ
+    # "chưa kính nào gọi tới" thì khẳng định bên dưới mới có nghĩa — chứ không
+    # phải xanh nhờ thứ tự chạy.
+    devices.clear()
 
     captured_req = {}
 
@@ -556,4 +564,15 @@ def test_no_result_at_slo_keeps_phone_action_running(monkeypatch):
 
     out = "".join(music.handle_stop(b"", "", {}))
 
-    assert "vẫn đang thực hiện" in out.lower()
+    # 🔴 SỬA 2026-08-26. Bản trước khoá đúng chữ "vẫn đang thực hiện" của câu
+    # "Điện thoại vẫn đang thực hiện, tôi sẽ cập nhật khi có kết quả." — tức
+    # nó khoá lại một LỜI HỨA mà hệ thống không có đường thực hiện:
+    # `action_flow` không import `events`, và `reconcile_late()` chỉ cập nhật
+    # trạng thái phiên chứ không nói gì ra loa. Xem
+    # `tests/test_action_wait_window.py` cho đầy đủ số đo.
+    #
+    # Điều test này THẬT SỰ phải giữ vẫn nguyên: hết giờ thì action KHÔNG bị
+    # huỷ, và người dùng phải nghe một câu nói rõ là chưa có kết quả — chứ
+    # không phải im lặng.
+    assert action_flow.TIMEOUT_LINE in out
+    assert "sẽ cập nhật" not in out.lower()

@@ -369,23 +369,35 @@ REQUIRE_DEVICE_ID = get("REQUIRE_DEVICE_ID", "0") == "1"
 FRAME_MAX_AGE_MS = float(get("FRAME_MAX_AGE_MS", "6000"))
 FRAME_WAIT_MS = float(get("FRAME_WAIT_MS", "800"))
 
-# F5 (SPEC mục 19): bao lâu server chờ ảnh TẦNG CAO sau khi đã xin.
-#
-# Vòng này gồm: sự kiện SSE xuống board (~vài chục ms) + board chụp loạt 3
-# khung HD (~250 ms) + bắt tay TLS cho socket /frame (623–650 ms đo được trên
-# `Thanh_Cuong_FI`, 2026-08-25) + đẩy ~21 KB lên.
-#
-# 2500 ms để cả bốn chặng đó vừa, kể cả khi mạng chậm hơn lúc đo. Quá hạn thì
-# KHÔNG hỏng lượt — router rơi về khung tầng thấp đang có. `ocr` là intent
-# người dùng chấp nhận chờ lâu hơn (T15/H1 cố ý làm nó chậm để đọc đúng), nên
-# 2.5 s là đánh đổi đúng chiều ở đây và SAI ở mọi intent khác — đó chính là lý
-# do F5 chỉ xin tầng cao cho `ocr`.
-FRAME_HIGH_TIER_WAIT_MS = float(get("FRAME_HIGH_TIER_WAIT_MS", "2500"))
+# 🔴 `FRAME_HIGH_TIER_WAIT_MS` đã XOÁ 2026-08-26 cùng toàn bộ F5 (hai tầng
+# ảnh). Board giờ gửi đúng MỘT ảnh XGA 1024×768 mỗi lần bấm nút và `ocr` dùng
+# luôn ảnh đó — không còn vòng xin ảnh tầng cao để mà chờ. Xem
+# `docs/superpowers/specs/2026-08-26-bo-sse-poll-downlink-design.md` phần 2.
 
-# T18/F6 — SSE heartbeat keeps Cloudflare/NAT mappings active. The 15-second
-# default is provisional until a 10-minute tunnel run is measured on hardware.
-EVENT_HEARTBEAT_SECONDS = float(get("EVENT_HEARTBEAT_SECONDS", "15"))
+# ─── T18/F6 → poll (2026-08-26) ───────────────────────────────────────────
+#
+# `EVENT_HEARTBEAT_SECONDS` đã xoá cùng với `GET /events`: kênh poll không có
+# nhịp tim nào để giữ, vì nó không giữ kết nối nào.
+#
+# Hộp thư mỗi thiết bị vẫn 8 chỗ, đầy thì bỏ cái cũ nhất. 8 là đủ rộng cho
+# mọi chuỗi thật (nhiều nhất đo được là 3: `call_incoming` + `call_ended` +
+# `firmware_update`) và đủ hẹp để một board rớt mạng cả ngày không phình RAM
+# server.
 EVENT_QUEUE_SIZE = int(get("EVENT_QUEUE_SIZE", "8"))
+
+# Bao lâu không thấy `GET /downlink` thì coi như kính không còn giữ kênh
+# xuống. Quyết định `/wifi/remote-config` và `/firmware/push` trả 200 hay 503.
+#
+# 10 s = 5 nhịp poll (board poll mỗi 2 s). Rộng vậy vì board CỐ Ý ngừng poll
+# khi bận — đang `/process`, đang phát tiếng, đang OTA — và một lượt hỏi-đáp
+# dài hoàn toàn có thể chiếm 5-6 s. Đặt sát nhịp poll nghĩa là mỗi lần người
+# dùng bấm nút, kính bị đọc thành "mất tích" trong đúng lượt đó.
+DOWNLINK_STALE_SECONDS = float(get("DOWNLINK_STALE_SECONDS", "10"))
+
+# Nhịp poll khuyến nghị cho board, tính bằng ms. Server KHÔNG ép được nhịp
+# này — firmware giữ hằng của riêng nó (`DOWNLINK_POLL_MS` trong app_config.h).
+# Để ở đây để `/downlink` trả kèm cho board và để test đọc được cùng một số.
+DOWNLINK_POLL_HINT_MS = float(get("DOWNLINK_POLL_HINT_MS", "2000"))
 INCOMING_CALL_WINDOW_SECONDS = float(get("INCOMING_CALL_WINDOW_SECONDS", "15"))
 
 # Cửa sổ chống gửi lặp theo `X-Turn-Id`: hai `POST /process` cùng

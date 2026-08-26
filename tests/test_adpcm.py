@@ -232,7 +232,12 @@ def test_adpcm_response_headers_describe_the_decoder(fake_speech):
     response = client.post("/process", files=_files(), headers={"Accept": _BOARD_ACCEPT})
     h = response.headers
 
-    assert h["x-audio-format"] == "ima_adpcm;rate=16000;channels=1;block=256"
+    # `x-audio-format` KHÔNG có ở đây, và đó là chủ ý: nhánh board (`adpcm_wav`)
+    # gói thân trong RIFF, mà với firmware header đó nghĩa là "thân THÔ". Xem
+    # `test_container_body_never_claims_raw_in_x_audio_format` trong
+    # `tests/test_audio_contract.py` cho hợp đồng đầy đủ và số đo trên board.
+    # Nhánh thân thô (`adpcm_stream`) vẫn khai nó — cũng khoá ở file đó.
+    assert "x-audio-format" not in h
     assert h["x-audio-encoding"] == "ima_adpcm"
     assert h["x-audio-sample-rate"] == "16000"
     assert h["x-audio-channels"] == "1"

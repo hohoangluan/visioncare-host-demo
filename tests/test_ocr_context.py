@@ -148,14 +148,17 @@ def test_unrelated_question_does_not_use_cache():
             return_value=("hazard", {"focus": "front"}),
         ),
         patch("pipeline.image_quality.reject_reason", return_value=None),
-        # `hazard` giờ bật chế độ canh, không gọi Gemini (đổi 2026-08-25).
-        # Điều test này khoá vẫn nguyên: câu không liên quan KHÔNG được lấy
-        # cache OCR ra dùng. Không patch được `hazard_watch.start` vì
-        # `router._HANDLERS` giữ tham chiếu trực tiếp — dùng câu thật.
+        # `hazard` quay về LLM 2026-08-26, nên patch được `handle` như cũ:
+        # `router._HANDLERS[Intent.HAZARD]` là MODULE `describe_hazard`, và
+        # dispatch đọc `handler_mod.handle` mỗi lượt.
+        patch(
+            "handlers.describe_hazard.handle",
+            return_value=iter(["Lối đi phía trước thoáng."]),
+        ) as hazard_call,
         patch("handlers.ocr.handle") as ocr_call,
     ):
         out = "".join(router.resolve_speech(IMG_B, b"audio"))
-    assert "cảnh báo vật cản" in out
+    hazard_call.assert_called_once()
     assert "hóa đơn" not in out, "câu không liên quan lại lôi cache OCR ra dùng"
     ocr_call.assert_not_called()
 

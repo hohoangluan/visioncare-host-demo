@@ -116,14 +116,14 @@ def test_start_is_refused_without_a_detector() -> None:
 
 def test_start_twice_does_not_resend_command() -> None:
     risk_engine.set_detector(FakeDetector())
-    stream = events.subscribe("glasses-01")
-    try:
-        list(hazard_watch.start("glasses-01"))
-        list(hazard_watch.start("glasses-01"))
-        assert json.loads(next(stream)[6:-2])["action"] == "start"
-        assert events.queued_count("glasses-01") == 0
-    finally:
-        stream.close()
+    list(hazard_watch.start("glasses-01"))
+    list(hazard_watch.start("glasses-01"))
+    # Kênh xuống là hộp thư poll từ 2026-08-26 (`GET /downlink`), không còn
+    # SSE. `drain()` rút cạn đúng một lần — nếu lần `start()` thứ hai cũng gửi
+    # lệnh thì ở đây sẽ có HAI sự kiện.
+    pending = events.drain("glasses-01")
+    assert [e["action"] for e in pending] == ["start"], pending
+    assert events.queued_count("glasses-01") == 0
 
 
 # ─── 5.2 uplink khung hình ─────────────────────────────────────────────────
@@ -296,14 +296,10 @@ def test_hazard_level_event_sent_only_on_change() -> None:
     Gửi mỗi khung hình sẽ đẩy văng `call_incoming` ra khỏi hàng, tức một cuộc
     gọi đến bị nuốt mất vì chế độ canh vật cản đang bật.
     """
-    stream = events.subscribe("glasses-01")
-    try:
-        assert hazard_watch.publish_level("glasses-01", "HIGH", changed=True) == 1
-        assert hazard_watch.publish_level("glasses-01", "HIGH", changed=False) == 0
-        assert json.loads(next(stream)[6:-2]) == {"type": "hazard_level", "level": "HIGH"}
-        assert events.queued_count("glasses-01") == 0
-    finally:
-        stream.close()
+    assert hazard_watch.publish_level("glasses-01", "HIGH", changed=True) == 1
+    assert hazard_watch.publish_level("glasses-01", "HIGH", changed=False) == 0
+    assert events.drain("glasses-01") == [{"type": "hazard_level", "level": "HIGH"}]
+    assert events.queued_count("glasses-01") == 0
 
 
 def test_no_audio_bytes_sent_for_hazard_level() -> None:
@@ -312,15 +308,12 @@ def test_no_audio_bytes_sent_for_hazard_level() -> None:
     Cảnh báo vật cản mà đi qua mạng thì độ trễ mạng nằm thẳng giữa vật cản và
     cái chân người dùng. Cùng triết lý G8 (`cueSent()` ở 0 ms).
     """
-    stream = events.subscribe("glasses-01")
-    try:
-        events.hazard_level("glasses-01", "HIGH")
-        chunk = next(stream)
-        assert len(chunk) < 120
-        payload = json.loads(chunk[6:-2])
-        assert set(payload) == {"type", "level"}
-    finally:
-        stream.close()
+    events.hazard_level("glasses-01", "HIGH")
+    (payload,) = events.drain("glasses-01")
+    assert set(payload) == {"type", "level"}
+    # Đo trên chính chuỗi JSON board sẽ nhận, không đo trên dict: byte audio
+    # lọt vào sẽ làm nó phình lên hàng KB.
+    assert len(json.dumps(payload)) < 120
 
 
 def test_unknown_hazard_level_is_rejected() -> None:
@@ -336,29 +329,47 @@ def test_hazard_watch_action_must_be_start_or_stop() -> None:
 # ─── T16 không bị đụng ─────────────────────────────────────────────────────
 
 
-def test_turn_based_hazard_intent_now_starts_the_watch_mode() -> None:
-    """🔴 ĐẢO NGƯỢC 2026-08-25, theo quyết định tường minh của người dùng.
+def test_turn_based_hazard_intent_is_back_on_the_llm() -> None:
+    """🔴 ĐẢO NGƯỢC LẦN HAI, 2026-08-26, theo quyết định tường minh của người dùng.
 
-    Test này TRƯỚC ĐÂY khoá điều ngược lại: `hazard` theo lượt (T16, qua Gemini)
-    chạy song song và "không bị thay thế" — đúng như SPEC mục 28.6 viết.
+    Lịch sử đầy đủ của đúng một dòng trong `router._HANDLERS`:
 
-    Người dùng gỡ cả hai: `hazard` giờ **bật chế độ canh**, không trả lời câu
-    nào. Lý do là bản chất câu hỏi: câu trả lời một lần chỉ đúng cho khoảnh khắc
-    bấm nút, mà vật cản thì gặp trong lúc ĐANG ĐI — hỏi một câu rồi bước tiếp
-    năm bước là câu trả lời đã hết hạn.
+      trước 2026-08-25  hazard -> describe_hazard (LLM), SPEC mục 28.6
+      2026-08-25        hazard -> hazard_watch.start (bật chế độ canh)
+      2026-08-26        hazard -> describe_hazard (LLM), quay lại bản gốc
 
-    `handlers/describe_hazard.py` vì thế không còn ai gọi tới. Khoá "chỉ được
-    thêm comment" trong CLAUDE.md/RUNBOOK mục 7 đã được gỡ tường minh.
+    Chế độ canh KHÔNG bị xoá — `hazard_watch.py`, `hazard_worker.py`,
+    `hazard_risk.py` và mọi test khác trong file này vẫn còn và vẫn xanh. Nó
+    chỉ không còn đường nào từ câu nói của người dùng tới được nữa.
     """
+    from handlers import describe_hazard
     from pipeline.router import _HANDLERS, _IMAGE_REQUIRED_INTENTS
     from schemas import Intent
 
-    assert _HANDLERS[Intent.HAZARD] is _HANDLERS[Intent.HAZARD_WATCH_START]
+    assert _HANDLERS[Intent.HAZARD] is describe_hazard
+    assert _HANDLERS[Intent.HAZARD] is not _HANDLERS[Intent.HAZARD_WATCH_START]
 
-    # Và nó KHÔNG được đòi ảnh nữa: cổng chất lượng ảnh có quyền chặn, tức
-    # "ảnh mờ quá" sẽ ngăn người dùng bật được cảnh báo vật cản — đúng lúc
-    # trời tối/rung tay là lúc người ta cần bật nhất.
-    assert Intent.HAZARD not in _IMAGE_REQUIRED_INTENTS
+    # Và nó đòi ảnh trở lại: nó lại là một câu hỏi về MỘT khung hình.
+    assert Intent.HAZARD in _IMAGE_REQUIRED_INTENTS
+
+
+def test_watch_mode_is_unreachable_from_speech() -> None:
+    """Chế độ canh còn code nhưng không còn cửa vào — khoá điều đó tường minh.
+
+    `HAZARD_WATCH_START`/`STOP` chưa bao giờ nằm trong prompt phân loại ý định
+    (`pipeline/intent.py` chỉ dạy model nhãn `hazard`), nên sau khi bước 3 của
+    router thôi trỏ vào chúng thì không đường nào tới nữa. Nếu ai đó thêm nhãn
+    đó vào prompt mà quên nối phần còn lại, test này đỏ.
+    """
+    from pipeline import intent as intent_mod
+
+    prompt_text = "".join(
+        str(getattr(intent_mod, name))
+        for name in dir(intent_mod)
+        if name.isupper() and isinstance(getattr(intent_mod, name), str)
+    )
+    assert "hazard_watch_start" not in prompt_text
+    assert "hazard_watch_stop" not in prompt_text
 
 
 # ─── T24/W4: độ sâu là tín hiệu chính, YOLO là phụ ─────────────────────────

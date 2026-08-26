@@ -14,13 +14,11 @@ class Frame:
     turn_id: str
     received_at: float
     capture_ts: str | None = None
-    # F5 (SPEC mục 19): "low" mặc định — mọi lần bấm nút gửi tầng thấp. "high"
-    # chỉ tới khi server đã XIN, và trong thực tế chỉ `ocr` mới xin.
-    #
-    # 🔴 Không suy ra tầng từ kích thước byte: một cảnh tối, phẳng ở HD nén ra
-    # nhỏ hơn một cảnh nhiều chi tiết ở VGA. Board tự khai bằng
-    # `X-Frame-Tier`, đọc thẳng từ cảm biến lúc chụp.
-    tier: str = "low"
+    # 🔴 Field `tier` đã XOÁ 2026-08-26 cùng toàn bộ F5. Board gửi đúng một
+    # loại ảnh (XGA 1024×768) cho mọi lượt bấm nút, nên không còn gì để phân
+    # tầng. Nếu bao giờ cần lại: đừng suy tầng từ kích thước byte — một cảnh
+    # tối, phẳng ở HD nén ra nhỏ hơn một cảnh nhiều chi tiết ở VGA. Board phải
+    # tự khai.
 
 
 class FrameBuffer:
@@ -44,7 +42,6 @@ class FrameBuffer:
         *,
         capture_ts: str | None = None,
         received_at: float | None = None,
-        tier: str = "low",
     ) -> None:
         if not device_id or not turn_id or not data:
             raise ValueError("device_id, turn_id and frame data are required")
@@ -53,7 +50,6 @@ class FrameBuffer:
             turn_id=turn_id,
             received_at=time.monotonic() if received_at is None else received_at,
             capture_ts=capture_ts,
-            tier=tier,
         )
         with self._condition:
             self._frames[device_id].append(frame)
@@ -66,18 +62,12 @@ class FrameBuffer:
         *,
         turn_id: str | None = None,
         wait_ms: float = 0,
-        tier: str | None = None,
     ) -> bytes | None:
         """Return the newest matching fresh frame, optionally waiting briefly.
 
         Reception monotonic time is authoritative. ``X-Capture-Ts`` is retained
         for diagnostics only because the board and server clocks are not
         guaranteed to be synchronized.
-
-        ``tier``: F5. Khi truyền ("high"), CHỈ khung đúng tầng đó được nhận —
-        khung tầng thấp cùng lượt bị bỏ qua và hàm tiếp tục chờ. Đó là điều làm
-        cho `ocr` chờ được đúng khung HD mà nó vừa xin, thay vì vớ ngay khung
-        VGA board đã gửi từ lúc bấm nút.
         """
         deadline = time.monotonic() + max(0.0, wait_ms) / 1000.0
         with self._condition:
@@ -86,8 +76,6 @@ class FrameBuffer:
                 ring = self._frames.get(device_id, ())
                 for frame in reversed(ring):
                     if turn_id is not None and frame.turn_id != turn_id:
-                        continue
-                    if tier is not None and frame.tier != tier:
                         continue
                     age_ms = (now - frame.received_at) * 1000.0
                     return frame.data if age_ms <= max_age_ms else None
@@ -103,10 +91,10 @@ class FrameBuffer:
         *,
         turn_id: str | None = None,
     ) -> Frame | None:
-        """Như `latest()` nhưng trả cả siêu dữ liệu — F5 cần biết `tier`.
+        """Như `latest()` nhưng trả cả siêu dữ liệu (`capture_ts`, `received_at`).
 
-        Không chờ: bên gọi đã có khung trong tay rồi mới hỏi "khung này tầng
-        nào".
+        Không chờ: bên gọi đã có khung trong tay rồi mới hỏi siêu dữ liệu.
+        Dùng cho chẩn đoán và cho `/devices` — F5 (người gọi cũ) đã xoá.
         """
         now = time.monotonic()
         with self._condition:

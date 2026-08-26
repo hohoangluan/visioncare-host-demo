@@ -138,22 +138,17 @@ def test_window_closes_when_ringing_stops() -> None:
 
 
 def test_call_ended_says_nothing() -> None:
-    stream = events.subscribe("glasses-a")
     incoming_calls.open("glasses-a", {"name": "Mẹ"})
     response = _post({"device_id": "glasses-a", "type": "call_ended"})
-    event = json.loads(next(stream)[6:-2])
-    stream.close()
 
     assert response.status_code == 200
     assert response.json()["data"].get("announcement") is None
-    assert event == {"type": "call_ended"}
+    assert events.drain("glasses-a") == [{"type": "call_ended"}]
 
 
 def test_incoming_event_tells_firmware_where_to_fetch_audio() -> None:
-    stream = events.subscribe("glasses-a")
     response = _post(_open_payload())
-    event = json.loads(next(stream)[6:-2])
-    stream.close()
+    (event,) = events.drain("glasses-a")
 
     assert response.status_code == 200
     assert event["audio_url"] == "/incoming-call/audio"
@@ -162,6 +157,32 @@ def test_incoming_event_tells_firmware_where_to_fetch_audio() -> None:
         "name": "Mẹ",
         "number_tail": "456",
     }
+
+
+def test_incoming_call_is_queued_even_if_the_glasses_are_mid_turn() -> None:
+    """🔴 Đây là ca kênh SSE cũ hỏng, và là lý do đổi sang hộp thư.
+
+    Board `eventStreamPause()` trước khi bấm nút để nhường 45 KB RAM cho phiên
+    TLS của `/process`. Chuông đổ đúng lúc đó thì sự kiện biến mất — im lặng,
+    không log, không ai biết. Hộp thư giữ nó tới lượt poll kế tiếp.
+    """
+    assert events.downlink_open("glasses-a") is False
+    response = _post(_open_payload())
+    assert response.status_code == 200
+    assert response.json()["data"]["downlink_open"] is False
+    assert events.queued_count("glasses-a") == 1
+
+
+def test_incoming_call_response_reports_queue_and_channel_separately() -> None:
+    """`queued` LUÔN ≥ 1; `downlink_open` mới là thứ nói kính có nghe được không.
+
+    Kênh SSE cũ trộn hai thứ này vào một số (`subscribers`) và vì thế nói dối:
+    `subscribers: 1` trong khi sự kiện rơi vào một generator đã chết.
+    """
+    events.drain("glasses-a")  # kính vừa poll
+    data = _post(_open_payload()).json()["data"]
+    assert data["queued"] >= 1
+    assert data["downlink_open"] is True
 
 
 def test_known_contact_reads_name() -> None:

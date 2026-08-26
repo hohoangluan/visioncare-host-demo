@@ -819,6 +819,48 @@ def _await_result(
     return (yield from wait_for(poll, progress, opening_seconds))
 
 
+# Câu cuối khi điện thoại chưa kịp trả lời.
+#
+# 🔴 KHÔNG được hứa hẹn gì ở đây. Câu cũ là "Điện thoại vẫn đang thực hiện,
+# tôi sẽ cập nhật khi có kết quả." — mất 3.21 giây để đọc, và lời hứa trong nó
+# chưa bao giờ được giữ: `run_action()` kết thúc ngay sau câu này, còn
+# `reconcile_late()` chỉ gọi `note_result()` (cập nhật trạng thái phiên) chứ
+# không nói gì ra loa. File này không hề import `events`.
+#
+# Đường để giữ lời hứa là đẩy kết quả muộn xuống `/events`, và đường đó hiện
+# KHÔNG dùng được: đo trên board 2026-08-26, khối liền còn 34 804 B trong khi
+# `/events` cần 37 888 B và một phiên TLS cần 45 056 B, nên board tự đóng
+# `/events` để giữ phiên TLS. Lệnh đẩy xuống trả `pushed: 0` dù server vẫn
+# đếm `subscribers: 1`.
+#
+# Nên tạm thời: nói THẬT, và nói ngắn. Hứa một thứ không có đường thực hiện
+# còn tệ hơn im lặng — người dùng sẽ đứng đợi một câu không bao giờ tới.
+TIMEOUT_LINE = "Điện thoại chưa báo lại."
+
+
+def wait_window_seconds(ack: str, elapsed: float = 0.0) -> float:
+    """Chờ kết quả điện thoại bao lâu, tính từ ĐỘ DÀI CÂU ACK vừa đọc.
+
+    Trước đây là hằng số `VISIONCARE_FAST_ACTION_SECONDS = 2.0`, và nó sai ở
+    cả hai đầu — đo độ dài từng câu ack trên chính bộ TTS đang chạy:
+
+        music_play      4.98 s   hằng số 2.0 CẮT NGẮN: kết quả về ở giây thứ 3
+                                 bị bỏ lỡ dù người dùng vẫn đang nghe câu ack
+        music_stop      1.02 s   hằng số 2.0 THỪA: board nói xong từ giây 1.02,
+                                 server còn ngồi chờ thêm ~0.8 giây IM LẶNG
+
+    Câu ack được đọc TRONG lúc chờ, nên lấy đúng độ dài của nó làm cửa sổ thì
+    server ngừng chờ đúng lúc board ngừng nói: quãng im lặng thêm bằng 0 **theo
+    cấu trúc**, chứ không nhờ chọn trúng một con số nhỏ hơn. Đồng thời câu dài
+    được chờ lâu hơn, nên nhiều lượt kết thúc gọn trong một hơi thở.
+
+    `elapsed` là phần đã tiêu trước khi bắt đầu chờ (dựng payload, gọi HTTP,
+    một lần thăm dò trạng thái). Trừ đi vì người dùng đã nghe mất phần đó của
+    câu ack rồi.
+    """
+    return max(0.0, tts.speaking_seconds(ack) - elapsed)
+
+
 def run_action(
     operation: str,
     endpoint: str,
@@ -884,7 +926,7 @@ def run_action(
     except VisionCareAPIError:
         pass
 
-    remaining = config.VISIONCARE_FAST_ACTION_SECONDS - (time.monotonic() - started)
+    remaining = wait_window_seconds(ack, elapsed=time.monotonic() - started)
     final = action_callbacks.wait(request_id, remaining)
     # G9/T21: chặng `action` — từ lúc gửi lệnh xuống điện thoại tới lúc có
     # `ActionResult`. Đây là chặng DUY NHẤT của một lượt mà server không điều
@@ -962,4 +1004,4 @@ def run_action(
         name=f"action-reconcile-{request_id[:8]}",
         daemon=True,
     ).start()
-    yield _utterance("Điện thoại vẫn đang thực hiện, tôi sẽ cập nhật khi có kết quả.")
+    yield _utterance(TIMEOUT_LINE)

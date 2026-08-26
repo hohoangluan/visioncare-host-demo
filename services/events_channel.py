@@ -1,14 +1,34 @@
-"""Per-device Server-Sent Events channel for glasses downlink."""
+"""Per-device downlink mailbox drained by ``GET /downlink``.
+
+🔴 ĐỔI 2026-08-26: đây TỪNG là kênh SSE thường trực (`GET /events`). Không còn.
+
+Vì sao bỏ, đo trực tiếp trên `glasses-01` bằng `memWatchLargest()`:
+
+    trước mọi thứ                khối liền  114 676 B
+    sau MỘT phiên TLS                        69 620 B   (−45 056)
+    sau khi cấp phát audio                   34 804 B
+
+Một phiên TLS ngốn 45 056 B RAM **liền**, `/events` ngốn thêm 37 888 B. Board
+không giữ nổi cả hai, nên mỗi lần khởi động nó hy sinh `/events` — và hệ quả
+đã đo được: `firmware_update` trả `pushed: 0`, còn lệnh đổi Wi-Fi rơi vào hộp
+thư chết dù server vẫn đếm `subscribers: 1`.
+
+Kênh poll giải đúng bài toán đó mà không phải rời Arduino IDE: board chỉ mở
+socket khi nó RẢNH (không đang `/process`, không đang phát tiếng, không đang
+OTA), nên **không bao giờ có hai phiên TLS cùng lúc**.
+
+Một điểm kênh poll còn HƠN SSE, không chỉ ngang: hàng đợi ở đây sống độc lập
+với việc có ai đang nối hay không. Sự kiện đẩy vào lúc board đang bận vẫn nằm
+đó chờ lượt poll kế tiếp. SSE thì mất — `eventStreamPause()` trên board là một
+khoảng mù thật sự, và đó là một đánh đổi đã ghi trong `event_stream.h` cũ.
+"""
 
 from __future__ import annotations
 
-from collections.abc import Iterator, Mapping
-import json
+from collections.abc import Mapping
 import logging
-import queue
 import threading
 import time
-import uuid
 
 import config
 
@@ -21,107 +41,141 @@ logger = logging.getLogger("blind_assist.events")
 # chỗ gọi sai.
 _EVENT_TYPES = frozenset(
     {
-        "frame_request",
-        "call_incoming",
-        "call_ended",
-        "ping",
         # T25: server chủ động yêu cầu kính nạp bản mới. Sự kiện KHÔNG mang
         # theo byte firmware nào — chỉ báo "có bản mới", kính tự gọi
-        # `GET /firmware/manifest` rồi `GET /firmware/bin`. Đẩy 1.35 MB qua
-        # kênh SSE sẽ chặn hàng đợi của mọi sự kiện khác trong hàng chục giây,
-        # trong đó có `call_incoming`.
+        # `GET /firmware/manifest` rồi `GET /firmware/bin`.
         "firmware_update",
         # T25: app đổi Wi-Fi cho kính từ xa. Kính lưu vào NVS rồi tự khởi động
         # lại — sau đó nó nối vào mạng MỚI, nên sự kiện này luôn là điều cuối
         # cùng đi qua kênh cũ.
         "wifi_config",
-        # T24/W3: bật/tắt vòng chụp liên tục trên board.
-        "hazard_watch",
-        # T24/W3: mức nguy hiểm hiện tại. Gửi MỖI KHI ĐỔI MỨC, không phải mỗi
-        # khung hình — hàng đợi mỗi thiết bị chỉ có 8 chỗ, và gửi mỗi khung sẽ
-        # đẩy văng `call_incoming` ra khỏi hàng.
+        # T19/21.8: có cuộc gọi đến trên điện thoại đã ghép.
+        "call_incoming",
+        "call_ended",
+        # T24/W3: bật/tắt vòng chụp liên tục trên board, và mức nguy hiểm
+        # hiện tại.
         #
-        # 🔴 KHÔNG mang byte audio nào. Board tự sinh tông theo mức (W6), cùng
-        # triết lý G8: tông cục bộ rẻ và nhanh hơn audio qua mạng, và ở đây
-        # còn quan trọng hơn — cảnh báo vật cản mà đi qua mạng thì độ trễ mạng
-        # nằm thẳng giữa vật cản và cái chân người dùng.
+        # 🔴 2026-08-26 KHÔNG CÒN AI PHÁT hai loại này trong luồng: `hazard`
+        # đã quay về `handlers/describe_hazard.py` (một câu trả lời cho một
+        # khung hình, qua LLM) theo quyết định của người dùng. Giữ lại trong
+        # danh sách vì `services/hazard_worker.py` và test của nó vẫn gọi tới,
+        # và vì quyết định này đã đảo một lần rồi.
+        "hazard_watch",
         "hazard_level",
     }
 )
 
+# 🔴 `frame_request` đã BỊ XOÁ 2026-08-26 cùng với toàn bộ F5 (hai tầng ảnh).
+# Giờ mỗi lần bấm nút gửi đúng một ảnh XGA 1024×768 và `ocr` dùng luôn ảnh đó,
+# không còn vòng hỏi-đáp xin tầng cao. Đừng thêm lại loại này mà không đọc
+# `docs/superpowers/specs/2026-08-26-bo-sse-poll-downlink-design.md` phần 2.
+#
+# `ping` cũng đã xoá: nó là nhịp tim của SSE, và kênh poll không có nhịp tim
+# nào để mà giữ.
+
 
 class EventHub:
-    """Fan out bounded events only to subscribers of the addressed device."""
+    """Hộp thư có giới hạn cho mỗi thiết bị, rút cạn bằng ``drain()``."""
 
-    def __init__(self, *, heartbeat_seconds: float = 15.0, queue_size: int = 8) -> None:
-        if heartbeat_seconds <= 0:
-            raise ValueError("heartbeat_seconds must be positive")
+    def __init__(self, *, queue_size: int = 8, stale_seconds: float = 10.0) -> None:
         if queue_size <= 0:
             raise ValueError("queue_size must be positive")
-        self._heartbeat_seconds = heartbeat_seconds
+        if stale_seconds <= 0:
+            raise ValueError("stale_seconds must be positive")
         self._queue_size = queue_size
+        self._stale_seconds = stale_seconds
         self._lock = threading.Lock()
-        self._subscribers: dict[str, dict[str, queue.Queue[dict[str, object]]]] = {}
-        # 🔴 Sổ "generator này còn sống lúc nào" — xem `_prune_dead_locked()`.
-        self._alive_at: dict[str, dict[str, float]] = {}
+        # device_id -> hàng đợi FIFO các sự kiện chưa ai lấy.
+        self._mailbox: dict[str, list[dict[str, object]]] = {}
+        # device_id -> lần cuối thiết bị đó gọi `GET /downlink`.
+        self._polled_at: dict[str, float] = {}
 
-    def subscribe(self, device_id: str) -> Iterator[str]:
-        if not device_id:
-            raise ValueError("device_id is required")
-        token = uuid.uuid4().hex
-        inbox: queue.Queue[dict[str, object]] = queue.Queue(maxsize=self._queue_size)
-        with self._lock:
-            self._subscribers.setdefault(device_id, {})[token] = inbox
-            self._alive_at.setdefault(device_id, {})[token] = time.monotonic()
-
-        def stream() -> Iterator[str]:
-            try:
-                while True:
-                    try:
-                        event = inbox.get(timeout=self._heartbeat_seconds)
-                    except queue.Empty:
-                        event = {"type": "ping"}
-                    yield self._encode(event)
-                    # Chỉ tới được dòng này khi bên tiêu thụ ĐÃ nhận mảnh vừa
-                    # yield. Generator của một socket đã chết sẽ nghẽn ngay ở
-                    # `yield` phía trên và không bao giờ chạm vào đây nữa — đó
-                    # chính là thứ `_prune_dead_locked()` dùng để nhận ra nó.
-                    with self._lock:
-                        alive = self._alive_at.get(device_id)
-                        if alive is not None and token in alive:
-                            alive[token] = time.monotonic()
-            finally:
-                self._unsubscribe(device_id, token)
-
-        return stream()
+    # ─── phía server ghi vào ──────────────────────────────────────────────
 
     def publish(self, device_id: str, event: Mapping[str, object]) -> int:
+        """Bỏ một sự kiện vào hộp thư. Trả về số sự kiện đang chờ SAU khi bỏ.
+
+        🔴 Giá trị trả về ĐỔI NGHĨA 2026-08-26. Trước đây là "số subscriber
+        SSE đã nhận" — tức 0 nghĩa là mất sự kiện. Giờ là "số sự kiện đang
+        nằm chờ", luôn ≥ 1, vì kênh poll không đánh rơi sự kiện khi board bận.
+        Muốn biết board còn sống hay không thì hỏi `downlink_open()`, KHÔNG
+        suy từ số này.
+        """
         event_type = event.get("type")
         if event_type not in _EVENT_TYPES:
             raise ValueError(f"unsupported event type: {event_type!r}")
+        if not device_id:
+            raise ValueError("device_id is required")
         payload = dict(event)
         with self._lock:
-            self._prune_dead_locked(device_id)
-            inboxes = tuple(self._subscribers.get(device_id, {}).values())
-        for inbox in inboxes:
-            try:
-                inbox.put_nowait(payload)
-            except queue.Full:
-                # A disconnected/slow board must not grow memory without bound.
-                try:
-                    inbox.get_nowait()
-                except queue.Empty:
-                    pass
-                inbox.put_nowait(payload)
-        return len(inboxes)
+            box = self._mailbox.setdefault(device_id, [])
+            box.append(payload)
+            # Board rớt mạng lâu không được phép làm RAM server phình vô hạn.
+            # Đầy thì bỏ cái CŨ NHẤT, giữ cái mới — y hệt chính sách của hàng
+            # đợi SSE cũ. Với `call_incoming` đây là lựa chọn đúng: chuông
+            # đang đổ bây giờ quan trọng hơn chuông đã tắt từ lâu.
+            dropped = 0
+            while len(box) > self._queue_size:
+                box.pop(0)
+                dropped += 1
+            if dropped:
+                logger.warning(
+                    "downlink: hộp thư %s đầy, bỏ %d sự kiện cũ nhất",
+                    device_id, dropped,
+                )
+            return len(box)
 
-    def request_frame(self, device_id: str, turn_id: str, *, tier: str = "high") -> int:
-        if not turn_id:
-            raise ValueError("turn_id is required")
-        return self.publish(
-            device_id,
-            {"type": "frame_request", "turn_id": turn_id, "tier": tier},
-        )
+    # ─── phía board rút ra ────────────────────────────────────────────────
+
+    def drain(self, device_id: str) -> list[dict[str, object]]:
+        """Lấy hết sự kiện đang chờ và xoá khỏi hộp thư. Ghi nhận lượt poll.
+
+        Rút cạn chứ không lấy từng cái: board gọi mỗi 2 giây, và trả một sự
+        kiện mỗi lượt nghĩa là bốn sự kiện xếp hàng phải mất 8 giây mới đi
+        hết — trong đó có thể có `call_incoming`.
+
+        🔴 Xoá NGAY khi trả, không chờ board xác nhận. Không có ack nghĩa là
+        một sự kiện có thể mất nếu board chết đúng giữa lúc nhận. Chấp nhận
+        được cho cả bốn loại đang dùng: `firmware_update` sẽ được phát lại ở
+        lần publish sau, `wifi_config` người dùng bấm lại, `call_incoming`
+        chuông vẫn đang đổ. Thêm ack nghĩa là thêm trạng thái hai bên phải
+        đồng bộ, và đó là chỗ đẻ ra bug im lặng.
+        """
+        if not device_id:
+            raise ValueError("device_id is required")
+        with self._lock:
+            self._polled_at[device_id] = time.monotonic()
+            return self._mailbox.pop(device_id, [])
+
+    def downlink_open(self, device_id: str) -> bool:
+        """Kính này có đang giữ kênh xuống không — tức có poll gần đây không.
+
+        Thay cho `subscriber_count() > 0` của thời SSE. "Gần đây" là
+        `DOWNLINK_STALE_SECONDS`, đặt rộng hơn nhịp poll vài lần để một nhịp
+        mạng xấu không bị đọc thành "kính mất tích".
+        """
+        if not device_id:
+            return False
+        with self._lock:
+            at = self._polled_at.get(device_id)
+        return at is not None and (time.monotonic() - at) <= self._stale_seconds
+
+    def last_poll_age_seconds(self, device_id: str) -> float | None:
+        """Bao lâu rồi kính chưa poll. `None` nếu chưa poll lần nào."""
+        with self._lock:
+            at = self._polled_at.get(device_id)
+        return None if at is None else time.monotonic() - at
+
+    def queued_count(self, device_id: str) -> int:
+        with self._lock:
+            return len(self._mailbox.get(device_id, ()))
+
+    def clear(self) -> None:
+        with self._lock:
+            self._mailbox.clear()
+            self._polled_at.clear()
+
+    # ─── đường ngắn cho từng loại sự kiện ─────────────────────────────────
 
     def call_incoming(self, device_id: str, caller: Mapping[str, object]) -> int:
         return self.publish(
@@ -133,7 +187,10 @@ class EventHub:
         return self.publish(device_id, {"type": "call_ended"})
 
     def hazard_watch(self, device_id: str, action: str) -> int:
-        """Bảo board bật/tắt vòng chụp liên tục (T24/W3)."""
+        """Bảo board bật/tắt vòng chụp liên tục (T24/W3).
+
+        Không còn ai gọi từ luồng hội thoại — xem ghi chú ở `_EVENT_TYPES`.
+        """
         if action not in {"start", "stop"}:
             raise ValueError(f"hazard_watch action must be start|stop, got {action!r}")
         return self.publish(device_id, {"type": "hazard_watch", "action": action})
@@ -170,75 +227,8 @@ class EventHub:
             {"type": "wifi_config", "ssid": ssid, "password": password},
         )
 
-    def subscriber_count(self, device_id: str | None = None) -> int:
-        with self._lock:
-            if device_id is not None:
-                return len(self._subscribers.get(device_id, {}))
-            return sum(len(items) for items in self._subscribers.values())
-
-    def queued_count(self, device_id: str) -> int:
-        with self._lock:
-            return sum(q.qsize() for q in self._subscribers.get(device_id, {}).values())
-
-    def clear(self) -> None:
-        with self._lock:
-            self._subscribers.clear()
-
-    def _prune_dead_locked(self, device_id: str) -> int:
-        """Gỡ những subscriber mà generator của nó đã nghẽn — PHẢI giữ `_lock`.
-
-        🔴 Vì sao cần, đo được trên board 2026-08-25: `sse_subscribers` của
-        `glasses-01` lên **3 và còn tăng** sau mỗi lần kính nối lại, trong khi
-        kính chỉ có MỘT kênh. `subscribe()` chỉ gỡ đăng ký trong `finally:` của
-        generator, mà generator đó là **đồng bộ** và Starlette chạy nó trong
-        threadpool — nó không phải lúc nào cũng đóng generator khi client biến
-        mất. Mỗi lần rớt để lại một subscriber ma, và `publish()` ghi sự kiện
-        vào cả những cái ma đó.
-
-        Cách nhận ra một cái ma: generator sống cập nhật `_alive_at` sau MỖI
-        lần yield được nhận, tức ít nhất mỗi `heartbeat_seconds`. Một generator
-        có socket đã chết thì nghẽn ngay ở `yield` và **ngừng cập nhật**.
-
-        Hạn 3 nhịp tim (không phải 1): một board chậm hoặc một nhịp mạng xấu
-        không được phép bị coi là chết.
-        """
-        alive = self._alive_at.get(device_id)
-        if not alive:
-            return 0
-        cutoff = time.monotonic() - 3 * self._heartbeat_seconds
-        dead = [token for token, at in alive.items() if at < cutoff]
-        for token in dead:
-            alive.pop(token, None)
-            device_subscribers = self._subscribers.get(device_id)
-            if device_subscribers is not None:
-                device_subscribers.pop(token, None)
-        if dead:
-            logger.info(
-                "events: gỡ %d kênh ma của %s (generator nghẽn > %.0fs)",
-                len(dead), device_id, 3 * self._heartbeat_seconds,
-            )
-        return len(dead)
-
-    def _unsubscribe(self, device_id: str, token: str) -> None:
-        with self._lock:
-            alive = self._alive_at.get(device_id)
-            if alive is not None:
-                alive.pop(token, None)
-                if not alive:
-                    self._alive_at.pop(device_id, None)
-            device_subscribers = self._subscribers.get(device_id)
-            if device_subscribers is None:
-                return
-            device_subscribers.pop(token, None)
-            if not device_subscribers:
-                self._subscribers.pop(device_id, None)
-
-    @staticmethod
-    def _encode(event: Mapping[str, object]) -> str:
-        return "data: " + json.dumps(event, ensure_ascii=False, separators=(",", ":")) + "\n\n"
-
 
 events = EventHub(
-    heartbeat_seconds=config.EVENT_HEARTBEAT_SECONDS,
     queue_size=config.EVENT_QUEUE_SIZE,
+    stale_seconds=config.DOWNLINK_STALE_SECONDS,
 )

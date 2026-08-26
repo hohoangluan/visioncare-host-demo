@@ -1,6 +1,6 @@
 # E2E — tốc độ từng chặng và độ chính xác, theo chức năng
 
-Đo 2026-08-25 11:03 · thiết bị `glasses-01` · qua `api.visioncare-host.uk:443` (tunnel + TLS)
+Đo 2026-08-26 09:33 · thiết bị `bench-report` · qua `api.visioncare-host.uk:443` (tunnel + TLS)
 
 ## Cấu hình lúc đo
 
@@ -19,26 +19,28 @@
 
 | Chức năng | mã | headers | **tiếng đầu** | tổng | stt | intent | handler | action | audio | nhả | đệm board | ý định |
 |---|---|---|---|---|---|---|---|---|---|---|---|---|
-| `ocr` | 200 | 468 | **491** | 10921 | 592 | 320 | 3965 | · | 4.51s | 0.43× | chờ hết! | ✅ |
-| `find` | 200 | 246 | **256** | 30861 | 54 | 25 | — | · | 2.26s | 0.07× | chờ hết! | — |
-| `money` | 200 | 221 | **235** | 11461 | 151 | 41 | 8660 | · | 3.14s | 0.28× | chờ hết! | ✅ |
-| `space` | 200 | 596 | **596** | 4912 | 142 | 35 | 1834 | · | 4.30s | 1.00× | chờ hết! | ✅ |
-| `hazard` | 200 | 646 | **646** | 1920 | 90 | 36 | 1 | · | 2.89s | 2.27× | 400ms | ✅ |
-| `chat` | 200 | 391 | **425** | 21006 | 141 | 42 | 16058 | · | 7.45s | 0.36× | chờ hết! | ✅ |
-| `nav_start` | 200 | 412 | **412** | 7234 | 93 | 1521 | 94 | 2012 | 6.61s | 0.97× | chờ hết! | ✅ |
-| `nav_stop` | 200 | 258 | **269** | 6483 | 164 | — | — | 2003 | 6.17s | 0.99× | chờ hết! | — |
-| `contact_call` | 200 | 309 | **309** | 5513 | 159 | 1618 | 19 | 2006 | 5.27s | 1.01× | chờ hết! | ✅ |
-| `ride_quote` | 200 | 325 | **338** | 1897 | 56 | 1319 | 1 | — | 5.06s | 3.22× | 400ms | ✅ |
-| `ride_confirm` | 200 | 401 | **413** | 1845 | 60 | 1315 | 1 | — | 2.79s | 1.93× | 400ms | ✅ |
-| `music_play` | 200 | 205 | **205** | 1391 | 52 | 1039 | 1 | — | 5.46s | 4.60× | 400ms | ✅ |
-| `music_stop` | 200 | 314 | **314** | 4886 | 45 | 14 | 35 | 2004 | 5.01s | 1.10× | chờ hết! | ✅ |
-| `music_volume` | 200 | 707 | **707** | 5499 | 41 | 1172 | 31 | 2001 | 5.37s | 1.12× | 1500ms | ✅ |
-| `unknown` | 200 | 179 | **193** | 2874 | 51 | 20 | 1337 | · | 3.27s | 1.21× | 1500ms | ✅ |
-| `emergency_call` | 200 | 172 | **172** | 3667 | 46 | — | — | 2003 | 5.96s | 1.70× | 400ms | ✅ cổng từ khoá |
+| `ocr` | 200 | 226 | **235** | 6899 | 64 | 11 | 5401 | · | 4.51s | 0.68× | chờ hết! | ✅ |
+| `find` | 200 | 182 | **192** | 4509 | 64 | 13 | 1766 | · | 5.93s | 1.37× | 400ms | ✅ |
+| `money` | 200 | 195 | **201** | 3229 | 82 | 14 | 2111 | · | 3.07s | 1.01× | chờ hết! | ✅ |
+| `space` | 200 | 177 | **181** | 4815 | 46 | 12 | 2013 | · | 5.94s | 1.28× | 1500ms | ✅ |
+| `hazard` | 200 | 183 | **190** | 1099 | 62 | 13 | 0 | · | 2.81s | 3.07× | 400ms | ✅ |
+| `chat` | 200 | 248 | **249** | 6273 | 74 | 14 | 1202 | · | 11.91s | 1.98× | 400ms | ✅ |
+| `nav_start` | 200 | 211 | **217** | 2596 | 58 | 1050 | 27 | — | 4.00s | 1.68× | 400ms | ✅ |
+| `nav_stop` | 200 | 216 | **225** | 318 | 52 | 13 | 0 | — | 2.99s | 29.35× | 400ms | ✅ |
+| `contact_call` | 200 | 257 | **257** | 2994 | 59 | 1226 | 47 | — | 3.92s | 1.43× | 400ms | ✅ |
+| `ride_quote` | 200 | 234 | **255** | 2736 | 63 | 1292 | 0 | — | 5.94s | 2.38× | 400ms | ✅ |
+| `ride_confirm` | 200 | 187 | **197** | 326 | 58 | — | — | — | 7.19s | 51.70× | 400ms | — |
+| `music_play` | 200 | 229 | **237** | 1633 | 62 | 1251 | 0 | — | 5.80s | 4.13× | 400ms | ✅ |
+| `music_stop` | 200 | 240 | **259** | 1258 | 68 | 12 | 34 | — | 2.47s | 2.43× | 400ms | ✅ |
+| `music_volume` | 200 | 193 | **200** | 1391 | 50 | 1075 | 21 | — | 2.39s | 1.99× | 400ms | ✅ |
+| `unknown` | 200 | 163 | **177** | 3192 | 58 | 15 | 1784 | · | 3.53s | 1.16× | 1500ms | ✅ |
+| `emergency_call` | 200 | 170 | **177** | 300 | 50 | — | — | — | 3.68s | 28.37× | 400ms | ✅ cổng từ khoá |
 
 ### Đọc bảng trên
 
 **Cột `action`.** `·` = chức năng không bàn giao việc sang điện thoại. `—` = có bàn giao nhưng chặng đó không chạy tới nơi.
+
+🔴 **`X 🔴hết giờ` nghĩa là app Android nhận `202 Accepted` rồi KHÔNG trả `ActionResult` nào trong `VISIONCARE_FAST_ACTION_SECONDS`.** Con số đó là ĐỘ DÀI CỬA SỔ CHỜ, không phải tốc độ điện thoại. Đọc nhầm nó thành 'điện thoại phản hồi trong 2 giây' là kết luận ngược hẳn với sự thật — thực tế là **không phản hồi**.
 
 🔴 `—` ở đây gần như luôn có MỘT nguyên nhân: **kính chưa ghép đôi với điện thoại**. Server app trả `404 GLASSES_DEVICE_NOT_LINKED` ngay ở lời gọi đầu, nên `run_action()` hỏng trước khi kịp chờ `ActionResult` — `handler` vì thế chỉ vài chục ms và trông *nhanh*, trong khi thực tế chức năng đó **không chạy được**. Đừng đọc mấy dòng đó là 'đạt'.
 
@@ -50,12 +52,12 @@ Muốn đo thật cột này thì phải ghép đôi trước (`POST /internal/d
 
 | | |
 |---|---|
-| Tiếng đầu, trung vị | **0.33s** |
-| Tiếng đầu, chậm nhất | 0.71s |
+| Tiếng đầu, trung vị | **0.21s** |
+| Tiếng đầu, chậm nhất | 0.26s |
 | Dưới 1 giây | 16/16 |
-| Tỉ lệ nhả, thấp nhất | 0.07× |
-| Số ca board phải chờ hết mới phát | 9/16 |
-| **Độ chính xác ý định** | **13/13** (100%) |
+| Tỉ lệ nhả, thấp nhất | 0.68× |
+| Số ca board phải chờ hết mới phát | 2/16 |
+| **Độ chính xác ý định** | **14/14** (100%) |
 | Số ca lỗi | 0/16 |
 
 🔴 **Độ chính xác ở đây CHỈ là độ chính xác phân loại ý định** trên 16 câu mẫu — không phải độ chính xác nội dung câu trả lời. OCR đọc đúng chữ hay không, mô tả cảnh có đúng không, `hazard` bắt được vật cản hay không: những thứ đó đo ở `measurements/T24.md` và `measurements/H4.md`, không đo được bằng một vòng bench.

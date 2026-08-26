@@ -152,9 +152,23 @@ def test_prelude_size_field_when_length_unknown():
 def test_x_audio_format_matches_body_magic(board_response, tmp_path, monkeypatch):
     """Board tin 4 byte đầu của THÂN, không tin header HTTP. Đi nhầm nhánh
     ADPCM/PCM -> SNR -11 dB, KHÔNG log nào báo (CONTRACTS §2.4) — đây là ca
-    nguy hiểm nhất trong cả năm test này."""
+    nguy hiểm nhất trong cả năm test này.
+
+    🔴 SỬA 2026-08-26. Bản trước khẳng định CÙNG LÚC hai điều mâu thuẫn:
+    `"ima_adpcm" in x-audio-format` **và** `body[:4] == b"RIFF"`. Với firmware
+    thật thì hai điều đó không đứng cạnh nhau được — `parseAudioFormat()` đặt
+    `fmt.raw = true` chỉ vì THẤY header `x-audio-format`, tức header đó có
+    nghĩa "thân là dữ liệu THÔ, không container". Board tự chữa bằng cách ngửi
+    4 byte đầu rồi kêu lên, đo được trên board thật:
+
+        CANH BAO: header x-audio-format bao du lieu THO, nhung than bat dau
+        bang 'RIFF'.  Theo than — doc nhu file WAV. Server nen bo header do,
+        hoac tra du lieu tho that su.
+
+    Test cũ khoá đúng cái sai đó lại. Giờ khoá điều board thật cần: một thân
+    có container thì KHÔNG được kèm lời khai "thô".
+    """
     h = board_response.headers
-    assert "ima_adpcm" in h["x-audio-format"]
     assert h["x-audio-encoding"] == "ima_adpcm"
 
     body = board_response.content
@@ -174,6 +188,44 @@ def test_x_audio_format_matches_body_magic(board_response, tmp_path, monkeypatch
 
     assert mp3_response.headers["x-audio-encoding"] == "mp3"
     assert mp3_response.content[:1] == b"\xff"  # frame sync MP3, không phải RIFF
+
+
+def test_container_body_never_claims_raw_in_x_audio_format(board_response):
+    """`adpcm_wav` gói thân trong RIFF ⇒ KHÔNG được gửi `x-audio-format`.
+
+    Đây là hợp đồng board tự viết ra trong `audio_format.cpp`: header đó chỉ có
+    một nghĩa duy nhất, "thân là dữ liệu thô". Thân có container thì cái tên
+    định dạng đã nằm sẵn trong chính thân, và board đọc từ đó
+    (`readWavHeader`). Nhánh chọn đường phát của board xét `isRiff` TRƯỚC
+    `fmt.raw`, nên bỏ header này không đổi một byte nào board phát ra — nó chỉ
+    xoá một lời khai sai và câu cảnh báo đi kèm.
+    """
+    assert board_response.content[:4] == b"RIFF"
+    assert "x-audio-format" not in board_response.headers
+
+    # Những header SỐ thì vẫn phải còn: board đời này bỏ qua chúng, nhưng
+    # người debug bằng curl đọc chúng, và chúng không khai gì về đóng gói.
+    h = board_response.headers
+    assert h["x-audio-sample-rate"] == str(adpcm.SAMPLE_RATE)
+    assert h["x-audio-block-align"] == str(adpcm.BLOCK_ALIGN)
+    assert h["x-audio-samples-per-block"] == str(adpcm.SAMPLES_PER_BLOCK)
+
+
+def test_raw_body_still_declares_x_audio_format(tmp_path, monkeypatch):
+    """Mặt kia của cùng hợp đồng: `adpcm_stream` thân THẬT SỰ thô, không có
+    container nào để đọc tham số ra — nên header đó BẮT BUỘC phải còn, kèm
+    `block=`. Thiếu nó board đoán 256 và tự kêu lên; đoán sai = nhiễu trắng."""
+    monkeypatch.setattr(config, "STORAGE_DIR", str(tmp_path))
+    monkeypatch.setattr(config, "AUDIO_PREROLL_SECONDS", 0.0)
+    monkeypatch.setattr(config, "RESPONSE_FORMAT", "adpcm_stream")
+    with patch("pipeline.router.resolve_speech", return_value=iter(["xin chào"])), patch(
+        "pipeline.tts.synthesize_text_stream", lambda t: iter([_tone(0.3).tobytes()])
+    ):
+        response = client.post("/process", files=_files())
+
+    assert response.content[:4] != b"RIFF"
+    assert "ima_adpcm" in response.headers["x-audio-format"]
+    assert f"block={adpcm.BLOCK_ALIGN}" in response.headers["x-audio-format"]
 
 
 # ── 5. board không bao giờ rơi vào nhánh "wav" gom trọn body ───────────────

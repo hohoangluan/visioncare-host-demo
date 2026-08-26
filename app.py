@@ -337,8 +337,7 @@ def _stream_headers(response_format: str) -> dict[str, str]:
     preroll = str(config.AUDIO_PREROLL_SECONDS)
 
     if response_format in _ADPCM_FORMATS:
-        return {
-            "X-Audio-Format": ADPCM_FORMAT,  # đúng chuỗi board mô tả trong hợp đồng
+        headers = {
             "X-Audio-Encoding": "ima_adpcm",
             "X-Audio-Sample-Rate": str(adpcm.SAMPLE_RATE),
             "X-Audio-Bits": "4",
@@ -350,6 +349,29 @@ def _stream_headers(response_format: str) -> dict[str, str]:
             "X-Audio-Samples-Per-Block": str(adpcm.SAMPLES_PER_BLOCK),
             "X-Audio-Preroll-Seconds": preroll,
         }
+        # 🔴 `X-Audio-Format` CHỈ đi kèm thân THÔ. Với board, header này có
+        # đúng một nghĩa: `parseAudioFormat()` (`src/audio/audio_format.cpp`)
+        # đặt `fmt.raw = true` chỉ vì THẤY nó — nó không đọc thân, nên không
+        # thể biết thân có container hay không.
+        #
+        # `adpcm_wav` gói thân trong RIFF, nên kèm header này là khai sai. Board
+        # tự chữa bằng cách ngửi 4 byte đầu, và kêu lên (đo trên board thật
+        # 2026-08-26):
+        #
+        #     CANH BAO: header x-audio-format bao du lieu THO, nhung than bat
+        #     dau bang 'RIFF'.  Theo than — doc nhu file WAV. Server nen bo
+        #     header do, hoac tra du lieu tho that su.
+        #
+        # Bỏ nó KHÔNG đổi một byte board phát ra: nhánh chọn đường phát trong
+        # `audio_service.cpp` xét `isRiff` TRƯỚC `fmt.raw`, nên thân RIFF vốn
+        # đã luôn đi đường `readWavHeader()`. Đổi lại, thân WAV còn khai được
+        # tổng độ dài — thứ nhánh "thô" không có.
+        #
+        # Các header SỐ ở trên vẫn giữ cho cả hai: chúng không khai gì về đóng
+        # gói, và người debug bằng curl đọc chúng.
+        if response_format != "adpcm_wav":
+            headers["X-Audio-Format"] = ADPCM_FORMAT
+        return headers
 
     if response_format == "mp3_stream":
         return {
@@ -615,13 +637,13 @@ async def receive_device_event(request: Request) -> dict:
         action_flow.bump_generation(device_id)
         interruption_ms = (time.monotonic() - started) * 1000
         incoming_calls.open(device_id, caller)
-        subscribers = events.publish(
+        queued = events.publish(
             device_id,
             {
                 "type": "call_incoming",
                 "caller": caller,
-                # Firmware receives one small SSE event, then pulls audio with
-                # X-Device-Id and its normal Accept capability declaration.
+                # Kính nhận một sự kiện nhỏ ở lượt poll kế tiếp (≤2 s), rồi tự
+                # kéo audio với X-Device-Id và khai báo Accept như thường lệ.
                 "audio_url": INCOMING_CALL_AUDIO_PATH,
             },
         )
@@ -629,7 +651,12 @@ async def receive_device_event(request: Request) -> dict:
             "status": "ok",
             "data": {
                 "type": event_type,
-                "subscribers": subscribers,
+                # `queued` LUÔN ≥ 1 — hộp thư không đánh rơi. Muốn biết kính
+                # có thật sự nghe được không thì đọc `downlink_open`, đừng
+                # suy từ `queued`. Đây chính là chỗ kênh SSE cũ nói dối:
+                # `subscribers: 1` mà sự kiện vẫn rơi vào hộp thư chết.
+                "queued": queued,
+                "downlink_open": events.downlink_open(device_id),
                 "announcement": announcement_for(caller),
                 "interruption_ms": round(interruption_ms, 3),
             },
@@ -637,10 +664,14 @@ async def receive_device_event(request: Request) -> dict:
 
     if event_type == "call_ended":
         incoming_calls.close(device_id)
-        subscribers = events.call_ended(device_id)
+        queued = events.call_ended(device_id)
         return {
             "status": "ok",
-            "data": {"type": event_type, "subscribers": subscribers},
+            "data": {
+                "type": event_type,
+                "queued": queued,
+                "downlink_open": events.downlink_open(device_id),
+            },
         }
     raise HTTPException(status_code=422, detail="Unsupported device event type")
 
@@ -1126,25 +1157,21 @@ async def receive_frame(request: Request) -> Response:
             headers={"Cache-Control": "no-store"},
         )
 
-    # F5: board tự khai tầng. Thiếu header -> "low", vì tầng thấp là mặc định
-    # của mọi lần bấm nút và là giả định an toàn: nó chỉ khiến server XIN thêm
-    # một khung, chứ không khiến nó dùng nhầm một khung mờ cho `ocr`.
-    tier = (request.headers.get("x-frame-tier") or "low").strip().lower()
-    if tier not in {"low", "high"}:
-        raise HTTPException(status_code=400, detail="X-Frame-Tier must be low|high")
-
+    # 🔴 `X-Frame-Tier` đã BỎ 2026-08-26 cùng toàn bộ F5. Board gửi đúng một
+    # loại ảnh (XGA 1024×768) cho mọi lượt. Header cũ, nếu một board chưa nạp
+    # lại vẫn gửi, được BỎ QUA chứ không trả 400: firmware và server nâng cấp
+    # lệch nhau là chuyện thường, và từ chối khung ảnh của một board cũ nghĩa
+    # là người dùng nghe "không nhận được ảnh từ kính" cho tới khi họ nạp lại.
     frames.put(
         device_id,
         turn_id,
         frame_bytes,
         capture_ts=request.headers.get("x-capture-ts"),
-        tier=tier,
     )
     logger.info(
-        "frame() nhận device=%s turn=%s tier=%s bytes=%d capture_ts=%s",
+        "frame() nhận device=%s turn=%s bytes=%d capture_ts=%s",
         device_id,
         turn_id,
-        tier,
         len(frame_bytes),
         request.headers.get("x-capture-ts"),
     )
@@ -1247,20 +1274,26 @@ async def push_firmware_update(request: Request) -> dict:
             if item["fw_version"] != build.version
         ]
 
+    # Xếp hàng KỂ CẢ khi kính đang không poll. Khác `wifi_config` bên dưới:
+    # nạp firmware là việc luôn đúng để làm bất cứ khi nào kính quay lại, và
+    # `GET /firmware/manifest` là nguồn sự thật nên một sự kiện cũ không đẩy
+    # được board sang bản sai. `downlink_open` đi kèm để bên gọi biết ngay bây
+    # giờ nó có tới hay không.
     pushed: dict[str, int] = {}
     for device_id in candidates:
-        pushed[device_id] = events.firmware_update(device_id, build.version)
+        events.firmware_update(device_id, build.version)
+        pushed[device_id] = events.downlink_open(device_id)
         devices.mark_update_pushed(device_id, build.version)
     return {"status": "ok", "data": {"version": build.version, "pushed": pushed}}
 
 
 @app.post("/internal/device/wifi")
 async def push_wifi_config(request: Request) -> dict:
-    """App đổi Wi-Fi cho kính từ xa, qua kênh `/events`.
+    """App đổi Wi-Fi cho kính từ xa, qua kênh xuống `GET /downlink`.
 
-    Đường này chỉ chạy khi kính CÒN mạng cũ. Kính đã mất mạng thì lối duy nhất
-    là SoftAP `VisionCare-Setup` ngay trên kính — xem
-    `src/net/wifi_provision.h`.
+    Đường này chỉ chạy khi kính CÒN mạng cũ. Kính đã mất mạng thì hai lối còn
+    lại là BLE (`src/net/ble_provision.h`) và SoftAP `VisionCare-Setup`
+    (`src/net/wifi_provision.h`).
     """
     _require_internal_callback(request)
     envelope = await request.json()
@@ -1272,15 +1305,31 @@ async def push_wifi_config(request: Request) -> dict:
     if not device_id or not ssid:
         raise HTTPException(status_code=422, detail="device_id and ssid are required")
 
-    # 🔴 KHÔNG log `password`. Xem ghi chú ở `EventHub.wifi_config()`.
-    subscribers = events.wifi_config(device_id, ssid, str(envelope.get("password") or ""))
-    logger.info("push_wifi_config() device=%s ssid=%s subscribers=%d", device_id, ssid, subscribers)
-    if subscribers == 0:
+    # 🔴 Kiểm TRƯỚC khi xếp hàng, và KHÔNG xếp hàng nếu kính đang mất tích.
+    #
+    # Khác hẳn `firmware_update` ở trên. Một `wifi_config` nằm chờ trong hộp
+    # thư sẽ nổ vào mặt người dùng lúc kính quay lại — có thể là hàng giờ sau,
+    # trên đúng mạng đang chạy tốt — và đá nó sang mạng họ đã thôi không muốn
+    # nữa. Đổi Wi-Fi là việc phải xảy ra BÂY GIỜ hoặc không xảy ra.
+    if not events.downlink_open(device_id):
+        age = events.last_poll_age_seconds(device_id)
+        logger.info(
+            "push_wifi_config() device=%s: kính không giữ kênh xuống (lần poll cuối: %s)",
+            device_id,
+            "chưa bao giờ" if age is None else f"{age:.0f}s trước",
+        )
         raise HTTPException(
             status_code=409,
-            detail="Glasses are not holding an /events channel; use the VisionCare-Setup hotspot",
+            detail=(
+                "Glasses are not polling /downlink; use BLE provisioning or the "
+                "VisionCare-Setup hotspot"
+            ),
         )
-    return {"status": "ok", "data": {"subscribers": subscribers}}
+
+    # 🔴 KHÔNG log `password`. Xem ghi chú ở `EventHub.wifi_config()`.
+    queued = events.wifi_config(device_id, ssid, str(envelope.get("password") or ""))
+    logger.info("push_wifi_config() device=%s ssid=%s queued=%d", device_id, ssid, queued)
+    return {"status": "ok", "data": {"queued": queued, "downlink_open": True}}
 
 
 def _require_app_token(request: Request) -> None:
@@ -1359,17 +1408,26 @@ def hazard_status(request: Request) -> dict:
                 ) is not None
                 for device_id in watching
             },
-            # 🔴 Số này phân biệt hai ca nhìn giống hệt nhau từ ngoài:
-            #   0 -> lệnh `hazard_watch start` KHÔNG đi đâu cả (board chưa mở
-            #        `/events`, hoặc kênh của nó đã chết) — lỗi ở đường xuống;
-            #   1 -> lệnh đã ra khỏi server, board nhận rồi mà không chụp —
-            #        lỗi ở phía firmware.
-            # Thiếu nó thì mọi lần gỡ lỗi đều bắt đầu bằng một cuộc đoán.
-            "sse_subscribers": {
-                device_id: events.subscriber_count(device_id)
+            # 🔴 Hai số này phân biệt ba ca nhìn giống hệt nhau từ ngoài:
+            #   downlink_open=false          -> kính không poll: mất mạng, hoặc
+            #                                   đang bận cả phút — lỗi đường xuống
+            #   open=true, queued>0 mãi      -> kính poll nhưng không rút được?
+            #                                   không xảy ra được, nghi server
+            #   open=true, queued=0, im lặng -> board nhận rồi mà không làm —
+            #                                   lỗi ở phía firmware
+            # Thiếu chúng thì mọi lần gỡ lỗi đều bắt đầu bằng một cuộc đoán.
+            "downlink_open": {
+                device_id: events.downlink_open(device_id)
                 for device_id in watching
             },
-            "sse_queued": {
+            "downlink_last_poll_seconds": {
+                device_id: (
+                    None if (age := events.last_poll_age_seconds(device_id)) is None
+                    else round(age, 1)
+                )
+                for device_id in watching
+            },
+            "downlink_queued": {
                 device_id: events.queued_count(device_id)
                 for device_id in watching
             },
@@ -1423,10 +1481,14 @@ def device_status(request: Request) -> dict:
             "update_available": bool(
                 build is not None and record is not None and record.fw_version != build.version
             ),
-            # Kính đang giữ kênh /events hay không — quyết định đổi Wi-Fi từ xa
-            # có chạy được không. Không mở kênh thì app phải chỉ người dùng
-            # sang hotspot VisionCare-Setup.
-            "downlink_open": events.subscriber_count(device_id) > 0,
+            # Kính có đang poll `GET /downlink` không — quyết định đổi Wi-Fi
+            # từ xa có chạy được không. Không poll thì app phải chỉ người dùng
+            # sang BLE hoặc hotspot VisionCare-Setup.
+            "downlink_open": events.downlink_open(device_id),
+            "downlink_last_poll_seconds": (
+                None if (age := events.last_poll_age_seconds(device_id)) is None
+                else round(age, 1)
+            ),
         },
     }
 
@@ -1443,15 +1505,22 @@ async def app_set_wifi(request: Request) -> dict:
     if not device_id or not ssid:
         raise HTTPException(status_code=422, detail="device_id and ssid are required")
 
-    # 🔴 KHÔNG log `password`.
-    subscribers = events.wifi_config(device_id, ssid, str(envelope.get("password") or ""))
-    logger.info("app_set_wifi() device=%s ssid=%s subscribers=%d", device_id, ssid, subscribers)
-    if subscribers == 0:
+    # Kiểm TRƯỚC khi xếp hàng — cùng lý do như `/internal/device/wifi`: một
+    # `wifi_config` nằm chờ sẽ đá kính ra khỏi mạng đang chạy tốt, hàng giờ
+    # sau, lúc không ai mong đợi.
+    if not events.downlink_open(device_id):
         raise HTTPException(
             status_code=409,
-            detail="Glasses are not holding an /events channel; use the VisionCare-Setup hotspot",
+            detail=(
+                "Glasses are not polling /downlink; use BLE provisioning or the "
+                "VisionCare-Setup hotspot"
+            ),
         )
-    return {"status": "ok", "data": {"subscribers": subscribers}}
+
+    # 🔴 KHÔNG log `password`.
+    queued = events.wifi_config(device_id, ssid, str(envelope.get("password") or ""))
+    logger.info("app_set_wifi() device=%s ssid=%s queued=%d", device_id, ssid, queued)
+    return {"status": "ok", "data": {"queued": queued, "downlink_open": True}}
 
 
 @app.post("/device/firmware-update")
@@ -1467,14 +1536,23 @@ async def app_request_firmware_update(request: Request) -> dict:
     if build is None:
         raise HTTPException(status_code=409, detail="No firmware released")
 
-    subscribers = events.firmware_update(device_id, build.version)
-    if subscribers == 0:
-        raise HTTPException(
-            status_code=409,
-            detail="Glasses are not holding an /events channel; it will update on its next poll",
-        )
+    # Xếp hàng dù kính có đang poll hay không: nạp firmware là việc luôn đúng
+    # để làm khi kính quay lại, và `GET /firmware/manifest` mới là nguồn sự
+    # thật nên một sự kiện cũ không đẩy được board sang bản sai.
+    #
+    # KHÔNG còn 409 ở đây (kênh SSE cũ trả 409 khi `subscribers == 0`): với
+    # hộp thư poll thì sự kiện không mất, chỉ tới muộn. Trả 200 kèm
+    # `downlink_open` để app tự nói "sẽ cập nhật khi kính online" thay vì báo
+    # đỏ một việc thật ra đã nhận.
+    events.firmware_update(device_id, build.version)
     devices.mark_update_pushed(device_id, build.version)
-    return {"status": "ok", "data": {"version": build.version, "subscribers": subscribers}}
+    return {
+        "status": "ok",
+        "data": {
+            "version": build.version,
+            "downlink_open": events.downlink_open(device_id),
+        },
+    }
 
 
 @app.post("/internal/device/pair")
@@ -1507,9 +1585,25 @@ async def pair_device(request: Request) -> dict:
     }
 
 
-@app.get("/events")
-def stream_events(request: Request) -> StreamingResponse:
-    """Keep one bounded, per-device SSE downlink open for the glasses."""
+@app.get("/downlink")
+def poll_downlink(request: Request) -> JSONResponse:
+    """Rút cạn hộp thư của một kính. Thay `GET /events` (SSE) từ 2026-08-26.
+
+    Board gọi mỗi ~2 giây và CHỈ KHI RẢNH — không đang `/process`, không đang
+    phát tiếng, không đang OTA. Đó là toàn bộ lý do thiết kế này tồn tại: nó
+    bảo đảm board không bao giờ giữ hai phiên TLS cùng lúc, mà mỗi phiên TLS
+    ngốn 45 056 B RAM liền trên tổng số ~114 KB nó có. Kênh SSE cũ giữ kết nối
+    thường trực nên vi phạm điều đó liên tục, và hệ quả đo được là
+    `firmware_update` trả `pushed: 0` còn `wifi_config` rơi vào hộp thư chết.
+
+    Trả HẾT sự kiện đang chờ trong một lượt, không trả từng cái: bốn sự kiện
+    xếp hàng mà trả nhỏ giọt thì mất 8 giây mới đi hết, và trong đó có thể có
+    `call_incoming`.
+
+    KHÔNG cache: `Cache-Control: no-store` là bắt buộc — kênh này đi qua
+    Cloudflare tunnel, và một lượt poll được cache lại nghĩa là board đọc mãi
+    một hộp thư cũ.
+    """
     device_id = request.headers.get("x-device-id", "").strip()
     if not device_id:
         raise HTTPException(status_code=400, detail="Missing X-Device-Id")
@@ -1518,14 +1612,27 @@ def stream_events(request: Request) -> StreamingResponse:
         fw_version=request.headers.get("x-fw-version"),
         wifi_ssid=request.headers.get("x-wifi-ssid"),
     )
-    return StreamingResponse(
-        events.subscribe(device_id),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
+    pending = events.drain(device_id)
+    if pending:
+        # Chỉ log khi CÓ gì để trả. Board poll mỗi 2 giây, tức 43 200 lượt mỗi
+        # ngày — log mỗi lượt sẽ chôn vùi mọi dòng khác.
+        logger.info(
+            "downlink: trả %d sự kiện cho %s (%s)",
+            len(pending),
+            device_id,
+            ", ".join(str(e.get("type")) for e in pending),
+        )
+    return JSONResponse(
+        {
+            "status": "ok",
+            "data": {
+                "events": pending,
+                # Board giữ hằng của riêng nó; số này để nó đối chiếu và để
+                # chẩn đoán từ xa biết server mong nhịp nào.
+                "poll_after_ms": config.DOWNLINK_POLL_HINT_MS,
+            },
         },
+        headers={"Cache-Control": "no-store"},
     )
 
 

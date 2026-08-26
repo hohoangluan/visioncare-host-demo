@@ -237,34 +237,68 @@ def test_reported_version_change_clears_pushed_marker() -> None:
 # ─── đẩy lệnh xuống kính ───────────────────────────────────────────────────
 
 
-def test_firmware_push_sends_event_to_subscriber(firmware_dir) -> None:
+def test_firmware_push_queues_event_for_the_glasses(firmware_dir) -> None:
     _release(firmware_dir, "2026.08.24-ota2")
-    stream = events.subscribe("glasses-01")
-    try:
-        response = _loopback_client().post(
-            "/internal/firmware/push",
-            json={"device_id": "glasses-01"},
-            headers=_internal_headers(),
-        )
-        assert response.status_code == 200
-        payload = json.loads(next(stream)[6:-2])
-        assert payload == {"type": "firmware_update", "version": "2026.08.24-ota2"}
-    finally:
-        stream.close()
+    response = _loopback_client().post(
+        "/internal/firmware/push",
+        json={"device_id": "glasses-01"},
+        headers=_internal_headers(),
+    )
+    assert response.status_code == 200
+    assert events.drain("glasses-01") == [
+        {"type": "firmware_update", "version": "2026.08.24-ota2"}
+    ]
+
+
+def test_firmware_push_queues_even_when_the_glasses_are_offline(firmware_dir) -> None:
+    """🔴 ĐỔI 2026-08-26 — khác hẳn `wifi_config`, và cố ý.
+
+    Kênh SSE cũ trả `pushed: 0` khi kính không nối, và sự kiện biến mất. Hộp
+    thư poll thì giữ: nạp firmware là việc LUÔN đúng để làm khi kính quay lại,
+    và `GET /firmware/manifest` mới là nguồn sự thật nên một sự kiện cũ không
+    đẩy được board sang bản sai.
+
+    (`wifi_config` thì ngược lại — xem `test_wifi_config_without_open_channel_is_409`.)
+    """
+    _release(firmware_dir, "2026.08.24-ota2")
+    assert events.downlink_open("glasses-01") is False
+    response = _loopback_client().post(
+        "/internal/firmware/push",
+        json={"device_id": "glasses-01"},
+        headers=_internal_headers(),
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["pushed"] == {"glasses-01": False}
+    assert events.queued_count("glasses-01") == 1, "sự kiện bị đánh rơi như thời SSE"
+
+
+def test_firmware_push_reports_downlink_open_when_the_glasses_are_polling(
+    firmware_dir,
+) -> None:
+    _release(firmware_dir, "2026.08.24-ota2")
+    events.drain("glasses-01")  # kính vừa poll
+    response = _loopback_client().post(
+        "/internal/firmware/push",
+        json={"device_id": "glasses-01"},
+        headers=_internal_headers(),
+    )
+    assert response.json()["data"]["pushed"] == {"glasses-01": True}
 
 
 def test_firmware_push_carries_no_binary(firmware_dir) -> None:
-    """🔴 Khoá kiến trúc: 1.35 MB đi qua kênh SSE sẽ chặn `call_incoming`."""
+    """🔴 Khoá kiến trúc: sự kiện chỉ mang TÊN phiên bản.
+
+    Lý do cũ là "1.35 MB qua kênh SSE sẽ chặn `call_incoming`". Kênh đổi rồi
+    nhưng khoá vẫn đúng, và giờ vì một lý do MẠNH HƠN: hộp thư chỉ có 8 chỗ,
+    nằm trong RAM server, và mỗi kính có một cái. `url`/`size`/`sha256` nằm ở
+    `GET /firmware/manifest` — nguồn sự thật duy nhất.
+    """
     _release(firmware_dir, "2026.08.24-ota2")
-    stream = events.subscribe("glasses-01")
-    try:
-        _loopback_client().post("/internal/firmware/push", json={}, headers=_internal_headers())
-        events.firmware_update("glasses-01", "2026.08.24-ota2")
-        chunk = next(stream)
-        assert len(chunk) < 200
-        assert "sha256" not in chunk and "url" not in chunk
-    finally:
-        stream.close()
+    _loopback_client().post("/internal/firmware/push", json={}, headers=_internal_headers())
+    events.firmware_update("glasses-01", "2026.08.24-ota2")
+    for event in events.drain("glasses-01"):
+        assert set(event) == {"type", "version"}
+        assert len(json.dumps(event)) < 200
 
 
 def test_firmware_push_without_release_is_409(firmware_dir) -> None:
@@ -273,19 +307,70 @@ def test_firmware_push_without_release_is_409(firmware_dir) -> None:
 
 
 def test_wifi_config_reaches_the_glasses() -> None:
-    stream = events.subscribe("glasses-01")
-    try:
-        response = _loopback_client().post(
+    events.drain("glasses-01")  # kính vừa poll -> kênh xuống đang mở
+    response = _loopback_client().post(
+        "/internal/device/wifi",
+        json={"device_id": "glasses-01", "ssid": "Nha Moi", "password": "12345678"},
+        headers=_internal_headers(),
+    )
+    assert response.status_code == 200
+    assert response.json()["data"]["downlink_open"] is True
+    (payload,) = events.drain("glasses-01")
+    assert payload["type"] == "wifi_config"
+    assert payload["ssid"] == "Nha Moi"
+    assert payload["password"] == "12345678"
+
+
+def test_wifi_config_is_not_queued_when_the_channel_is_closed() -> None:
+    """🔴 Ngược hẳn `firmware_update`, và đây là lý do.
+
+    Một `wifi_config` nằm chờ trong hộp thư sẽ nổ vào mặt người dùng lúc kính
+    quay lại — có thể hàng giờ sau, trên đúng mạng đang chạy tốt — và đá nó
+    sang mạng họ đã thôi không muốn nữa. Đổi Wi-Fi là việc phải xảy ra BÂY GIỜ
+    hoặc không xảy ra.
+    """
+    assert events.downlink_open("glasses-01") is False
+    _loopback_client().post(
+        "/internal/device/wifi",
+        json={"device_id": "glasses-01", "ssid": "Nha Moi"},
+        headers=_internal_headers(),
+    )
+    assert events.queued_count("glasses-01") == 0, (
+        "wifi_config đã xếp hàng cho một kính mất tích — nó sẽ nổ muộn"
+    )
+
+
+def test_wifi_config_409_after_the_channel_goes_stale(monkeypatch) -> None:
+    """Kính poll rồi im quá `DOWNLINK_STALE_SECONDS` cũng là kênh đóng."""
+    import services.events_channel as module
+
+    at = [1000.0]
+    monkeypatch.setattr(module.time, "monotonic", lambda: at[0])
+    events.drain("glasses-01")
+    at[0] = 1000.0 + config.DOWNLINK_STALE_SECONDS + 1
+
+    response = _loopback_client().post(
+        "/internal/device/wifi",
+        json={"device_id": "glasses-01", "ssid": "Nha Moi"},
+        headers=_internal_headers(),
+    )
+    assert response.status_code == 409
+
+
+def test_wifi_config_password_is_never_logged(caplog) -> None:
+    """🔴 Mật khẩu đi qua kênh này ở dạng chữ thường. Không được vào log."""
+    events.drain("glasses-01")
+    with caplog.at_level("DEBUG"):
+        _loopback_client().post(
             "/internal/device/wifi",
-            json={"device_id": "glasses-01", "ssid": "Nha Moi", "password": "12345678"},
+            json={
+                "device_id": "glasses-01",
+                "ssid": "Nha Moi",
+                "password": "SieuBiMat123",
+            },
             headers=_internal_headers(),
         )
-        assert response.status_code == 200
-        payload = json.loads(next(stream)[6:-2])
-        assert payload["type"] == "wifi_config"
-        assert payload["ssid"] == "Nha Moi"
-    finally:
-        stream.close()
+    assert "SieuBiMat123" not in caplog.text
 
 
 def test_wifi_config_without_open_channel_is_409() -> None:
