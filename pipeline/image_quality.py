@@ -5,9 +5,12 @@ một tấm ảnh là vô dụng với "đọc chữ giùm tôi" nhưng hoàn to
 tới "gọi cho mẹ". Chặn trước khi biết intent thì `chat` và 9 action điều khiển
 điện thoại — vốn không hề đọc ảnh — vẫn bị một tấm ảnh xấu chặn đứng.
 
-Camera hiện dùng (1600x1200) cho sharpness thấp một cách HỆ THỐNG trên toàn bộ
-ảnh chụp được, không riêng ảnh nào: đo trên 83 request thật cùng độ phân giải,
-Laplacian variance native ra min=0.70 median=19.38 max=108.94. Không có ngưỡng
+Camera thật hiện dùng 1280×720, JPEG quality 18 (thang esp32-camera 0–63, số
+nhỏ = nét hơn — CONTRACTS.md mục 1 #6), KHÔNG PHẢI 1600x1200 như tài liệu cũ
+từng ghi. Bộ số min=0.70 median=19.38 max=108.94 ở dưới đây đo trên 83 request
+"1600x1200" cũ — mô tả một cấu hình không còn tồn tại, xem
+`docs/tasks/measurements/H0-blur-720p.md` cho số đo lại trên 1280×720 (số đó
+là ĐỀ XUẤT, chưa áp vào `config.IMAGE_MIN_SHARPNESS` bên dưới). Không có ngưỡng
 nào tách được "ảnh mờ" khỏi "ảnh bình thường của máy này" mà không loại nhầm
 phần lớn request hợp lệ — nên ngưỡng ở đây chỉ bắt outlier cực đoan, KHÔNG đảm
 bảo ảnh đủ nét để đọc đúng mọi chi tiết.
@@ -43,6 +46,15 @@ STATIC_SPEECH: tuple[str, ...] = (_TOO_DARK, _TOO_BRIGHT, _TOO_BLURRY, _NO_IMAGE
 # Intent thật sự đọc ảnh. Các intent còn lại (`chat` và 9 action điều khiển điện
 # thoại) vẫn nhận tham số `image` nhưng bỏ qua nó, nên chất lượng ảnh không đổi
 # được một chữ nào trong câu trả lời — chặn chúng chỉ là từ chối oan.
+#
+# 🔴 `Intent.HAZARD` đã QUAY LẠI danh sách này (2026-08-26) cùng lúc với
+# `router._IMAGE_REQUIRED_INTENTS`. Nó lại là một câu hỏi về một khung hình,
+# trả lời qua LLM (`handlers/describe_hazard.py`) — nên nó lại đọc ảnh.
+#
+# Hai danh sách này là HAI nơi khác nhau và đã lệch nhau đúng một lần: gỡ ở
+# router xong, cổng này vẫn chặn, và lượt thật trên board trả về *"Không nhận
+# được ảnh từ kính"* thay vì chạy. Đổi một cái thì PHẢI đổi cái kia —
+# `tests/test_pipeline_e2e.py` có assert riêng cho việc hai danh sách khớp.
 _READS_IMAGE = frozenset({
     Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE, Intent.HAZARD,
 })
@@ -107,9 +119,10 @@ def reject_reason(intent: str, image_bytes: bytes | None) -> str | None:
     """Câu từ chối ảnh cho `intent`, hoặc None nếu request được đi tiếp.
 
     Gọi sau khi đã có intent. Intent không đọc ảnh thì thoát ngay, không decode
-    gì — vừa khỏi từ chối oan, vừa khỏi tốn CPU: decode 1600x1200 rồi chạy
-    Laplacian float64 mất khoảng 0.1s cho mỗi request, kể cả request "gọi cho
-    mẹ" không hề dùng tới ảnh.
+    gì — vừa khỏi từ chối oan, vừa khỏi tốn CPU: decode ảnh rồi chạy Laplacian
+    float64 tốn CPU cho mỗi request (≈0.1s đo trên 1600×1200 — cấu hình cũ,
+    CHƯA đo lại trên 1280×720), kể cả request "gọi cho mẹ" không hề dùng tới
+    ảnh.
     """
     if intent not in _READS_IMAGE:
         return None
@@ -134,3 +147,56 @@ def reject_reason(intent: str, image_bytes: bytes | None) -> str | None:
         f" -> từ chối: {reason}" if reason else "",
     )
     return reason
+
+
+# ─── T15/H5 — đếm KHONG_CO_CHU, để có mốc "OCR hỏng bao nhiêu %" ───────────
+#
+# 25.5: trước task này KHONG_CO_CHU không được đếm ở đâu — không biết OCR
+# hỏng 5% hay 50% số lượt thì không nói được H1/H3 có tác dụng hay không. Số
+# đo thật (không phải mô phỏng) nằm ở docs/tasks/measurements/H4.md: trên 6
+# lượt ảnh có chữ thật (loại bỏ ảnh hỏng cố ý `request323_overexposed`),
+# `gemini-3.5-flash-lite` (model mặc định TRƯỚC H1) ra KHONG_CO_CHU 1/6 lần
+# (ảnh chữ nhỏ, khung rộng); `gemini-3.5-flash` (đề xuất SAU H1, xem
+# `config.GEMINI_OCR_MODEL`) và `gemini-2.5-flash` ra KHONG_CO_CHU 0/6 lần
+# trên đúng bộ ảnh đó — trước/sau khác nhau thật, không phải cảm giác.
+#
+# `sharpness`/`brightness` PHẢI lấy từ tuple `measure()` đã chạy sẵn ở gate
+# cho intent OCR (`measure()` luôn chạy cho mọi intent trong `_READS_IMAGE`,
+# xem `reject_reason()` ở trên) — KHÔNG đo lại: decode ảnh + Laplacian
+# float64 tốn CPU một lần nữa là vô ích khi số đã có sẵn.
+#
+# 🔴 Việc GỌI hàm này đúng lúc Gemini trả `NO_TEXT_SENTINEL` thuộc
+# `models/ocr/__init__.py` — file đó ngoài bảng "FILE BẠN ĐƯỢC SỬA" của agent
+# T15 (xem docs/tasks/reports/T15.md mục "Lệch với task file"). Đây là hạ
+# tầng sẵn sàng (đếm + log đúng định dạng cần), CHƯA được nối dây vào
+# production.
+_no_text_count = 0
+
+
+def record_no_text(sharpness: float | None, brightness: float | None) -> int:
+    """Ghi nhận một lượt OCR ra KHONG_CO_CHU, trả về tổng số đã ghi nhận từ
+    lúc tiến trình khởi động.
+
+    `sharpness`/`brightness`: lấy từ `measure()` đã chạy sẵn ở gate, truyền
+    `None` nếu không có (ví dụ ảnh không decode được ở bước đó).
+    """
+    global _no_text_count
+    _no_text_count += 1
+    logger.info(
+        "OCR ra KHONG_CO_CHU lần %d: sharpness=%s brightness=%s",
+        _no_text_count,
+        f"{sharpness:.2f}" if sharpness is not None else "?",
+        f"{brightness:.1f}" if brightness is not None else "?",
+    )
+    return _no_text_count
+
+
+def no_text_count() -> int:
+    """Tổng số lượt OCR ra KHONG_CO_CHU đã ghi nhận từ lúc tiến trình khởi động."""
+    return _no_text_count
+
+
+def reset_no_text_count() -> None:
+    """Chỉ dùng cho test — đưa bộ đếm về 0 giữa các ca kiểm thử."""
+    global _no_text_count
+    _no_text_count = 0

@@ -29,6 +29,15 @@ from models import vlm  # noqa: E402
 from pipeline import stt  # noqa: E402
 from schemas import Intent  # noqa: E402
 
+# 🔴 Windows: stdout mặc định là cp1252, và MỌI dòng in của tool này đều có
+# tiếng Việt. Không có ba dòng dưới thì tool chạy XONG việc rồi chết ở lệnh
+# `print` cuối — nhìn từ ngoài giống hệt "tool hỏng", trong khi file đã ghi.
+# Đã dính thật với `publish_firmware.py` (bản đã phát hành, chỉ crash lúc in).
+for _stream in (sys.stdout, sys.stderr):
+    if hasattr(_stream, "reconfigure"):
+        _stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 OUT_DIR = PROJ / "data" / "intent"
 
 # Mô tả từng nhãn — GIỮ ĐỒNG BỘ với `_PROMPT_TEMPLATE` trong pipeline/intent.py.

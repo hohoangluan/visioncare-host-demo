@@ -6,27 +6,48 @@ khác hẳn "chưa gọi được, hãy bấm vào thông báo trên điện tho
 hai đều ra cùng một câu "đã gửi yêu cầu".
 """
 
+from dataclasses import dataclass
+
+from handlers.contact_match import format_candidates, sanitize_candidates
+
 _TIMEOUT_MESSAGE = "Điện thoại chưa phản hồi, vui lòng kiểm tra thông báo trên điện thoại."
 
 # Mã lỗi nghiệp vụ -> câu nói. Mã không có ở đây rơi về câu chung của từng
 # action, nên thiếu một mã mới không làm người dùng nghe mã lỗi thô.
+#
+# T20 (docs/tasks/measurements/P7-error-matrix.md, CONTRACTS.md mục 5.5) đối
+# chiếu bảng này với mã app thật sự phát (`tests/fixtures/app_error_codes.txt`)
+# và xoá 7 dòng MỒ CÔI — server có câu nhưng không nơi nào (app Android, server
+# app 8001) từng phát mã đó lúc chạy, chỉ có tên trong tài liệu:
+#   NAVIGATION_NOT_FOUND · NAVIGATION_ALREADY_STOPPED · QUOTE_NOT_FOUND
+#   QUOTE_EXPIRED · NO_ACTIVE_PLAYBACK · MUSIC_ACCOUNT_NOT_CONNECTED
+#   SMS_PERMISSION_DENIED
+# và xoá GLASSES_DEVICE_NOT_LINKED — mã này CÓ nguồn thật (`errors.py:161`,
+# server app) nhưng đi bằng HTTP 404 của chính lời gọi POST, không nằm trong
+# `error.code` của operation, nên dòng ở đây chưa từng được tra tới. Bắt đúng
+# chỗ là ở `handlers/action_flow.py:245-251` (VisionCareAPIError) — NGOÀI PHẠM
+# VI file được sửa của T20, xem docs/tasks/reports/T20.md mục "Lệch với task
+# file".
+#
+# 8 mã cuối bảng là T20 THÊM MỚI: app đã phát (fixture xác nhận) nhưng trước
+# đây rơi vào `_GENERIC_FAILURE`/`_UNSPECIFIED_FAILURE` — câu chung, không nói
+# người dùng phải làm gì.
+_MULTIPLE_CONTACTS_PREFIX = "Có nhiều người trùng tên:"
+_CONTACT_SELECTION_QUESTION = "Bạn chọn ai?"
+
 _ERROR_SPEECH = {
-    "GLASSES_DEVICE_NOT_LINKED": "Kính chưa được ghép nối với tài khoản nào.",
     "DELIVERY_FAILED": "Không kết nối được với điện thoại, vui lòng mở ứng dụng trên điện thoại.",
     "CONTACT_NOT_FOUND": "Không tìm thấy người này trong danh bạ.",
-    "MULTIPLE_CONTACTS_FOUND": "Có nhiều người trùng tên trong danh bạ, vui lòng nói rõ hơn.",
+    "MULTIPLE_CONTACTS_FOUND": f"{_MULTIPLE_CONTACTS_PREFIX} {_CONTACT_SELECTION_QUESTION}",
     "CONTACT_PERMISSION_DENIED": "Ứng dụng chưa được cấp quyền đọc danh bạ.",
     "CALL_PERMISSION_DENIED": "Ứng dụng chưa được cấp quyền gọi điện.",
-    "SMS_PERMISSION_DENIED": "Ứng dụng chưa được cấp quyền gửi tin nhắn.",
     "EMERGENCY_CONTACT_NOT_CONFIGURED": "Chưa cài số liên hệ khẩn cấp trên điện thoại.",
-    "NO_ACTIVE_PLAYBACK": "Hiện không có bài hát nào đang phát, không cần dừng.",
     "SONG_NOT_FOUND": "Không tìm thấy bài hát này, vui lòng nói lại tên bài.",
     "PLAYBACK_STOP_FAILED": "Chưa dừng được nhạc, vui lòng thử lại.",
-    "MUSIC_ACCOUNT_NOT_CONNECTED": "Chưa liên kết tài khoản nghe nhạc.",
     # Không nói "hết hạn": đo trên máy thật, mã này về khi tài khoản là gói MIỄN
     # PHÍ, chứ không phải gói trả phí vừa hết hạn. Ứng dụng nhạc mở lên bình
     # thường nhưng từ chối nạp đúng bài được yêu cầu, vì gói miễn phí không cho
-    # phát một bài chỉ định. Nói "hết hạn" khiến người dùng đi gia hạn một thứ họ
+    # phép phát một bài chỉ định. Nói "hết hạn" khiến người dùng đi gia hạn một thứ họ
     # chưa từng mua; nói rõ nguyên nhân thì họ biết phải nâng cấp.
     "SUBSCRIPTION_INACTIVE": (
         "Tài khoản nghe nhạc đang dùng gói miễn phí nên không phát được bài chỉ định. "
@@ -36,14 +57,94 @@ _ERROR_SPEECH = {
     "LOCATION_PERMISSION_DENIED": "Ứng dụng chưa được cấp quyền vị trí.",
     # Không đoán hộ một địa điểm gần đúng: nói thẳng là không tìm thấy để người
     # dùng đọc lại tên, còn hơn đưa họ tới nhầm chỗ.
+    #
+    # CHƯA QUYẾT (câu hỏi mở CONTRACTS mục 7 #7): P7-error-matrix.md xác nhận
+    # app KHÔNG kiểm địa điểm hôm nay -> mã này KHÔNG có nguồn phát thật. Giữ
+    # nguyên câu (không tự xoá — task file T20 nói rõ "không tự chọn (a) hay
+    # (b)"), nhưng `_ERROR_POLICY` bên dưới xếp nó `retryable=False` cho tới khi
+    # có quyết định, để không lỡ mở một đường hỏi lại cho một mã không ai phát.
     "INVALID_DESTINATION": "Không tìm thấy địa điểm này. Vui lòng nói lại tên địa điểm.",
-    "NAVIGATION_NOT_FOUND": "Hiện không có lộ trình nào đang chạy.",
-    "NAVIGATION_ALREADY_STOPPED": "Chỉ đường đã dừng từ trước.",
-    "QUOTE_NOT_FOUND": "Không tìm thấy báo giá chuyến đi.",
-    "QUOTE_EXPIRED": "Báo giá chuyến đi đã hết hạn.",
     "NO_RIDE_AVAILABLE": "Hiện không có xe nào gần đây.",
+    # Không có nguồn phát thật (app dùng deeplink Grab, không OAuth) nhưng GIỮ
+    # có chủ đích: CONTRACTS mục 5.2 / T11 chốt để dành cho provider tương lai
+    # có đăng nhập tài khoản riêng. Đây là NGOẠI LỆ được DoD cho phép, khác với
+    # 7 mã mồ côi bị xoá ở trên.
     "RIDE_ACCOUNT_NOT_CONNECTED": "Chưa liên kết tài khoản đặt xe.",
+    # --- 8 mã T20 thêm mới (P7-error-matrix.md mục 1.3 — "mã CÂM") ---
+    "PLAYBACK_FAILED": "Chưa phát được bài hát này, vui lòng thử lại hoặc chọn bài khác.",
+    # Dùng chung cho contact_call VÀ emergency_call (mã không phân biệt theo
+    # operation) — ưu tiên cao nhất trong 8 mã này vì gồm cả ca gọi khẩn cấp
+    # không quay số được (ActionRegistry.kt:460).
+    "CALL_FAILED": "Không thực hiện được cuộc gọi này, vui lòng bấm ngay vào thông báo trên điện thoại.",
+    "INVALID_VOLUME": "Không đổi được âm lượng vì giá trị không hợp lệ, vui lòng nói lại to hơn hoặc nhỏ hơn.",
+    "NAVIGATION_START_FAILED": "Chưa mở được chỉ đường, vui lòng bấm vào thông báo trên điện thoại.",
+    "NAVIGATION_STOP_FAILED": "Chưa dừng được chỉ đường, vui lòng thử lại.",
+    "RIDE_CONFIRM_FAILED": "Chưa xác nhận được chuyến xe, vui lòng bấm vào thông báo trên điện thoại.",
+    "INVALID_PARAMS": "Điện thoại báo thiếu thông tin để thực hiện, vui lòng thử lại.",
+    "UNSUPPORTED_ACTION": "Điện thoại chưa hỗ trợ chức năng này, có thể ứng dụng cần được cập nhật.",
 }
+
+
+@dataclass(frozen=True)
+class ErrorPolicy:
+    """21.7 — phân loại một mã lỗi: câu nói, có đáng hỏi lại không, hỏi slot nào."""
+
+    speech: str
+    retryable: bool  # có đặt pending hỏi lại không (thi công thật ở T06)
+    reask: tuple[str, str] | None = None  # (slot, intent) nếu retryable
+
+
+@dataclass(frozen=True)
+class PendingSpeech:
+    """Yêu cầu đặt pending đi kèm câu kết quả, không import ngược action_flow."""
+
+    slot: str
+    intent: str
+    known: dict
+    question: str
+    candidates: list
+    kind: str
+
+
+# code -> (retryable, reask). Mã không có mặt ở đây là TERMINAL, reask=None —
+# lựa chọn AN TOÀN mặc định (P7-error-matrix.md mục 4.2): chưa biết rõ hỏi lại
+# có ích không thì đừng tự mở một pending.
+#
+# CHỈ điền reask cho 3 mã đã CHỐT thật ở CONTRACTS mục 5.5 / T06-slot-policy.md
+# mục D4 (bảng `_ERROR_REASK` tương lai sống ở `handlers/action_flow.py`,
+# KHÔNG phải file này — T06 sở hữu, T20 không đụng) — nguồn phát xác nhận VÀ
+# slot/intent đích đã có tên chính thức. Không bịa thêm cặp (slot, intent) nào
+# khác: đó là phạm vi thi công của T06, chưa tồn tại (T06 chưa chạy).
+#
+# INVALID_VOLUME và NAVIGATION_STOP_FAILED "về bản chất" có thể hỏi lại
+# (volume_direction, và tự thử lại) nhưng P7-error-matrix.md mục 4.4 ghi rõ:
+# ĐỂ retryable=False cho tới khi T06/D4 dựng xong đường hỏi lại — retryable=True
+# mà chưa có nơi nào tiêu thụ nó chỉ là một lời hứa suông.
+_RETRYABLE: dict[str, tuple[bool, tuple[str, str] | None]] = {
+    "CONTACT_NOT_FOUND": (True, ("contact_name", "contact_call")),
+    "MULTIPLE_CONTACTS_FOUND": (True, ("contact_name", "contact_call")),
+    "SONG_NOT_FOUND": (True, ("song_title", "music_play")),
+    "PLAYBACK_STOP_FAILED": (True, None),
+    "CURRENT_LOCATION_UNAVAILABLE": (True, None),
+}
+
+# Bảng phân loại đầy đủ — MỌI mã trong `_ERROR_SPEECH` có một `ErrorPolicy`.
+_ERROR_POLICY: dict[str, ErrorPolicy] = {
+    code: ErrorPolicy(speech, *_RETRYABLE.get(code, (False, None)))
+    for code, speech in _ERROR_SPEECH.items()
+}
+
+# 21.7 · NGUYÊN TẮC: không mã lỗi nào — kể cả mã bịa ra, chưa ai từng thấy —
+# được rơi vào im lặng. Mọi mã không khớp `_ERROR_SPEECH`/`_ERROR_POLICY` (và
+# không có `_GENERIC_FAILURE[operation]`) rơi về policy này.
+_DEFAULT_POLICY = ErrorPolicy(
+    speech=(
+        "Điện thoại báo chưa làm được việc này và không nói rõ lý do. "
+        "Vui lòng kiểm tra thông báo trên điện thoại."
+    ),
+    retryable=False,
+    reask=None,
+)
 
 # Câu nói khi action thất bại mà mã lỗi không có trong bảng trên.
 _GENERIC_FAILURE = {
@@ -82,20 +183,18 @@ _MUSIC_STOPPED = "Đã dừng phát nhạc."
 _VOLUME_CHANGED = "Đã thay đổi âm lượng."
 _RIDE_CANCELLED = "Đã hủy chuyến xe."
 _DONE = "Đã thực hiện xong."
-# Action thất bại mà cả mã lỗi lẫn tên action đều không có câu riêng.
-_UNSPECIFIED_FAILURE = "Chưa thực hiện được, vui lòng thử lại."
 
 # Cố ý không đọc giá, loại xe hay thời gian chờ. Trên Grab thật, giá chỉ hiện
 # sau khi người dùng xác nhận điểm đón, mà app không đi qua được bước xác nhận
 # đó — nên mọi con số ở đây là ước lượng của server, đọc lên là nói một cái giá
 # không ai cam kết.
 _RIDE_APP_OPENED = (
-    "Đã mở ứng dụng đặt xe. Vui lòng nhấn vào thông báo trên điện thoại, "
-    "kiểm tra lại điểm đón và điểm đến trong ứng dụng rồi xác nhận để đặt xe."
+    "Đã mở ứng dụng đặt xe. Bạn còn phải chạm một lần vào nút đặt xe ở cuối "
+    "màn hình sau khi kiểm tra lại điểm đón và điểm đến."
 )
 _RIDE_REQUESTED = (
-    "Đã gửi yêu cầu đặt xe. Vui lòng nhấn vào thông báo trên điện thoại và "
-    "xác nhận điểm đón, điểm đến trong ứng dụng để hoàn tất."
+    "Đã mở ứng dụng đặt xe. Tôi không theo dõi được chuyến sau khi bàn giao. "
+    "Bạn còn phải kiểm tra điểm đón, điểm đến và chạm nút đặt xe để hoàn tất."
 )
 
 # Câu cố định của module này, để `pipeline/phrases.py` dựng sẵn audio.
@@ -110,7 +209,9 @@ STATIC_SPEECH: tuple[str, ...] = (
     _RIDE_APP_OPENED,
     _RIDE_REQUESTED,
     _DONE,
-    _UNSPECIFIED_FAILURE,
+    _DEFAULT_POLICY.speech,
+    _MULTIPLE_CONTACTS_PREFIX,
+    _CONTACT_SELECTION_QUESTION,
     *_ERROR_SPEECH.values(),
     *_GENERIC_FAILURE.values(),
 )
@@ -161,25 +262,50 @@ def _success_speech(operation: str, result: dict) -> str:
     return _DONE
 
 
-def speak_result(operation: str, data: dict | None) -> str:
-    """Câu nói cuối cùng cho một action, dựa trên trạng thái thật từ điện thoại.
+def _reply(text: str) -> tuple[tuple[str, ...], PendingSpeech | None]:
+    return (text,), None
+
+
+def speak_result(
+    operation: str, data: dict | None
+) -> tuple[tuple[str, ...], PendingSpeech | None]:
+    """Các mảnh câu nói cuối và pending (nếu có) từ kết quả điện thoại.
 
     `data` là phần `data` của `GET /api/v1/requests/{id}`, hoặc `None` khi chờ
     hết giờ mà request vẫn `processing`.
     """
     if data is None:
-        return _TIMEOUT_MESSAGE
+        return _reply(_TIMEOUT_MESSAGE)
 
     state = data.get("request_state")
     if state == "succeeded":
         result = data.get("result")
-        return _success_speech(operation, result if isinstance(result, dict) else {})
+        return _reply(_success_speech(operation, result if isinstance(result, dict) else {}))
 
     if state == "timed_out":
-        return _TIMEOUT_MESSAGE
+        return _reply(_TIMEOUT_MESSAGE)
 
     error = data.get("error") or {}
     code = error.get("code", "")
+    if operation == "contact_call" and code == "MULTIPLE_CONTACTS_FOUND":
+        details = error.get("details") or data.get("details") or {}
+        raw_candidates = details.get("candidates") if isinstance(details, dict) else []
+        candidates = sanitize_candidates(raw_candidates or [])
+        if candidates:
+            labels = format_candidates(candidates)
+            dynamic_names = "; ".join(labels) + "."
+            pending = PendingSpeech(
+                slot="contact_selection",
+                intent="contact_call",
+                known={},
+                question=_CONTACT_SELECTION_QUESTION,
+                candidates=[candidate.as_pending() for candidate in candidates],
+                kind="select",
+            )
+            return (
+                (_MULTIPLE_CONTACTS_PREFIX, dynamic_names, _CONTACT_SELECTION_QUESTION),
+                pending,
+            )
     if code in _ERROR_SPEECH:
-        return _ERROR_SPEECH[code]
-    return _GENERIC_FAILURE.get(operation, _UNSPECIFIED_FAILURE)
+        return _reply(_ERROR_SPEECH[code])
+    return _reply(_GENERIC_FAILURE.get(operation, _DEFAULT_POLICY.speech))

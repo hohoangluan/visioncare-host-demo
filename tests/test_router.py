@@ -220,7 +220,11 @@ def test_resolve_speech_routes_unmatched_command_to_chat():
     ("find", "find_object"),
     ("money", "read_money"),
     ("space", "describe_space"),
-    ("hazard", "describe_hazard"),
+    # 🔴 `hazard` KHÔNG còn trỏ `describe_hazard` (đổi 2026-08-25): nó bật chế
+    # độ canh liên tục. `hazard_watch.start` là HÀM, không phải module có
+    # `handle()`, nên nó được khoá riêng ở
+    # `tests/test_hazard_watch.py::test_turn_based_hazard_intent_now_starts_the_watch_mode`
+    # thay vì trong bảng này.
     ("chat", "chat"),
     ("nav_start", "nav_start"),
     ("nav_stop", "nav_stop"),

@@ -426,6 +426,45 @@ def test_preroll_does_not_wait_for_the_whole_answer(tmp_path, monkeypatch):
     assert len(synthesized) == 2, f"đã tổng hợp {len(synthesized)}/10 mảnh trước khi gửi"
 
 
+def test_preroll_gives_up_waiting_when_the_source_stalls(tmp_path, monkeypatch):
+    """🔴 T21 — mức đệm có HẠN GIỜ, không được chờ vô hạn.
+
+    Đây là lỗi đắt nhất tìm được trong phiên 2026-08-24, và nó im lặng suốt
+    từ đầu: câu mở đầu ("Đã tiếp nhận yêu cầu" / `warm_melodic`) đã DỰNG SẴN,
+    ra khỏi TTS trong vài chục ms, nhưng chỉ dài ~0.94 s — ngắn hơn mức đệm
+    2.0 s. Nên vòng gom giữ nó lại rồi CHẶN chờ mảnh kế tiếp, mà mảnh kế tiếp
+    chỉ có sau khi STT + Gemini + TTS chạy xong.
+
+    Đo được trước khi sửa: trung vị tiếng đầu **3.68 s**, `emergency_call`
+    **4.82 s** so với ngân sách 300 ms — người dùng đứng im gần 4 giây trong
+    khi audio để phát cho họ đã nằm sẵn trong RAM.
+
+    Chờ thêm cũng vô ích: mức đệm sinh ra để phòng nguồn CHẬM hơn tốc độ phát;
+    nguồn DỪNG HẲN thì chờ không gom thêm được byte nào.
+    """
+    monkeypatch.setattr(config, "STORAGE_DIR", str(tmp_path))
+    monkeypatch.setattr(config, "AUDIO_PREROLL_SECONDS", 2.0)
+    monkeypatch.setattr(config, "AUDIO_PREROLL_MAX_WAIT_SECONDS", 0.05)
+
+    def opener_then_a_long_think(text_chunks):
+        yield _pcm_seconds(0.9)   # câu mở đầu dựng sẵn — ngắn hơn mức đệm
+        time.sleep(0.6)           # STT + Gemini
+        yield _pcm_seconds(3.0)   # câu trả lời thật
+
+    with patch("pipeline.tts.synthesize_text_stream", opener_then_a_long_think):
+        stream = _stream_audio(iter(["xin chào"]), 1, time.monotonic(), 0.0)
+        began = time.monotonic()
+        first = next(stream)
+        waited = time.monotonic() - began
+        rest = b"".join(stream)
+
+    # Câu mở đầu phải ra NGAY, không đợi hết 0.6 s "suy nghĩ".
+    assert waited < 0.4, f"vẫn chờ {waited:.2f}s mới nhả byte đầu"
+    assert len(first) == len(_pcm_seconds(0.9)), "nhả ra thứ khác câu mở đầu"
+    # Và phần còn lại vẫn tới đủ — nhả sớm không được làm mất byte nào.
+    assert len(rest) == len(_pcm_seconds(3.0))
+
+
 def test_short_answer_shorter_than_preroll_still_sent(tmp_path, monkeypatch):
     """Câu báo lỗi ngắn hơn mức đệm vẫn phải phát ra, không được nuốt."""
     monkeypatch.setattr(config, "STORAGE_DIR", str(tmp_path))

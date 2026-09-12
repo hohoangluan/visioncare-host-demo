@@ -71,12 +71,19 @@ def test_thinking_left_to_model_default(monkeypatch):
 
     Đè bừa thì mất khả năng suy luận ở những chỗ cần nó (đọc mệnh giá tiền)
     mà chẳng đổi lấy giây nào.
+
+    Trước đây nhánh này kiểm `config is None` — "không có gì để nói với SDK".
+    Không còn đúng kể từ khi mọi lượt gọi phải mang trần thời gian
+    (`config.GEMINI_TIMEOUT_SECONDS`). Thứ cần giữ nguyên là `thinking_config`
+    vẫn để trống, không phải việc cả khối config rỗng.
     """
     monkeypatch.setattr(config, "GEMINI_THINKING_BUDGET", -1)
     models = _fake(monkeypatch, ["ok"])
     list(vlm.generate_stream("prompt"))
 
-    assert models.calls[0]["config"] is None
+    sent = models.calls[0]["config"]
+    assert sent.thinking_config is None
+    assert sent.http_options.timeout == int(config.GEMINI_TIMEOUT_SECONDS * 1000)
 
 
 def test_thinking_can_be_disabled(monkeypatch):

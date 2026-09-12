@@ -51,13 +51,18 @@ def _speech_modules() -> tuple:
     không kéo theo cả tầng handler (test TTS chạy độc lập, và handler kéo theo
     client HTTP).
     """
-    from handlers import action_flow, music, navigation, phone, result_speech, ride, waiting
+    from handlers import (
+        action_flow, incoming_call, music, navigation, phone, result_speech, ride, slots, waiting,
+    )
+    from models.ocr import prompts as ocr_prompts
     from pipeline import router
 
     return (
-        waiting, action_flow, result_speech,
+        waiting, action_flow, result_speech, incoming_call,
         music, navigation, phone, ride,
+        slots,  # T06/G5 — 5 câu hỏi lại slot, nguồn duy nhất (handlers/slots.py)
         router, image_quality,
+        ocr_prompts,  # T15/H3 — ba câu hướng dẫn chụp lại, xem STATIC_SPEECH ở đó
     )
 
 

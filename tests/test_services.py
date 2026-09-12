@@ -1,10 +1,24 @@
 import json
+import time
 import pytest
 from unittest.mock import patch, MagicMock
 
 import config
 from services import visioncare_client
-from handlers import action_flow, navigation, phone, ride, music
+from handlers import action_flow, chat, navigation, phone, ride, music, result_speech, slots
+
+
+@pytest.fixture(autouse=True)
+def _clean_action_state():
+    """Các pending chuẩn T03 không được rò giữa những unit test handler."""
+    action_flow.reset_state()
+    chat._LOCATION_FIX_CACHE = (
+        {"lat": 10.1234, "lng": 106.5678, "address": "Vị trí test"},
+        time.monotonic(),
+    )
+    yield
+    action_flow.reset_state()
+    chat.reset_location_cache()
 
 
 def test_call_service_api_success(monkeypatch):
@@ -16,6 +30,14 @@ def test_call_service_api_success(monkeypatch):
     `MockTransport` thì không đường nào ra được mạng.
     """
     import httpx
+    from services.device_registry import devices
+
+    # Hằng số `VISIONCARE_DEVICE_ID` là bậc CUỐI, sau `DEVICE_ID_CTX` rồi tới
+    # sổ thiết bị (xem `tests/test_background_device_id.py`). Sổ là biến toàn
+    # cục và test khác trong suite có gọi `devices.seen()`, nên phải nói rõ
+    # "chưa kính nào gọi tới" thì khẳng định bên dưới mới có nghĩa — chứ không
+    # phải xanh nhờ thứ tự chạy.
+    devices.clear()
 
     captured_req = {}
 
@@ -47,6 +69,40 @@ def test_call_service_api_success(monkeypatch):
     assert captured_req["body"]["device_id"] == config.VISIONCARE_DEVICE_ID
     assert "request_id" in captured_req["body"]
     assert captured_req["body"]["destination"]["address"] == "Bách Khoa"
+
+
+def test_call_service_api_uses_request_device_id_not_config_constant(monkeypatch):
+    """Nợ kỹ thuật T01/T03 (reports/T01.md, T03.md): trước đây payload luôn
+    mang `config.VISIONCARE_DEVICE_ID`, bất kể request thật đến từ kính nào —
+    nhiều kính gọi cùng lúc thì host 8001 định tuyến FCM/pairing sai. Giờ phải
+    đọc đúng `app.DEVICE_ID_CTX` của request hiện tại."""
+    import httpx
+    import app as app_module
+
+    captured_req = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured_req["body"] = json.loads(request.content.decode("utf-8"))
+        return httpx.Response(202, json={
+            "status": "ok",
+            "data": {"request_id": "req-456", "operation": "ride_quote", "request_state": "processing"},
+        })
+
+    monkeypatch.setattr(
+        visioncare_client, "_CLIENT",
+        httpx.Client(transport=httpx.MockTransport(handler)),
+    )
+
+    token = app_module.DEVICE_ID_CTX.set("glasses-thiet-bi-khac")
+    try:
+        visioncare_client.call_service_api(
+            "api/v1/service/ride/quote", {"destination": {"address": "Bách Khoa"}}
+        )
+    finally:
+        app_module.DEVICE_ID_CTX.reset(token)
+
+    assert captured_req["body"]["device_id"] == "glasses-thiet-bi-khac"
+    assert captured_req["body"]["device_id"] != config.VISIONCARE_DEVICE_ID
 
 
 def _stub_flow(monkeypatch, final_result=None, state="succeeded", error=None):
@@ -141,6 +197,114 @@ def test_contact_call_reports_a_failed_call_as_failed(monkeypatch):
 
     assert calls[0][0] == "api/v1/service/contact/call"
     assert "Không tìm thấy" in out
+    action_flow.clear_pending()  # T06/D4 đặt pending ở đây, dọn để không rò sang test khác
+
+
+# ─── T06/D4 — `run_action` đặt pending từ mã lỗi host ──────────────────────
+#
+# docs/tasks/T06-slot-policy.md mục 4.3. CHỈ 3 mã (không phải 4 như bản gốc
+# task file liệt kê): `INVALID_DESTINATION` bị loại theo đúng chỉ đạo của
+# lượt này ("mã nào P7-error-matrix.md nói app KHÔNG thật sự phát thì không
+# dựng câu/đường hỏi lại cho nó") — xem `handlers/action_flow.py::_ERROR_REASK`
+# và docs/tasks/reports/T06.md mục "Lệch với task file".
+
+@pytest.mark.parametrize(
+    "code, handler_call, expected_slot, expected_intent",
+    [
+        (
+            "CONTACT_NOT_FOUND",
+            lambda: phone.handle_contact(b"", "", {"contact_name": "Ai Đó"}),
+            "contact_name",
+            "contact_call",
+        ),
+        (
+            "MULTIPLE_CONTACTS_FOUND",
+            lambda: phone.handle_contact(b"", "", {"contact_name": "Anh"}),
+            "contact_name",
+            "contact_call",
+        ),
+        (
+            "SONG_NOT_FOUND",
+            lambda: music.handle_play(
+                b"",
+                "",
+                {
+                    "song_title": "Bài lạ",
+                    "artist": "Ca sĩ lạ",
+                    "song_is_specific": True,
+                    # Nói đủ ngay câu đầu thì phải qua bước chốt trước
+                    # (người dùng chốt 2026-08-27); đây là lượt SAU khi chốt.
+                    "play_confirmed": True,
+                },
+            ),
+            "song_title",
+            "music_play",
+        ),
+    ],
+)
+def test_error_reask_sets_pending(monkeypatch, code, handler_call, expected_slot, expected_intent):
+    _stub_flow(monkeypatch, state="failed", error={"code": code})
+
+    "".join(handler_call())
+
+    pending = action_flow.get_pending()
+    assert pending is not None, f"{code} phải đặt pending hỏi lại"
+    assert pending.slot == expected_slot
+    assert pending.intent == expected_intent
+    assert pending.kind == "fill"
+    assert pending.question == slots.SLOTS[expected_slot].ask
+    action_flow.clear_pending()
+
+
+def test_terminal_error_does_not_set_pending(monkeypatch):
+    """`CONTACT_PERMISSION_DENIED` là terminal — hỏi lại không có nghĩa (quyền
+    đọc danh bạ không tự nhiên có được vì người dùng nói lại tên)."""
+    _stub_flow(monkeypatch, state="failed", error={"code": "CONTACT_PERMISSION_DENIED"})
+
+    out = "".join(phone.handle_contact(b"", "", {"contact_name": "Ai Đó"}))
+
+    assert action_flow.get_pending() is None
+    assert "quyền" in out.lower()
+
+
+def test_unknown_error_code_has_fallback_and_no_pending(monkeypatch):
+    """21.7: mã lỗi lạ (bịa ra, chưa ai từng thấy) rơi về câu chung của
+    operation (`_GENERIC_FAILURE["contact_call"]`) — không im lặng — và
+    KHÔNG mở một pending cho một mã không rõ nghĩa (quyết định #9: pending sai
+    nuốt mất câu kế tiếp còn tệ hơn không hỏi)."""
+    _stub_flow(monkeypatch, state="failed", error={"code": "MOT_MA_KHONG_TON_TAI"})
+
+    out = "".join(phone.handle_contact(b"", "", {"contact_name": "Ai Đó"}))
+
+    assert action_flow.get_pending() is None
+    assert result_speech._GENERIC_FAILURE["contact_call"] in out
+
+
+def test_unknown_error_code_with_no_generic_failure_uses_default_policy(monkeypatch):
+    """21.7 fallback cuối cùng thật sự: operation KHÔNG có dòng
+    `_GENERIC_FAILURE` riêng ('music_play' KHÔNG hợp — nó có; dùng thẳng
+    `speak_result` với một operation bịa để trúng đúng nhánh thứ 4 của thứ tự
+    tra ở CONTRACTS mục 5.5)."""
+    pieces, pending = result_speech.speak_result(
+        "mot_operation_khong_ton_tai",
+        {"request_state": "failed", "error": {"code": "MOT_MA_KHONG_TON_TAI"}},
+    )
+    out = "".join(pieces)
+    assert pending is None
+    assert out == result_speech._DEFAULT_POLICY.speech
+
+
+def test_emergency_call_error_never_sets_pending_even_when_code_is_reaskable(monkeypatch):
+    """Chốt chặn tường minh trong `_reask_pending_for_error`: dù mã lỗi trùng
+    với một mã NẰM trong `_ERROR_REASK` (giả lập bằng cách gọi trực tiếp, vì
+    `CALL_FAILED` — mã thật của emergency_call — không nằm trong bảng đó),
+    `operation == "emergency_call"` phải luôn bị chặn trước khi tra bảng."""
+    calls = _stub_flow(monkeypatch, state="failed", error={"code": "CONTACT_NOT_FOUND"})
+
+    "".join(phone.handle_emergency(b"", "", {"emergency_number": "112"}))
+
+    assert calls[0][0] == "api/v1/service/emergency/call"
+    assert action_flow.get_pending() is None
 
 
 def test_contact_call_refuses_without_a_name(monkeypatch):
@@ -152,14 +316,28 @@ def test_contact_call_refuses_without_a_name(monkeypatch):
     assert "gọi cho ai" in out.lower()
 
 
-def test_emergency_call_speaks_whether_the_sms_went_out(monkeypatch):
+def test_emergency_call_sends_the_command_and_stops_talking(monkeypatch):
+    """🔴 ĐẢO NGƯỢC 2026-08-27 — người dùng chốt. Lượt khẩn cấp KHÔNG chờ kết
+    quả nữa: đọc câu ack rồi thôi.
+
+    Vì sao: đo trên máy thật, một lượt khẩn cấp mất 13.97 giây mới `succeeded`,
+    và phần lớn quãng đó là CHUÔNG ĐANG ĐỔ. Cửa sổ chờ (2.5 s) luôn hết trước,
+    nên kính đọc "Điện thoại chưa báo lại." — một câu SAI, vì lệnh đã tới máy
+    (`202 Accepted`). Người đang cần cấp cứu nghe câu phủ định đó sẽ tưởng máy
+    hỏng rồi bấm lại, trong khi cuộc gọi đã đi.
+
+    CÁI GIÁ, ghi rõ để không ai tưởng là quên: kính KHÔNG còn nói "đã gửi tin
+    nhắn vị trí" nữa. Câu đó chỉ đọc được nếu chờ kết quả, mà chờ thì lại rơi
+    vào câu sai ở trên. Kết quả muộn vẫn về qua callback và vẫn cập nhật trạng
+    thái phiên — chỉ là không ai đọc nó ra, vì kênh xuống đang tắt.
+    """
     calls = _stub_flow(monkeypatch, {"contact": "***768", "sms_sent": True})
 
     out = "".join(phone.handle_emergency(b"", "", {}))
 
     assert calls[0][0] == "api/v1/service/emergency/call"
     assert "khẩn cấp" in out
-    assert "đã gửi tin nhắn vị trí" in out
+    assert "chưa báo lại" not in out
 
 
 def test_ride_quote_reads_the_destination_back_and_books_nothing_yet(monkeypatch):
@@ -184,19 +362,25 @@ def test_ride_confirm_books_the_destination_that_was_read_back(monkeypatch):
             "eta_minutes": 6,
         },
     )
-    "".join(ride.handle_quote(b"", "", {"destination": "Sân bay"}))
+    "".join(ride.handle_quote(b"", "", {
+        "destination": "Sân bay",
+        "destination_lat": 10.8188,
+        "destination_lng": 106.6519,
+    }))
 
     out = "".join(ride.handle_confirm(b"", "", {"confirm": True}))
 
     assert calls[0][0] == "api/v1/service/ride/quote"
     assert calls[0][1]["destination"]["address"] == "Sân bay"
+    assert calls[0][1]["destination"]["lat"] == 10.8188
+    assert calls[0][1]["current_location"]["lat"] == 10.1234
     # No price, product type or ETA: Grab only quotes after the rider confirms
     # the pickup point, which this flow cannot reach, so any number here would
     # be the backend's guess presented as a fare.
     assert "85" not in out
     assert "nghìn" not in out
     assert "phút" not in out
-    assert "điểm đón" in out and "xác nhận" in out
+    assert "điểm đón" in out and "chạm" in out
 
 
 def test_ride_confirm_cancels_without_calling_anything(monkeypatch):
@@ -211,7 +395,7 @@ def test_ride_confirm_cancels_without_calling_anything(monkeypatch):
 
 def test_ride_confirm_refuses_when_nothing_was_asked_for(monkeypatch):
     action_flow.forget("quote_id")
-    action_flow.forget("pending_ride_destination")
+    action_flow.clear_pending()
     calls = _stub_flow(monkeypatch)
 
     out = "".join(ride.handle_confirm(b"", "", {"confirm": True}))
@@ -231,7 +415,11 @@ def test_ride_destination_not_found_is_reported_not_guessed(monkeypatch):
             "error": {"code": "INVALID_DESTINATION"},
         },
     )
-    "".join(ride.handle_quote(b"", "", {"destination": "Chỗ Không Có Thật"}))
+    "".join(ride.handle_quote(b"", "", {
+        "destination": "Chỗ Không Có Thật",
+        "destination_lat": 10.1,
+        "destination_lng": 106.1,
+    }))
 
     out = "".join(ride.handle_confirm(b"", "", {"confirm": True}))
 
@@ -240,24 +428,24 @@ def test_ride_destination_not_found_is_reported_not_guessed(monkeypatch):
 
 
 def test_music_play_asks_which_artist_when_only_a_title_was_given(monkeypatch):
-    action_flow.forget("pending_song_title")
     calls = _stub_flow(monkeypatch)
 
-    out = "".join(music.handle_play(b"", "", {"song": "Nơi này có anh"}))
+    out = "".join(music.handle_play(
+        b"", "", {"song_title": "Nơi này có anh", "song_is_specific": True}
+    ))
 
     # A bare title matches covers, remixes and karaoke versions; picking one is
     # a guess, and a blind listener cannot see they got the wrong track.
     assert calls == []
-    assert "nhiều bài trùng tên" in out
     assert "ca sĩ nào" in out
 
 
 @pytest.mark.parametrize(
     "command,params",
     [
-        ("mở nhạc đi", {"song": "nhạc"}),   # đo thật từ bộ phân loại
-        ("bật nhạc lên", {}),               # đo thật: không tách được gì
-        ("nghe nhạc", {"song": "nghe nhạc"}),
+        ("mở nhạc đi", {"song_title": "nhạc", "song_is_specific": False}),
+        ("bật nhạc lên", {"song_is_specific": False}),
+        ("nghe nhạc", {"song_title": "nghe nhạc", "song_is_specific": False}),
     ],
 )
 def test_music_play_asks_which_song_when_none_was_named(command, params, monkeypatch):
@@ -266,13 +454,12 @@ def test_music_play_asks_which_song_when_none_was_named(command, params, monkeyp
     Trước đây câu lệnh tự trở thành tên bài, nên ứng dụng nhạc đi tìm một bài
     hát tên đúng bằng câu người dùng vừa nói.
     """
-    action_flow.forget("pending_song_title")
     calls = _stub_flow(monkeypatch)
 
     out = "".join(music.handle_play(b"", command, params))
 
     assert calls == []
-    assert out == music._ASK_SONG
+    assert out == slots.SLOTS["song_title"].ask
 
 
 def test_music_volume_asks_instead_of_guessing_a_direction(monkeypatch):
@@ -283,7 +470,7 @@ def test_music_volume_asks_instead_of_guessing_a_direction(monkeypatch):
     out = "".join(music.handle_volume(b"", "âm lượng", {}))
 
     assert calls == []
-    assert out == music._ASK_VOLUME
+    assert out == slots.SLOTS["volume_direction"].ask
 
 
 @pytest.mark.parametrize(
@@ -304,30 +491,44 @@ def test_music_volume_still_acts_when_the_command_was_clear(params, expected, mo
 
 
 def test_music_play_combines_the_artist_answer_with_the_pending_title(monkeypatch):
-    action_flow.forget("pending_song_title")
     calls = _stub_flow(monkeypatch, {"title": "Nơi này có anh", "artist": "Sơn Tùng M-TP"})
-    "".join(music.handle_play(b"", "", {"song": "Nơi này có anh"}))
+    "".join(music.handle_play(
+        b"", "", {"song_title": "Nơi này có anh", "song_is_specific": True}
+    ))
+    pending = action_flow.get_pending()
+    assert pending is not None
 
-    "".join(music.handle_play(b"", "", {"song": "Sơn Tùng M-TP"}))
+    params = {**pending.known, "artist": "Sơn Tùng M-TP"}
+    action_flow.clear_pending()
+    "".join(music.handle_play(b"", "", params))
 
     assert calls[0][1]["song"] == "Nơi này có anh - Sơn Tùng M-TP"
 
 
 def test_music_play_honours_cu_phat_as_any_artist(monkeypatch):
-    action_flow.forget("pending_song_title")
     calls = _stub_flow(monkeypatch, {"title": "Nơi này có anh", "artist": "Unknown"})
-    "".join(music.handle_play(b"", "", {"song": "Nơi này có anh"}))
+    "".join(music.handle_play(
+        b"", "", {"song_title": "Nơi này có anh", "song_is_specific": True}
+    ))
+    pending = action_flow.get_pending()
+    assert pending is not None
 
-    "".join(music.handle_play(b"", "", {"song": "cứ phát"}))
+    params = {**pending.known, "artist_any": True}
+    action_flow.clear_pending()
+    "".join(music.handle_play(b"", "", params))
 
     assert calls[0][1]["song"] == "Nơi này có anh"
 
 
 def test_music_play_speaks_the_track_the_phone_actually_started(monkeypatch):
-    action_flow.forget("pending_song_title")
     calls = _stub_flow(monkeypatch, {"title": "Nơi này có anh", "artist": "Sơn Tùng M-TP"})
 
-    out = "".join(music.handle_play(b"", "", {"song": "Nơi này có anh - Sơn Tùng M-TP"}))
+    out = "".join(music.handle_play(b"", "", {
+        "song_title": "Nơi này có anh",
+        "artist": "Sơn Tùng M-TP",
+        "song_is_specific": True,
+        "play_confirmed": True,   # lượt SAU bước chốt, xem test_music_confirm_flow.py
+    }))
 
     assert calls[0][0] == "api/v1/service/music/play"
     assert "Đã tìm được bài Nơi này có anh của Sơn Tùng M-TP" in out
@@ -345,11 +546,19 @@ def test_music_play_reports_silence_as_a_failure(monkeypatch):
         },
     )
 
-    out = "".join(music.handle_play(b"", "", {"song": "Nơi này có anh - Sơn Tùng M-TP"}))
+    out = "".join(music.handle_play(b"", "", {
+        "song_title": "Nơi này có anh",
+        "artist": "Sơn Tùng M-TP",
+        "song_is_specific": True,
+        "play_confirmed": True,   # lượt SAU bước chốt, xem test_music_confirm_flow.py
+    }))
 
     # The whole point of polling: "sent the request" used to be the only thing
     # the user ever heard, whether or not a single note came out.
-    assert "chưa phát được" in out
+    # T20 gave PLAYBACK_FAILED its own sentence in _ERROR_SPEECH; it starts a
+    # new sentence after "\n" nên viết hoa chữ đầu — so sánh không phân biệt
+    # hoa/thường thay vì khoá cứng theo chữ thường cũ.
+    assert "chưa phát được" in out.lower()
     assert "nhấn vào thông báo" in out
 
 
@@ -374,4 +583,15 @@ def test_no_result_at_slo_keeps_phone_action_running(monkeypatch):
 
     out = "".join(music.handle_stop(b"", "", {}))
 
-    assert "vẫn đang thực hiện" in out.lower()
+    # 🔴 SỬA 2026-08-26. Bản trước khoá đúng chữ "vẫn đang thực hiện" của câu
+    # "Điện thoại vẫn đang thực hiện, tôi sẽ cập nhật khi có kết quả." — tức
+    # nó khoá lại một LỜI HỨA mà hệ thống không có đường thực hiện:
+    # `action_flow` không import `events`, và `reconcile_late()` chỉ cập nhật
+    # trạng thái phiên chứ không nói gì ra loa. Xem
+    # `tests/test_action_wait_window.py` cho đầy đủ số đo.
+    #
+    # Điều test này THẬT SỰ phải giữ vẫn nguyên: hết giờ thì action KHÔNG bị
+    # huỷ, và người dùng phải nghe một câu nói rõ là chưa có kết quả — chứ
+    # không phải im lặng.
+    assert action_flow.TIMEOUT_LINE in out
+    assert "sẽ cập nhật" not in out.lower()

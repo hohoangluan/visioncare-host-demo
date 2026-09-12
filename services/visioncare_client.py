@@ -78,7 +78,45 @@ def call_service_api(endpoint_path: str, payload: dict) -> dict:
 
     request_payload = dict(payload)
     if "device_id" not in request_payload:
-        request_payload["device_id"] = config.VISIONCARE_DEVICE_ID
+        # T01/T03 nợ kỹ thuật đã ghi trong reports/T01.md, T03.md: trước đây
+        # luôn nhét hằng số cấu hình, kể cả khi payload đến từ một request có
+        # `X-Device-Id` thật khác — nhiều kính gọi cùng lúc thì host 8001 nhận
+        # nhầm device_id, ảnh hưởng định tuyến FCM/pairing phía app. Nhập trễ
+        # để tránh vòng tròn `app` <-> `services` (app.py import xuống tới
+        # đây qua `handlers/action_flow.py`); ContextVar rỗng ngoài request
+        # thật (vd. thread nền lấy vị trí, test) thì rơi về đúng hằng số cũ.
+        try:
+            from app import DEVICE_ID_CTX
+
+            ctx_device_id = DEVICE_ID_CTX.get()
+        except ImportError:
+            ctx_device_id = None
+
+        # Bậc GIỮA, thêm 2026-08-26. ContextVar rỗng không chỉ xảy ra trong
+        # test: vòng làm mới vị trí ở nền (`handlers/chat._location_refresh_
+        # loop`) chạy ngoài mọi request, nên nó rơi thẳng xuống hằng số
+        # `VISIONCARE_DEVICE_ID` — một chuỗi giữ chỗ (`"glasses-123"`) chưa
+        # từng ứng với chiếc kính nào đang chạy. Đo được trên host thật:
+        #
+        #     POST /api/v1/service/location/get  ->  404
+        #     GLASSES_DEVICE_NOT_LINKED  {"device_id": "glasses-123"}
+        #
+        # trong khi cùng lúc `glasses-01` hỏi thẳng thì có toạ độ dưới 2 giây.
+        # Tức vòng nền chưa bao giờ làm được việc của nó, và hỏng lặng: mọi
+        # lỗi vị trí đều được nuốt thành `None` theo đúng thiết kế.
+        #
+        # Sổ thiết bị biết chiếc kính nào vừa bấm nút, nên nó là câu trả lời
+        # đúng cho "kính nào đang dùng" khi không có request nào đang chạy.
+        # Hằng số vẫn giữ, nhưng lùi xuống bậc cuối.
+        registry_device_id = None
+        if not ctx_device_id:
+            from services.device_registry import devices
+
+            registry_device_id = devices.current_device_id()
+
+        request_payload["device_id"] = (
+            ctx_device_id or registry_device_id or config.VISIONCARE_DEVICE_ID
+        )
     if "request_id" not in request_payload:
         request_payload["request_id"] = str(uuid.uuid4())
 
@@ -155,6 +193,33 @@ def get_device_location(timeout_seconds: float = 12.0) -> dict | None:
         logger.info("Vị trí không sẵn sàng: %s", (data or {}).get("error"))
         return None
     return data.get("result") or None
+
+
+def get_device_capabilities(
+    timeout_seconds: float = 12.0, device_id: str | None = None
+) -> dict | None:
+    """Read the Android capability snapshot through the normal action pipeline.
+
+    Old host/app versions may not expose this action. Capability discovery is
+    advisory, so all transport, 404, timeout, and malformed-result failures
+    degrade to ``None`` instead of blocking user actions.
+    """
+    payload = {"device_id": device_id} if device_id else {}
+    try:
+        resp = call_service_api("api/v1/service/capabilities", payload)
+        request_id = resp.get("data", {}).get("request_id", "")
+    except VisionCareAPIError as exc:
+        logger.info("Không lấy được capabilities (app/host cũ vẫn được hỗ trợ): %s", exc)
+        return None
+    if not request_id:
+        return None
+
+    data = wait_for_result(request_id, timeout_seconds=timeout_seconds)
+    if not data or data.get("request_state") != "succeeded":
+        logger.info("Capabilities không sẵn sàng: %s", (data or {}).get("error"))
+        return None
+    result = data.get("result")
+    return result if isinstance(result, dict) else None
 
 
 def wait_for_result(request_id: str, timeout_seconds: float | None = None) -> dict | None:

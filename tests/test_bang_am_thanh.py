@@ -45,10 +45,19 @@ from schemas import Intent
 FIXTURES = Path(__file__).parent / "fixtures"
 _TEST_MODEL = os.environ.get("TEST_GEMINI_MODEL")
 
-pytestmark = pytest.mark.skipif(
-    not config.GEMINI_API_KEY,
-    reason="cần GEMINI_API_KEY thật để chạy handler qua Gemini",
-)
+# 🔴 CẢ FILE gọi Gemini thật. `pytest.ini` có sẵn mark `llm` cho đúng nhóm
+# này, nhưng file lại chỉ `skipif` theo khoá API — nghĩa là trên máy CÓ khoá
+# thì nó luôn chạy, đốt hạn mức và đỏ vì `429 RESOURCE_EXHAUSTED` chứ không
+# phải vì code hỏng. Đo được 2026-08-25: 2 ca đỏ, cả hai đều là 429.
+#
+# Có mark rồi thì lọc được: `pytest tests/ -m "not llm"`.
+pytestmark = [
+    pytest.mark.llm,
+    pytest.mark.skipif(
+        not config.GEMINI_API_KEY,
+        reason="cần GEMINI_API_KEY thật để chạy handler qua Gemini",
+    ),
+]
 
 # (id, câu lệnh thoại, intent kỳ vọng, ảnh thật tương ứng)
 CASES = [

@@ -13,4 +13,8 @@ _PROMPT = (
 
 
 def handle(image: bytes, command_text: str) -> Iterator[str]:
+    # T16/E6 — đây là chức năng AN TOÀN: phải báo mọi vật cản trong khung hình.
+    # Nhét command_text/focus/lịch sử/OCR/vị trí vào prompt sẽ làm model thiên
+    # về đúng thứ người dùng vừa hỏi và giảm báo cáo thứ họ không hỏi — có thể
+    # chính là vật sắp làm họ vấp. Vì vậy logic dưới đây cố ý giữ prompt cố định.
     return vlm.generate_stream(_PROMPT, image=image)

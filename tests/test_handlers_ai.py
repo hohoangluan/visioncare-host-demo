@@ -14,7 +14,7 @@ def test_has_vietnamese_false_for_plain_ascii():
 
 
 def _stub_read_stream(captured):
-    def read_stream(image, mode):
+    def read_stream(image, mode, command_text="", **kwargs):
         captured["mode"] = mode
         yield "kết quả"
 

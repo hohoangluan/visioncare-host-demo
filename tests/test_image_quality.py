@@ -105,10 +105,51 @@ def test_darkness_check_wins_over_blur_when_both_fail(monkeypatch):
 
 _NO_IMAGE_INTENTS = [
     Intent.CHAT, Intent.CONTACT_CALL, Intent.EMERGENCY_CALL,
+    Intent.CALL_ANSWER, Intent.CALL_REJECT,
     Intent.MUSIC_PLAY, Intent.MUSIC_STOP, Intent.MUSIC_VOLUME,
     Intent.NAV_START, Intent.NAV_STOP, Intent.RIDE_QUOTE, Intent.RIDE_CONFIRM,
     Intent.UNKNOWN,
+    # T24/W1: bật/tắt chế độ canh vật cản chỉ đổi một cờ và gửi một sự kiện.
+    # Ảnh của LƯỢT NÀY không liên quan — chế độ đọc khung từ luồng riêng
+    # (`X-Stream-Kind: hazard`), không phải từ ảnh kèm lượt bấm nút. Chặn
+    # "bật cảnh báo vật cản" vì tấm ảnh tối là chặn đúng lúc người dùng cần
+    # bật nó nhất.
+    Intent.HAZARD_WATCH_START, Intent.HAZARD_WATCH_STOP,
+    # 🔴 `Intent.HAZARD` đã RỜI danh sách này lại (2026-08-26). Nó quay về là
+    # một câu hỏi về một khung hình, trả lời qua LLM, nên nó lại đọc ảnh và
+    # lại chịu cổng chất lượng ảnh. Xem `test_hazard_reads_the_image_again`.
 ]
+
+
+def test_hazard_reads_the_image_again():
+    """Chiều ngược của quyết định 2026-08-26 — `hazard` lại là intent đọc ảnh.
+
+    Khoá tường minh vì đây là ô đã lật hai lần:
+      2026-08-25  hazard bật chế độ canh -> KHÔNG đọc ảnh
+      2026-08-26  hazard quay về LLM     -> ĐỌC ảnh
+    """
+    assert Intent.HAZARD in image_quality._READS_IMAGE
+    assert image_quality.reject_reason(Intent.HAZARD, None) == image_quality._NO_IMAGE
+
+
+def test_hazard_dark_image_is_rejected():
+    """Ảnh tối thì `hazard` bị chặn — và đó là câu trả lời ĐÚNG bây giờ.
+
+    Khác hẳn thời chế độ canh: lúc đó chặn vì ảnh tối là chặn đúng lúc người
+    dùng cần bật nhất. Giờ `hazard` mô tả MỘT khung hình, và mô tả một khung
+    tối thui bằng LLM là bịa ra một lối đi không ai nhìn thấy.
+    """
+    assert image_quality.reject_reason(Intent.HAZARD, _flat(2)) == image_quality._TOO_DARK
+
+
+def test_hazard_flat_image_still_passes():
+    """Nhưng ảnh PHẲNG thì vẫn cho đi — `hazard` không nằm trong `_NEEDS_SHARPNESS`.
+
+    request410 (bức tường trắng, sharpness 0.92) từng bị từ chối bằng câu "giữ
+    chắc tay" — chẩn đoán sai. Với `hazard` thì "trước mặt là một bề mặt
+    phẳng" là câu trả lời hữu ích, không phải lỗi.
+    """
+    assert image_quality.reject_reason(Intent.HAZARD, _flat(127)) is None
 
 
 @pytest.mark.parametrize("intent", _NO_IMAGE_INTENTS)
@@ -125,7 +166,7 @@ def test_intents_that_ignore_the_image_accept_no_image_at_all(intent):
 
 
 @pytest.mark.parametrize(
-    "intent", [Intent.OCR, Intent.FIND, Intent.SPACE, Intent.HAZARD]
+    "intent", [Intent.OCR, Intent.FIND, Intent.SPACE]
 )
 def test_flat_image_passes_for_non_money_intents(intent, monkeypatch):
     """request410 (bức tường trắng, sharpness 0.92) từng bị từ chối bằng câu
@@ -141,8 +182,9 @@ def test_flat_image_still_blocked_for_money(monkeypatch):
     assert image_quality.reject_reason(Intent.MONEY, _flat(127)) == image_quality._TOO_BLURRY
 
 
+# `hazard` đã rời danh sách này 2026-08-25 — nó không đọc ảnh nữa.
 @pytest.mark.parametrize(
-    "intent", [Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE, Intent.HAZARD]
+    "intent", [Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE]
 )
 def test_darkness_still_blocks_every_image_intent(intent, monkeypatch):
     """Đo thật trên ảnh tờ 5.000đ làm tối đi: Gemini đọc thành '2 nghìn đồng',
@@ -153,7 +195,7 @@ def test_darkness_still_blocks_every_image_intent(intent, monkeypatch):
 
 
 @pytest.mark.parametrize(
-    "intent", [Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE, Intent.HAZARD]
+    "intent", [Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE]
 )
 def test_missing_image_is_reported_for_intents_that_need_one(intent):
     assert image_quality.reject_reason(intent, None) == image_quality._NO_IMAGE

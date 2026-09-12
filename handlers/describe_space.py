@@ -2,6 +2,14 @@ from collections.abc import Iterator
 
 from models import vlm
 
+_BEHIND_UNAVAILABLE = "Tôi không quan sát được phía sau."
+
+_FOCUS_INSTRUCTION = {
+    "left": "Chỉ mô tả phía BÊN TRÁI khung hình.",
+    "right": "Chỉ mô tả phía BÊN PHẢI khung hình.",
+    "front": "Chỉ mô tả phía TRƯỚC MẶT trong khung hình.",
+}
+
 # Prompt này đã qua vài vòng đo, và bài học lớn nhất là: RÚT NGẮN BẰNG CÁCH XẾP
 # HẠNG, không phải bằng cách dặn "ngắn thôi".
 #
@@ -66,5 +74,26 @@ _PROMPT = (
 )
 
 
-def handle(image: bytes, command_text: str) -> Iterator[str]:
-    return vlm.generate_stream(_PROMPT, image=image)
+STATIC_SPEECH: tuple[str, ...] = (_BEHIND_UNAVAILABLE,)
+
+
+def _prompt_for_focus(focus: str | None) -> str:
+    instruction = _FOCUS_INSTRUCTION.get(focus or "")
+    return _PROMPT if instruction is None else f"{_PROMPT}\n{instruction}"
+
+
+def handle(
+    image: bytes, command_text: str, params: dict | None = None
+) -> Iterator[str]:
+    """Mô tả ảnh mới theo slot focus, không dùng nguyên câu hay lịch sử.
+
+    Không đưa lịch sử hội thoại vào đây: không gian và vật cản có thể đã di
+    chuyển từ lượt trước. Cache context của ảnh cũ sẽ biến thành thông tin sai,
+    khác với transcript OCR của một tờ giấy đứng yên.
+    """
+    focus = (params or {}).get("focus")
+    if focus == "behind":
+        return iter([_BEHIND_UNAVAILABLE])
+    # `command_text` cố ý không vào prompt: chỉ slot focus đã ràng buộc mới
+    # được thêm, giữ nguyên ngân sách 25–40 từ và toàn bộ luật đã đo.
+    return vlm.generate_stream(_prompt_for_focus(focus), image=image)
