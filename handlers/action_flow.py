@@ -854,11 +854,24 @@ def wait_window_seconds(ack: str, elapsed: float = 0.0) -> float:
     cấu trúc**, chứ không nhờ chọn trúng một con số nhỏ hơn. Đồng thời câu dài
     được chờ lâu hơn, nên nhiều lượt kết thúc gọn trong một hơi thở.
 
-    `elapsed` là phần đã tiêu trước khi bắt đầu chờ (dựng payload, gọi HTTP,
-    một lần thăm dò trạng thái). Trừ đi vì người dùng đã nghe mất phần đó của
-    câu ack rồi.
+    `elapsed` là phần CHỒNG LÊN lúc board đang phát câu ack (một lần thăm dò
+    trạng thái). KHÔNG tính phần dựng payload / gọi HTTP / tổng hợp TTS: chúng
+    xảy ra TRƯỚC khi board phát ra tiếng nào, nên không phải thời gian người
+    dùng đã nghe. Xem mốc `speaking_started` trong `run_action()`.
+
+    🔴 SÀN `VISIONCARE_MIN_WAIT_SECONDS` (2.5 s) — người dùng chốt 2026-08-27,
+    và nó CỐ Ý phá vỡ luật "không bao giờ chờ lâu hơn câu ack" ở trên.
+
+    Vì sao phải phá: đo trên máy thật, hai lệnh có câu ack ngắn nhất bỏ lỡ kết
+    quả dù điện thoại đã làm xong (`music_stop` ack 1.02 s / máy cần 1.64 s;
+    `music_volume` ack 1.26 s / máy cần 1.13 s, trượt 5/6 lượt). Luật cũ tối
+    ưu đúng thứ đo được (quãng im lặng) và bỏ qua thứ quan trọng hơn: câu trả
+    lời có ĐÚNG hay không.
+
+    Giá: lệnh có ack ngắn hơn sàn thì im lặng thêm tối đa (2.5 − ack) giây.
     """
-    return max(0.0, tts.speaking_seconds(ack) - elapsed)
+    window = max(tts.speaking_seconds(ack), config.VISIONCARE_MIN_WAIT_SECONDS)
+    return max(0.0, window - elapsed)
 
 
 def run_action(
@@ -869,6 +882,7 @@ def run_action(
     failure: str,
     result_timeout: float | None = None,
     progress: Sequence[str] = _DEFAULT_PROGRESS,
+    wait_for_result: bool = True,
 ) -> Iterator[str]:
     """Gửi lệnh, đọc câu xác nhận ngay, rồi đọc kết quả thật từ điện thoại.
 
@@ -914,7 +928,77 @@ def run_action(
         return
 
     yield _utterance(ack)
+    # 🔴 Mốc để tính cửa sổ chờ là ĐÂY, không phải `started`.
+    #
+    # Hàm này là GENERATOR: nó đứng lại ngay trên dòng `yield` phía trên cho
+    # tới khi bên tiêu thụ (TTS) kéo mảnh kế tiếp — tức tới khi câu ack đã
+    # TỔNG HỢP xong. Lấy `started` thì `elapsed` nuốt luôn quãng tổng hợp ấy,
+    # trong khi lúc đó board CHƯA phát ra tiếng nào: đó không phải thời gian
+    # người dùng đã nghe, nên trừ nó đi là trừ nhầm.
+    #
+    # Đo trên máy thật 2026-08-26 — thời gian tổng hợp của chính câu ack:
+    #
+    #     ack             đọc mất   tổng hợp mất   cửa sổ CÒN LẠI
+    #     music_volume     1.26 s       0.68 s         0.57 s
+    #     music_stop       1.02 s       0.48 s         0.55 s
+    #     contact_call     1.68 s       0.80 s         0.87 s
+    #
+    # Trong khi độ trễ thật của điện thoại (do CHÍNH server app 8001 đóng dấu
+    # `created_at`->`updated_at`, không phải đồng hồ của bên đo) là 1.13 s
+    # (`music_volume`) và 1.64 s (`music_stop`). Cửa sổ non nửa thiết kế ⟹
+    # `music_volume`/`music_stop` TRƯỢT 8/8 lượt qua tunnel: người dùng nghe
+    # "Điện thoại chưa báo lại." trong khi máy đã làm xong, 10/10 `succeeded`.
+    #
+    # Sửa ở đây là TRẢ cửa sổ về đúng bằng độ dài câu ack — đúng thứ docstring
+    # `wait_window_seconds()` vẫn luôn nói — chứ KHÔNG nới rộng nó. Quãng im
+    # lặng thêm vẫn bằng 0 theo cấu trúc.
+    speaking_started = time.monotonic()
     if not request_id:
+        return
+
+    # 🔴 `wait_for_result=False`: đọc xong câu ack là THÔI, không chờ điện thoại.
+    #
+    # Dành cho `emergency_call`. Đo trên máy thật 2026-08-27: một lượt khẩn cấp
+    # mất **13.97 giây** mới `succeeded` — vì phần lớn quãng đó là CHUÔNG ĐANG
+    # ĐỔ. Cửa sổ chờ 2.5 giây vì thế luôn hết trước, và người dùng nghe:
+    #
+    #     "Đang kích hoạt cuộc gọi khẩn cấp. Điện thoại chưa báo lại."
+    #
+    # Vế sau nói SAI về thực tế: lệnh đã tới máy (`202 Accepted`) và chuông đang
+    # reo. Với người đang cần cấp cứu, một câu phủ định sai là điều tệ nhất —
+    # họ sẽ tưởng máy hỏng và bấm lại, trong khi cuộc gọi đã đi rồi.
+    #
+    # Bỏ chờ KHÔNG làm mất kết quả: callback vẫn được đăng ký ở trên và
+    # `reconcile_late()` vẫn cập nhật trạng thái phiên như thường.
+    # Vòng đối soát muộn: callback có thể mất (server app khởi động lại, mạng
+    # rớt), nên vẫn hỏi lại trạng thái ở nền để `navigation_id`/`quote_id` và
+    # cờ phiên không kẹt sai. Định nghĩa ở đây vì HAI đường đều cần: đường chờ
+    # kết quả rồi hết giờ, và đường `wait_for_result=False`.
+    def start_reconcile() -> None:
+        budget = (result_timeout if result_timeout is not None
+                  else config.VISIONCARE_RESULT_TIMEOUT_SECONDS)
+
+        def reconcile_late() -> None:
+            deadline = time.monotonic() + budget
+            while time.monotonic() < deadline:
+                try:
+                    data = get_request_status(request_id)
+                except VisionCareAPIError:
+                    data = {}
+                if data.get("request_state") not in {None, "processing"}:
+                    action_callbacks.resolve(request_id, data)
+                    return
+                time.sleep(config.VISIONCARE_RESULT_POLL_SECONDS)
+
+        threading.Thread(
+            target=reconcile_late,
+            name=f"action-reconcile-{request_id[:8]}",
+            daemon=True,
+        ).start()
+
+    if not wait_for_result:
+        logger.info("%s: khong cho ket qua — chuong dang do, ack la du", operation)
+        start_reconcile()
         return
 
     # Một GET tức thời là recovery probe cho backend cũ/test; critical path sau
@@ -926,7 +1010,10 @@ def run_action(
     except VisionCareAPIError:
         pass
 
-    remaining = wait_window_seconds(ack, elapsed=time.monotonic() - started)
+    # `elapsed` chỉ còn đúng phần CHỒNG LÊN lúc board đang phát câu ack: một
+    # lần `get_request_status()` ở trên. Phần dựng payload / gọi HTTP / tổng
+    # hợp đều xảy ra TRƯỚC khi board phát tiếng, nên không tính.
+    remaining = wait_window_seconds(ack, elapsed=time.monotonic() - speaking_started)
     final = action_callbacks.wait(request_id, remaining)
     # G9/T21: chặng `action` — từ lúc gửi lệnh xuống điện thoại tới lúc có
     # `ActionResult`. Đây là chặng DUY NHẤT của một lượt mà server không điều
@@ -985,23 +1072,5 @@ def run_action(
 
     # Không hủy action ở mốc SLO. Polling chỉ còn là recovery nền nếu callback
     # bị mất/restart; callback muộn vẫn cập nhật navigation_id/quote_id/state.
-    budget = result_timeout if result_timeout is not None else config.VISIONCARE_RESULT_TIMEOUT_SECONDS
-
-    def reconcile_late() -> None:
-        deadline = time.monotonic() + budget
-        while time.monotonic() < deadline:
-            try:
-                data = get_request_status(request_id)
-            except VisionCareAPIError:
-                data = {}
-            if data.get("request_state") not in {None, "processing"}:
-                action_callbacks.resolve(request_id, data)
-                return
-            time.sleep(config.VISIONCARE_RESULT_POLL_SECONDS)
-
-    threading.Thread(
-        target=reconcile_late,
-        name=f"action-reconcile-{request_id[:8]}",
-        daemon=True,
-    ).start()
+    start_reconcile()
     yield _utterance(TIMEOUT_LINE)

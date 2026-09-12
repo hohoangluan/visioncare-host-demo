@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Brings up the whole demo stack: PostgreSQL, App Communication Server (8001),
     the glasses server (8000), the glasses pairing, and the handset permissions.
@@ -58,10 +58,31 @@ if ($Stop) {
     return
 }
 
-# One ephemeral secret is inherited by both child processes. It is never
-# written to source control or printed. The backend callback is loopback-only.
+# One secret is inherited by both child processes. It is never written to
+# source control or printed. The backend callback is loopback-only.
+#
+# 🔴 It has to SURVIVE a partial restart. Both children get the token at spawn
+# time, but this script skips whichever port is already listening - so a run
+# that restarts only the glasses server used to hand 8000 a brand new GUID
+# while 8001 kept the old one. Measured 2026-08-27:
+#
+#     POST /internal/action-results HTTP/1.1" 401 Unauthorized   (x3)
+#
+# That is the callback carrying a finished action result, so the late answer
+# never reaches the glasses - the exact "the phone did it but nobody says so"
+# failure. Keeping the token in a file next to the logs makes every restart
+# order agree. The file lives under logs/ (already git-ignored) and holds a
+# value that is only good for loopback callbacks on this machine.
+New-Item -ItemType Directory -Force -Path $LogDir | Out-Null
+$TokenFile = Join-Path $LogDir 'callback-token.txt'
 if (-not $env:VISIONCARE_CALLBACK_TOKEN) {
-    $env:VISIONCARE_CALLBACK_TOKEN = [guid]::NewGuid().ToString('N')
+    if (Test-Path $TokenFile) {
+        $env:VISIONCARE_CALLBACK_TOKEN = (Get-Content $TokenFile -Raw).Trim()
+    }
+    if (-not $env:VISIONCARE_CALLBACK_TOKEN) {
+        $env:VISIONCARE_CALLBACK_TOKEN = [guid]::NewGuid().ToString('N')
+    }
+    Set-Content -Path $TokenFile -Value $env:VISIONCARE_CALLBACK_TOKEN -NoNewline
 }
 $env:CALLBACK_URL = 'http://127.0.0.1:8000/internal/action-results'
 $env:CALLBACK_TOKEN = $env:VISIONCARE_CALLBACK_TOKEN
@@ -125,8 +146,26 @@ if ($SkipGlasses) {
     if (Get-NetTCPConnection -State Listen -LocalPort 8000 -ErrorAction SilentlyContinue) {
         Write-Host "  skip  something already listening on 8000" -ForegroundColor Yellow
     } else {
+        # 🔴 --timeout-keep-alive PHAI lon hon TLS_KEEPALIVE_MS cua board
+        # (60 s trong app_config.h). Mac dinh cua uvicorn la 5 GIAY, con board
+        # thi giu phien 60 s roi tin la no con song. Do tren board that
+        # 2026-08-27, moi lan bam cach lan truoc hon 5 s:
+        #
+        #   Dung lai phien TLS cu (mo 52 giay truoc) - bo qua bat tay
+        #   ghi dung o 5329/37397 byte sau 0 ms
+        #   ghi hong: connected=0
+        #   Dut ket noi khi day anh
+        #   Phien giu lai da chet - bat tay moi va gui lai mot lan
+        #
+        # Tuc lan bam nao cung chup xong, thu xong, roi mat ca lan ghi dau vi
+        # socket da bi server dong tu lau. Day la nguyen nhan "board gui cham
+        # hoac khong gui" - khong phai song yeu, khong phai RAM.
+        $GlassesArgs = @(
+            '-m', 'uvicorn', 'app:app', '--host', '0.0.0.0', '--port', '8000',
+            '--timeout-keep-alive', '75'
+        )
         Start-Process -FilePath "$GlassesRoot\.venv\Scripts\python.exe" `
-            -ArgumentList '-m', 'uvicorn', 'app:app', '--host', '0.0.0.0', '--port', '8000' `
+            -ArgumentList $GlassesArgs `
             -WorkingDirectory $GlassesRoot `
             -RedirectStandardOutput "$LogDir\glasses8000.log" `
             -RedirectStandardError  "$LogDir\glasses8000.err.log" `
@@ -135,17 +174,31 @@ if ($SkipGlasses) {
     Wait-Until -What 'glasses /health' -Check { Test-Http 'http://127.0.0.1:8000/health' } -TimeoutSeconds 300
 }
 
-# Pairing is idempotent, so re-asserting it every start costs nothing and
-# removes "did anyone unlink the glasses?" from the list of demo-day unknowns.
-Write-Host "`n[pairing] glasses-123 -> user-100" -ForegroundColor Cyan
-$pair = Invoke-RestMethod -Method Post -Uri "$AppServerUrl/api/v1/device/glasses/link" `
-    -Headers @{
-        Authorization = 'Bearer _W7kNZRwdQC9jawhJr7ji_TJ6JzUI5igkHQrE6oAQKE'
-        'User-Agent'  = 'VisionCare-Glasses/1.0'
-    } `
-    -ContentType 'application/json' `
-    -Body '{"user_id":"user-100","device_id":"glasses-123"}'
-Write-Host "  linked = $($pair.data.linked)" -ForegroundColor Green
+# Pairing is asserted, never forced. `glasses-01` is linked to the real handset
+# account (A5995E55) since 2026-08-27; re-linking it to the demo account would
+# take the glasses away from the phone that is meant to ring. So a
+# GLASSES_DEVICE_OWNER_CONFLICT here is the HEALTHY state, not a failure - it
+# means somebody already owns this device_id. Report it and carry on.
+$GlassesDeviceId = if ($env:VISIONCARE_DEVICE_ID) { $env:VISIONCARE_DEVICE_ID } else { 'glasses-01' }
+Write-Host "`n[pairing] $GlassesDeviceId" -ForegroundColor Cyan
+try {
+    $pair = Invoke-RestMethod -Method Post -Uri "$AppServerUrl/api/v1/device/glasses/link" `
+        -Headers @{
+            Authorization = 'Bearer _W7kNZRwdQC9jawhJr7ji_TJ6JzUI5igkHQrE6oAQKE'
+            'User-Agent'  = 'VisionCare-Glasses/1.0'
+        } `
+        -ContentType 'application/json' `
+        -Body ('{"user_id":"user-100","device_id":"' + $GlassesDeviceId + '"}')
+    Write-Host "  linked = $($pair.data.linked) (user-100)" -ForegroundColor Green
+} catch {
+    $detail = ''
+    try { $detail = $_.ErrorDetails.Message } catch {}
+    if ($detail -match 'GLASSES_DEVICE_OWNER_CONFLICT') {
+        Write-Host "  OK   $GlassesDeviceId already owned by another account - left alone" -ForegroundColor Green
+    } else {
+        Write-Host "  warn pairing call failed: $detail" -ForegroundColor Yellow
+    }
+}
 
 # 4. Handset permissions ----------------------------------------------------
 # HyperOS resets several of these on every app reinstall, and silently reverts

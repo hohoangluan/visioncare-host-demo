@@ -146,4 +146,14 @@ def handle_emergency(image: bytes, command_text: str, params: dict | None = None
         ack=_EMERGENCY_ACK,
         failure=_EMERGENCY_FAILURE,
         progress=_EMERGENCY_PROGRESS,
+        # 🔴 KHÔNG chờ kết quả — người dùng chốt 2026-08-27.
+        #
+        # Đo trên máy thật: một lượt khẩn cấp mất 13.97 s mới `succeeded`, và
+        # phần lớn quãng đó là CHUÔNG ĐANG ĐỔ. Cửa sổ chờ luôn hết trước, nên
+        # kính đọc "Đang kích hoạt cuộc gọi khẩn cấp. Điện thoại chưa báo lại."
+        # — vế sau nói SAI: lệnh đã tới máy (`202 Accepted`), chuông đang reo.
+        #
+        # Với người đang cần cấp cứu, một câu phủ định sai là thứ tệ nhất: họ
+        # tưởng máy hỏng rồi bấm lại, trong khi cuộc gọi đã đi.
+        wait_for_result=False,
     )

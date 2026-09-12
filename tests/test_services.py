@@ -232,6 +232,9 @@ def test_contact_call_reports_a_failed_call_as_failed(monkeypatch):
                     "song_title": "Bài lạ",
                     "artist": "Ca sĩ lạ",
                     "song_is_specific": True,
+                    # Nói đủ ngay câu đầu thì phải qua bước chốt trước
+                    # (người dùng chốt 2026-08-27); đây là lượt SAU khi chốt.
+                    "play_confirmed": True,
                 },
             ),
             "song_title",
@@ -313,14 +316,28 @@ def test_contact_call_refuses_without_a_name(monkeypatch):
     assert "gọi cho ai" in out.lower()
 
 
-def test_emergency_call_speaks_whether_the_sms_went_out(monkeypatch):
+def test_emergency_call_sends_the_command_and_stops_talking(monkeypatch):
+    """🔴 ĐẢO NGƯỢC 2026-08-27 — người dùng chốt. Lượt khẩn cấp KHÔNG chờ kết
+    quả nữa: đọc câu ack rồi thôi.
+
+    Vì sao: đo trên máy thật, một lượt khẩn cấp mất 13.97 giây mới `succeeded`,
+    và phần lớn quãng đó là CHUÔNG ĐANG ĐỔ. Cửa sổ chờ (2.5 s) luôn hết trước,
+    nên kính đọc "Điện thoại chưa báo lại." — một câu SAI, vì lệnh đã tới máy
+    (`202 Accepted`). Người đang cần cấp cứu nghe câu phủ định đó sẽ tưởng máy
+    hỏng rồi bấm lại, trong khi cuộc gọi đã đi.
+
+    CÁI GIÁ, ghi rõ để không ai tưởng là quên: kính KHÔNG còn nói "đã gửi tin
+    nhắn vị trí" nữa. Câu đó chỉ đọc được nếu chờ kết quả, mà chờ thì lại rơi
+    vào câu sai ở trên. Kết quả muộn vẫn về qua callback và vẫn cập nhật trạng
+    thái phiên — chỉ là không ai đọc nó ra, vì kênh xuống đang tắt.
+    """
     calls = _stub_flow(monkeypatch, {"contact": "***768", "sms_sent": True})
 
     out = "".join(phone.handle_emergency(b"", "", {}))
 
     assert calls[0][0] == "api/v1/service/emergency/call"
     assert "khẩn cấp" in out
-    assert "đã gửi tin nhắn vị trí" in out
+    assert "chưa báo lại" not in out
 
 
 def test_ride_quote_reads_the_destination_back_and_books_nothing_yet(monkeypatch):
@@ -510,6 +527,7 @@ def test_music_play_speaks_the_track_the_phone_actually_started(monkeypatch):
         "song_title": "Nơi này có anh",
         "artist": "Sơn Tùng M-TP",
         "song_is_specific": True,
+        "play_confirmed": True,   # lượt SAU bước chốt, xem test_music_confirm_flow.py
     }))
 
     assert calls[0][0] == "api/v1/service/music/play"
@@ -532,6 +550,7 @@ def test_music_play_reports_silence_as_a_failure(monkeypatch):
         "song_title": "Nơi này có anh",
         "artist": "Sơn Tùng M-TP",
         "song_is_specific": True,
+        "play_confirmed": True,   # lượt SAU bước chốt, xem test_music_confirm_flow.py
     }))
 
     # The whole point of polling: "sent the request" used to be the only thing

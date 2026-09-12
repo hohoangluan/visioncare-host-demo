@@ -300,7 +300,31 @@ TTS_STYLE = get("TTS_STYLE", "tu_nhien")
 # VisionCare Host API configuration (app server running on localhost:8001)
 VISIONCARE_HOST_URL = get("VISIONCARE_HOST_URL", "http://127.0.0.1:8001")
 VISIONCARE_CLIENT_TOKEN = get("VISIONCARE_CLIENT_TOKEN", "f23ChvjGZt_WYrY-A8eJAyxO5LVEF_TGujmE7F_gRAY")
-VISIONCARE_DEVICE_ID = get("VISIONCARE_DEVICE_ID", "glasses-123")
+# 🔴 Mặc định đổi "glasses-123" -> "glasses-01" (2026-08-27).
+#
+# Đây là bậc CUỐI của chuỗi tìm device_id: `DEVICE_ID_CTX` (request đang chạy)
+# -> sổ thiết bị -> hằng số này. Bậc cuối chỉ chạm tới khi KHÔNG có request nào
+# mang `X-Device-Id` — và đó là ba đường có thật, không phải ca hiếm:
+#
+#   * vòng làm mới vị trí ở nền (`handlers/chat._location_refresh_loop`)
+#   * firmware nhánh `main-panic` KHÔNG gửi `X-Device-Id` một lần nào
+#   * mọi script/tool gọi thẳng handler
+#
+# "glasses-123" là một chuỗi giữ chỗ chưa từng ứng với chiếc kính nào, nên mọi
+# lượt rơi xuống bậc này đều nhận `404 GLASSES_DEVICE_NOT_LINKED`. Đo được tối
+# 2026-08-27, và nó là nguyên nhân của cả hai triệu chứng người dùng báo:
+#
+#     POST /api/v1/service/emergency/call  ->  404 Not Found
+#     ERROR Lấy vị trí hỏng 30 lần liên tiếp
+#
+# Trước đó đã thử vá bằng biến môi trường lúc khởi động uvicorn — và nó KHÔNG
+# sống nổi qua một lần khởi động lại bằng cách khác, nên bệnh quay lại đúng
+# kiểu "lúc được lúc không". Đặt vào mặc định thì không có cách khởi động nào
+# làm mất nó.
+#
+# Ngày sản xuất nhiều kính thì phải bỏ hẳn bậc này (câu hỏi mở #6 trong
+# CLAUDE.md) — mọi bản dựng đều mang số "01" nên chúng sẽ trùng device_id.
+VISIONCARE_DEVICE_ID = get("VISIONCARE_DEVICE_ID", "glasses-01")
 
 # Số giây chờ kết quả thật của một action sau khi host trả `202 Accepted`.
 #
@@ -334,6 +358,30 @@ VISIONCARE_MUSIC_RESULT_TIMEOUT_SECONDS = float(
     get("VISIONCARE_MUSIC_RESULT_TIMEOUT_SECONDS", "40")
 )
 VISIONCARE_FAST_ACTION_SECONDS = float(get("VISIONCARE_FAST_ACTION_SECONDS", "2.0"))
+
+# 🔴 SÀN cho cửa sổ chờ kết quả điện thoại — người dùng chốt 2026-08-27.
+#
+# Cửa sổ vốn = đúng độ dài câu ack, để quãng im lặng thêm bằng 0 theo cấu
+# trúc. Đo trên máy thật cho thấy luật đó BỎ LỠ kết quả ở hai lệnh có câu ack
+# ngắn nhất, dù điện thoại đã làm xong việc:
+#
+#     lệnh           ack đọc mất   điện thoại cần   kết quả
+#     music_stop        1.02 s        1.64 s        trượt
+#     music_volume      1.26 s        1.13 s        trượt 5/6
+#
+# "điện thoại cần" là số do CHÍNH server app 8001 đóng dấu
+# (`created_at`->`updated_at`), không phải đồng hồ của bên đo; 10/10 lượt bắn
+# thẳng vào 8001 đều `succeeded`. Tức người dùng nghe "Điện thoại chưa báo
+# lại." trong khi máy đã chỉnh xong âm lượng.
+#
+# 2.5 s lấy từ đuôi trên của phân bố đo được (`music_stop`: 0.97 / 1.20 /
+# 2.08 / 2.92 s), không phải số tròn chọn bừa.
+#
+# Giá phải trả, nói thẳng: lệnh nào có câu ack ngắn hơn 2.5 s thì sau khi
+# board đọc xong sẽ có một quãng IM LẶNG tối đa (2.5 − độ dài ack) giây —
+# `music_stop` tệ nhất, ~1.5 s. Đây là đánh đổi người dùng chọn: thà im một
+# nhịp rồi nghe kết quả THẬT, còn hơn nghe ngay một câu báo sai.
+VISIONCARE_MIN_WAIT_SECONDS = float(get("VISIONCARE_MIN_WAIT_SECONDS", "2.5"))
 VISIONCARE_CALLBACK_TOKEN = get("VISIONCARE_CALLBACK_TOKEN", "visioncare-secret-token")
 
 CHAT_LOCATION_REFRESH_SECONDS = float(get("CHAT_LOCATION_REFRESH_SECONDS", "240.0"))

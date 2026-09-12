@@ -45,3 +45,19 @@ def no_prerendered_phrases():
     tts.clear_phrases()
     yield
     tts.clear_phrases()
+
+
+@pytest.fixture(autouse=True)
+def isolated_storage_dir(tmp_path, monkeypatch):
+    """Không test nào được ghi vào `storage/` thật.
+
+    `DeviceRegistry()` dựng thẳng trong test vẫn lưu sổ ghép đôi xuống
+    `config.STORAGE_DIR/pairings.json`. Đã dính đúng một lần và hỏng lặng:
+    `test_pair_by_serial_before_glasses_ever_connects` ghép `glasses-07` với
+    số giả `+84900000000`, dòng đó nằm lại trong kho thật, và
+    `visioncare_client` xếp sổ thiết bị ĐỨNG TRÊN hằng số
+    `VISIONCARE_DEVICE_ID`. Kết quả trên host thật: vòng lấy vị trí ở nền hỏi
+    `glasses-07` rồi ăn `GLASSES_DEVICE_NOT_LINKED` mỗi phút, trong khi kính
+    thật là `glasses-01`.
+    """
+    monkeypatch.setattr(config, "STORAGE_DIR", str(tmp_path / "storage"))

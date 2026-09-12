@@ -69,7 +69,14 @@ def handle_play(image: bytes, command_text: str, params: dict | None = None) -> 
         spec = SLOTS["artist"]
         question = f"{spec.ask} {_ASK_ARTIST_HINT}"
         known = dict(params)
-        known.update({"song_title": song_title, "song_is_specific": True})
+        known.update({
+            "song_title": song_title,
+            "song_is_specific": True,
+            # Câu trả lời cho câu hỏi này ĐÃ LÀ một lần chốt rồi: người dùng
+            # vừa tự nói ra tên ca sĩ (hoặc "cứ phát"). Hỏi lại "đúng không?"
+            # ngay sau đó là bắt họ xác nhận hai lần cho một lần chọn.
+            "play_confirmed": True,
+        })
         action_flow.set_pending(
             slot="artist",
             intent="music_play",
@@ -79,6 +86,18 @@ def handle_play(image: bytes, command_text: str, params: dict | None = None) -> 
         )
         yield question
         return
+
+    # 🔴 KHÔNG hỏi lại khi người dùng đã nói ĐỦ — người dùng chốt 2026-08-27.
+    #
+    # Ngày 2026-08-27 (sáng) từng thêm một bước chốt: nói đủ bài + ca sĩ thì
+    # server đọc lại "Bạn muốn phát X của Y, đúng không?" rồi mới phát. Người
+    # dùng BỎ nó cùng ngày, và lý do đúng: câu "phát cho tôi bài Nơi này có anh
+    # của Sơn Tùng MTP" đã không còn gì để hiểu nhầm — hỏi lại chỉ cộng thêm
+    # một lượt bấm nút và ~4 giây cho một việc đã rõ.
+    #
+    # Hỏi lại chỉ còn ở chỗ THẬT SỰ thiếu thông tin: không nghe ra tên bài, hoặc
+    # có tên bài mà chưa có ca sĩ (hai nhánh ngay bên trên). Đó là làm rõ, không
+    # phải xác nhận.
 
     # Host vẫn nhận hợp đồng chuỗi cũ. Chỉ nối khi cả hai slot có mặt; tên bài
     # chứa chữ "của" không còn bị tách/đoán tại handler.

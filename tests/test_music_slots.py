@@ -59,6 +59,10 @@ def test_song_title_and_artist_joined_only_when_both(monkeypatch):
                 "song_title": "Nơi này có anh",
                 "artist": "Sơn Tùng M-TP",
                 "song_is_specific": True,
+                # Nói đủ ngay câu đầu thì server CHỐT LẠI trước khi phát
+                # (người dùng chốt 2026-08-27). `play_confirmed` là trạng thái
+                # SAU khi đã chốt — đây mới là lượt thật sự phát.
+                "play_confirmed": True,
             },
         )
     )
@@ -92,6 +96,7 @@ def test_artist_swallowed_cua_still_detected(monkeypatch):
                 "song_title": "Nơi này có anh",
                 "artist": "Sơn Tùng",
                 "song_is_specific": True,
+                "play_confirmed": True,
             },
         )
     )
@@ -215,6 +220,7 @@ def test_music_pending_ttl_expired(monkeypatch):
                 "song_title": "Bài mới",
                 "artist": "Đen Vâu",
                 "song_is_specific": True,
+                "play_confirmed": True,
             },
         )
     )

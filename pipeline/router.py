@@ -13,6 +13,7 @@ from handlers import (
     music_play, music_stop, music_volume
 )
 from handlers.waiting import with_progress_notice
+from handlers.slots import SLOTS as slot_specs
 from services import capabilities
 from services import turn_trace
 # 🔴 `events` (kênh xuống) KHÔNG còn được import ở đây từ 2026-08-26. Người
@@ -147,8 +148,15 @@ _HAZARD_WATCH_OFF = re.compile(
 )
 
 # ─── Pha 2 — PENDING TẤT ĐỊNH: câu trả lời ĐÓNG, khớp tất định, không LLM ──
+# `đúng` trống thêm 2026-08-27 cùng lúc với bước chốt bài hát: câu hỏi kết
+# thúc bằng "…đúng không?" thì câu trả lời tự nhiên nhất là đúng một chữ
+# "đúng", và trước đó chữ đó rơi thẳng vào nhánh "không hiểu".
+#
+# 🔴 An toàn CHỈ vì `_PENDING_NO` được kiểm TRƯỚC (xem `kind == "confirm"`):
+# "không đúng" khớp cả hai, và phủ định phải thắng. Đảo thứ tự hai lần kiểm
+# đó là biến một câu TỪ CHỐI thành một lần xác nhận đặt xe / gọi điện.
 _PENDING_YES = re.compile(
-    r"\b(ừ|ừm|vâng|đúng rồi|đúng vậy|đồng ý|xác nhận|được|ok|okay)\b", re.I
+    r"\b(ừ|ừm|vâng|đúng rồi|đúng vậy|đúng|đồng ý|xác nhận|được|ok|okay)\b", re.I
 )
 _PENDING_NO = re.compile(
     r"\b(không phải|không đúng|sai rồi|không)\b", re.I
@@ -579,6 +587,27 @@ def _resolve_deterministic_pending(
         # cả hai cùng khớp, đúng cách một người nghe sẽ hiểu câu đó.
         if _PENDING_NO.search(text):
             action_flow.clear_pending()
+            # 🔴 `music_play` là ca DUY NHẤT mà "không đúng" KHÔNG có nghĩa là
+            # "thôi bỏ đi" — người dùng chốt 2026-08-27.
+            #
+            # Câu chốt ở đây là "Bạn muốn phát <bài> của <ca sĩ>, đúng không?".
+            # Nói "không" nghĩa là STT nghe sai tên bài hoặc tên ca sĩ, chứ
+            # người dùng VẪN muốn nghe nhạc. Trả về "Đã huỷ." rồi im là bắt họ
+            # bấm nút nói lại từ đầu, đúng lúc vừa phát hiện máy nghe nhầm.
+            #
+            # Các confirm khác (đặt xe, gọi điện) giữ nguyên "Đã huỷ.": ở đó
+            # "không" đúng là huỷ, và tự động hỏi lại một việc tốn tiền/gọi
+            # người thật là điều ngược lại với an toàn.
+            if pending.intent == Intent.MUSIC_PLAY:
+                spec = slot_specs["song_title"]
+                action_flow.set_pending(
+                    slot="song_title",
+                    intent=Intent.MUSIC_PLAY,
+                    known={},
+                    question=spec.ask,
+                    kind=spec.kind,
+                )
+                return iter([spec.ask])
             return iter([_CANCELLED_MESSAGE])
         if _PENDING_YES.search(text):
             action_flow.clear_pending()

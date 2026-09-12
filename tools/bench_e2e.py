@@ -251,6 +251,17 @@ def main() -> None:
     ap.add_argument("--accept", default=BOARD_ACCEPT,
                     help="header Accept gửi lên; đổi để đo định dạng khác "
                          "(vd. 'audio/mpeg' ra MP3, 'audio/wav' ra WAV PCM)")
+    # 🔴 BẮT BUỘC khi đo các chức năng đi qua điện thoại (`contact_call`,
+    # `music_*`, `nav_*`, `ride_*`, `emergency_call`).
+    #
+    # Bỏ trống thì tool KHÔNG gửi `X-Device-Id`, server rơi về hằng số
+    # `VISIONCARE_DEVICE_ID` (`"glasses-123"` — một chuỗi giữ chỗ chưa từng
+    # ứng với chiếc kính nào), và host 8001 trả `404
+    # GLASSES_DEVICE_NOT_LINKED`. Bảng đo khi đó ghi ~0.3s cho mọi chức năng
+    # qua điện thoại: nhìn như nhanh, thực ra là chưa lần nào chạm tới máy.
+    ap.add_argument("--device", default="",
+                    help="giá trị X-Device-Id (vd. glasses-01) — cần cho các "
+                         "chức năng đi qua điện thoại đã ghép đôi")
     args = ap.parse_args()
 
     names = [n.strip() for n in args.only.split(",") if n.strip()] or list(COMMANDS)
@@ -263,7 +274,8 @@ def main() -> None:
             if results or attempt:
                 time.sleep(args.gap)
             try:
-                runs.append(run_one(args.host, args.port, name, accept=args.accept))
+                runs.append(run_one(args.host, args.port, name, accept=args.accept,
+                                    device_id=args.device))
             except Exception as exc:  # noqa: BLE001
                 res = Result()
                 res.name = name
