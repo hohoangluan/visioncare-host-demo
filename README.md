@@ -63,6 +63,8 @@ python -m uvicorn app:app --reload
 
 Tài liệu API: <http://127.0.0.1:8000/docs>
 
+Triển khai Linux/GPU: `./run.sh` (bật nền, tự chọn GPU trống) / `./run.sh stop` / `./run.sh log`.
+
 Triển khai Linux/GPU (voice server v2) chạy ở **cổng 18888** sau Cloudflare tunnel
 `api.visioncare-host.uk`:
 

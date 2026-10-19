@@ -99,6 +99,8 @@ framesize OV2640 lúc chạy, fps thật qua WiFi+TLS); ngưỡng căn khung OCR
 
 ## 5. Chạy lại
 
+Nhanh: `./run.sh` (tự chọn GPU trống, cổng 18888, chờ sẵn sàng), `./run.sh stop`, `./run.sh log`. Lệnh tay:
+
 ```bash
 # Chọn GPU còn trống (máy dùng chung 8x RTX 2080 Ti; GPU đầy thì đổi GPU, KHÔNG lùi về CPU)
 nvidia-smi --query-gpu=index,memory.used,utilization.gpu --format=csv,noheader
