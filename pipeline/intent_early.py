@@ -57,14 +57,23 @@ _RULES: tuple[tuple[re.Pattern, str, str], ...] = tuple(
 )
 
 
+_BLOCKED_BY_KEYWORD = {
+    "contact_call", "emergency_call", "ride_quote", "ride_confirm", "music_play", "nav_start",
+}
+
+
 @dataclass
 class Decision:
     intent: str
     ocr_mode: str = "read"
     needs_web: bool = False
-    source: str = ""  # "model" | "model-cache" | "keyword" | "fallback-chat" | "no_speech"
+    # "model" | "model-cache" | "keyword" | "fallback-chat" | "no_speech" | "keyword-blocked"
+    source: str = ""
     confidence: float = 0.0
     seconds: float = 0.0
+    # Bộ phân loại ra nhãn: "gemma" | "clef" | "" (không rõ / luật từ khoá).
+    # Làn D chỉ chạy thẳng khi backend == "gemma".
+    backend: str = ""
 
     @property
     def lane(self) -> str:
@@ -156,9 +165,18 @@ class EarlyIntent:
             return Decision(
                 result.intent, mode, result.needs_web, source,
                 result.confidence, time.monotonic() - started,
+                backend=getattr(result, "source", "") or "",
             )
 
         if rule is not None:
+            # An toàn: luật từ khoá KHÔNG BAO GIỜ được kích hoạt hành động có tác dụng
+            # phụ (CONFIRM_INTENTS: gọi điện, đặt xe, nhạc; và nav_start). Bộ phân loại
+            # hỏng thì báo bận thay vì đoán theo chữ. Ngoại lệ: music_stop, music_volume,
+            # nav_stop — đảo ngược được, không liên quan bên thứ ba, người khiếm thị
+            # phải tắt được âm thanh dù model hỏng.
+            if rule[0] in _BLOCKED_BY_KEYWORD:
+                logger.warning("chặn làn D theo từ khoá (bộ phân loại hỏng): %s", rule[0])
+                return Decision("", source="keyword-blocked", seconds=time.monotonic() - started)
             return Decision(rule[0], rule[1], False, "keyword", 0.0, time.monotonic() - started)
         # Bộ phân loại hỏng/quá hạn và câu không khớp luật nào -> trò chuyện (làn A).
         # Lệch spec §7.3 (spec: cue system_busy): đo thật Clef có lượt > 1 s, và

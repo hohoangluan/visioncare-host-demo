@@ -167,3 +167,90 @@ def run_background(intent: str, text: str, params: dict, deliver=None) -> thread
             logger.exception("làn D nền %s lỗi", intent)
 
     return device_ctx.run_in_thread(worker, name=f"lane-d-{intent}")
+
+
+# ── cổng an toàn làn D: đọc lại + hỏi xác nhận ───────────────────────────────
+
+# Hành động có tác dụng phụ thật: đọc lại cho nghe rồi chờ cửa sổ huỷ mới chạy.
+CONFIRM_INTENTS = {"contact_call", "emergency_call", "ride_quote", "ride_confirm", "music_play"}
+
+
+def readback(intent: str, params: dict) -> str:
+    """Câu đọc lại cố định trước khi thi hành."""
+    if intent == "contact_call":
+        return f"Đang gọi cho {params.get('contact_name', '')}."
+    if intent == "emergency_call":
+        # Khẩn cấp = gọi người thân đã cài trong app, không phải 115.
+        return "Đang gọi người thân khẩn cấp, bấm nút để huỷ."
+    if intent == "ride_quote":
+        return f"Đang tìm xe đi {params.get('destination', '')}."
+    if intent == "ride_confirm":
+        return "Đang xác nhận chuyến xe." if params.get("confirm", True) else "Đang huỷ chuyến xe."
+    if intent == "music_play":
+        song = params.get("song")
+        return f"Đang mở {song}." if song else "Đang mở nhạc."
+    if intent == "nav_start":
+        return f"Đang mở chỉ đường tới {params.get('destination', '')}."
+    raise KeyError(intent)
+
+
+def ask_confirm(intent: str, params: dict) -> str:
+    if intent == "contact_call":
+        return f"Gọi cho {params.get('contact_name', '')} phải không?"
+    if intent == "emergency_call":
+        return "Gọi người thân khẩn cấp phải không?"
+    if intent == "ride_quote":
+        return f"Đặt xe đi {params.get('destination', '')} phải không?"
+    if intent == "ride_confirm":
+        return "Xác nhận chuyến xe phải không?"
+    if intent == "music_play":
+        song = params.get("song")
+        return f"Mở {song} phải không?" if song else "Mở nhạc phải không?"
+    if intent == "nav_start":
+        return f"Chỉ đường tới {params.get('destination', '')} phải không?"
+    raise KeyError(intent)
+
+
+_CONFIRM: dict[str, tuple[str, dict, float]] = {}  # device -> (intent, params, lúc hỏi)
+_CONFIRM_TTL_S = 30.0
+_YES_WORDS = {"đúng", "phải", "ừ", "ừm", "có", "ok", "đồng ý", "gọi đi", "được", "vâng", "dạ"}
+_NO_WORDS = {"không", "thôi", "huỷ", "hủy", "sai"}
+
+
+def _norm(text: str) -> str:
+    return " ".join(re.sub(r"[^\w\s]", " ", (text or "").lower()).split())
+
+
+def _pure(text: str, words: set[str]) -> bool:
+    """Cả câu là lời đáp ngắn (<= 3 từ), mọi từ nằm trong danh sách (hoặc cụm "đồng ý"/"gọi đi").
+
+    "có gì trước mặt" KHÔNG phải xác nhận: chỉ khớp đầu câu là bẫy khi người dùng hỏi tiếp.
+    """
+    norm = _norm(text)
+    if not norm or len(norm.split()) > 3:
+        return False
+    rest = norm
+    for phrase in sorted((w for w in words if " " in w), key=len, reverse=True):
+        rest = rest.replace(phrase, " ")
+    return all(w in words for w in rest.split())
+
+
+def is_yes(text: str) -> bool:
+    return _pure(text, _YES_WORDS)
+
+
+def is_no(text: str) -> bool:
+    return _pure(text, _NO_WORDS)
+
+
+def set_pending_confirm(device: str, intent: str, params: dict) -> None:
+    with _PENDING_LOCK:
+        _CONFIRM[device] = (intent, params, time.monotonic())
+
+
+def take_pending_confirm(device: str) -> tuple[str, dict] | None:
+    with _PENDING_LOCK:
+        item = _CONFIRM.pop(device, None)
+    if item is None or time.monotonic() - item[2] > _CONFIRM_TTL_S:
+        return None
+    return item[0], item[1]

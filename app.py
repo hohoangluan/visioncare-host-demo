@@ -662,6 +662,7 @@ async def turn_lane(request: Request) -> Response:
     """Làn âm thanh (§5.2): ADPCM chunked trong lúc nói -> cue/live/audio. Luôn 200."""
     from handlers.action_flow import device_state
     from live.session import sessions
+    from pipeline import pending_action
 
     device = _device_id(request.headers)
     device_ctx.current.set(device)
@@ -671,10 +672,12 @@ async def turn_lane(request: Request) -> Response:
     if response_format == "auto":
         response_format = _negotiate(request.headers.get("accept", ""))
 
+    # Lệnh làn D đang chờ đọc xong của lượt trước phải bị huỷ trước mọi xử lý.
+    turn_gen = pending_action.begin_turn(device)
     state = {**device_state(), "alerting": sessions.active(device) is not None}
     try:
         result = await turn_v2.run(
-            device, turn_id, request.headers.get("content-type"), request.stream(), state,
+            device, turn_id, request.headers.get("content-type"), request.stream(), state, gen=turn_gen,
         )
         reply, released = result.reply, result.released_at
     except Exception:  # noqa: BLE001 - kính luôn phải nghe được gì đó

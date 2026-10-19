@@ -18,6 +18,25 @@ log = logging.getLogger("pending_action")
 
 _lock = threading.Lock()
 _pending: Dict[str, "PendingAction"] = {}
+_generation: Dict[str, int] = {}
+
+
+def begin_turn(device: str) -> int:
+    """Lượt mới của `device`: tăng thế hệ rồi huỷ lệnh chờ, dưới cùng một khoá.
+
+    Lượt cũ còn đang trong router không được phép schedule sau đây — `schedule`
+    so thế hệ nó mang theo với thế hệ hiện tại và từ chối nếu đã cũ.
+    """
+    with _lock:
+        _generation[device] = _generation.get(device, 0) + 1
+        gen = _generation[device]
+    cancel(device, "lượt mới")
+    return gen
+
+
+def generation(device: str) -> int:
+    with _lock:
+        return _generation.get(device, 0)
 
 
 class PendingAction:
@@ -45,12 +64,16 @@ class PendingAction:
 
 
 def schedule(device: str, delay_s: float, fn: Callable[[], None],
-             label: str) -> PendingAction:
+             label: str, gen: int | None = None) -> PendingAction | None:
+    """Đặt lệnh chờ. `gen` cũ (đã có lượt mới hơn) -> từ chối, trả None."""
     action = PendingAction(device, fn, label)
     timer = threading.Timer(max(0.0, delay_s), action._run)
     timer.daemon = True
     action._timer = timer
     with _lock:
+        if gen is not None and gen != _generation.get(device, 0):
+            log.info("làn D bỏ %s: lượt đã cũ", label)
+            return None
         old = _pending.get(device)
         if old is not None:
             _cancel_locked(old, "lệnh mới thay thế")

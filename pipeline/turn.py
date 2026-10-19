@@ -14,7 +14,7 @@ from dataclasses import dataclass, field
 
 import config
 from lanes import general, phone
-from pipeline import final_router
+from pipeline import final_router, pending_action
 from pipeline.final_router import Speculation, TurnContext
 from pipeline.image_buffer import image_buffer
 from pipeline.intent_early import EarlyIntent, LANE, keyword_rule
@@ -79,7 +79,7 @@ def _speculate(ctx: TurnContext, early: EarlyIntent, text: str) -> None:
 
 async def run(
     device: str, turn_id: str, content_type: str | None, body: AsyncIterator[bytes],
-    device_state: dict,
+    device_state: dict, gen: int | None = None,
 ) -> TurnResult:
     started = time.monotonic()
     loop = asyncio.get_running_loop()
@@ -97,6 +97,7 @@ async def run(
     stop = asyncio.Event()
     partials = loop.create_task(_partial_loop(transcriber, early, stop))
     ctx = TurnContext(device, turn_id, prewarmer, loop)
+    ctx.gen = pending_action.generation(device) if gen is None else gen
 
     try:
         async for chunk in body:

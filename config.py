@@ -316,6 +316,12 @@ SPECULATIVE_FINAL = get("SPECULATIVE_FINAL", "1") != "0"
 V2_AUDIO_PREROLL_SECONDS = float(get("V2_AUDIO_PREROLL_SECONDS", "0.2"))
 # Biên thêm sau khi đọc lại lệnh làn D xong, trước khi thi hành (pending_action).
 ACTION_READBACK_MARGIN_S = float(get("ACTION_READBACK_MARGIN_S", "0.15"))
+# Từ lúc router trả lời tới lúc tiếng đọc lại thật sự ra loa (TTS câu đầu); cộng vào
+# đồng hồ chờ để cửa sổ huỷ không bị TTS ăn mất.
+ACTION_TTS_LEAD_S = float(get("ACTION_TTS_LEAD_S", "0.4"))
+# Làn D chỉ chạy khi Gemma gán nhãn với độ tin cậy >= ngưỡng này; dưới ngưỡng thì
+# hỏi lại. Task 4 sẽ đặt giá trị từ số đo trên tập gold (0,85 là tạm thời).
+ACTION_MIN_CONFIDENCE = float(get("ACTION_MIN_CONFIDENCE", "0.85"))
 # Câu TTS đầu của làn A cắt ở ngần này từ để tiếng ra sớm (§9).
 FIRST_SENTENCE_MAX_WORDS = int(get("FIRST_SENTENCE_MAX_WORDS", "8"))
 

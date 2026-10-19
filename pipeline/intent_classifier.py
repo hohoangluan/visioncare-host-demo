@@ -116,3 +116,4 @@ async def classify(text: str, device: dict | None = None) -> ClefResult | None:
         if result is not None or config.INTENT_BACKEND == "gemma":
             return result
     return await clef.classify(text, device)
+

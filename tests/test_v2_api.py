@@ -88,11 +88,26 @@ def world(monkeypatch):
         monkeypatch.setitem(phone.HANDLERS, name, fake_handler(name))
 
     action_flow.reset_state()
+    phone._CONFIRM.clear()
     image_buffer.clear()
     sessions.clear()
     monkeypatch.setattr(text_align, "detector", lambda: text_align.MorphDetector())
     yield rec, labels, calls
     sessions.clear()
+
+
+def _gemma(intent, confidence=0.95):
+    """Nhãn do Gemma gán (làn D chỉ tin nguồn này)."""
+    result = clef.ClefResult(intent, confidence)
+    result.source = "gemma"
+    return result
+
+
+def _wait_actions(calls, n=1, timeout=3.0):
+    import time
+    end = time.monotonic() + timeout
+    while len(calls["actions"]) < n and time.monotonic() < end:
+        time.sleep(0.02)
 
 
 def _adpcm_chunks(seconds=1.0, chunk=512):
@@ -190,12 +205,12 @@ def test_no_speech_is_a_cue(world):
 def test_nav_start_opens_live_and_runs_phone_action(world):
     rec, labels, calls = world
     rec.text = "DẪN TÔI TỚI CHỢ BẾN THÀNH"
-    labels["dẫn tôi tới chợ bến thành"] = clef.ClefResult("nav_start", 0.9)
+    labels["dẫn tôi tới chợ bến thành"] = _gemma("nav_start")
     r = _turn("t6")
     assert r.headers["x-cue"] == "nav_alert_on"
     assert r.headers["x-live"] == "nav" and r.headers["x-live-token"]
     import time
-    for _ in range(50):
+    for _ in range(150):
         if calls["actions"]:
             break
         time.sleep(0.02)
@@ -205,7 +220,7 @@ def test_nav_start_opens_live_and_runs_phone_action(world):
 def test_missing_slot_asks_then_next_turn_fills_it(world):
     rec, labels, calls = world
     rec.text = "GỌI ĐIỆN"
-    labels["gọi điện"] = clef.ClefResult("contact_call", 0.9)
+    labels["gọi điện"] = _gemma("contact_call")
 
     async def empty_json(prompt, schema, max_tokens=120):
         return {"contact_name": ""}
@@ -220,8 +235,13 @@ def test_missing_slot_asks_then_next_turn_fills_it(world):
     rec.text = "MẸ"
     labels["mẹ"] = clef.ClefResult("chat", 0.6)
     r = _turn("t8")
-    assert calls["actions"] == [("contact_call", {"contact_name": "Mẹ"})]
+    assert calls["actions"] == []  # câu điền chỗ trống chưa đủ tin -> hỏi lại, chưa gọi
     assert len(r.content) > 1000
+    rec.text = "ĐÚNG"
+    labels["đúng"] = clef.ClefResult("chat", 0.9)
+    r = _turn("t8b")
+    _wait_actions(calls)
+    assert calls["actions"] == [("contact_call", {"contact_name": "Mẹ"})]
 
 
 def test_ocr_reads_buffer_directly_when_frame_is_good(world):
@@ -286,3 +306,126 @@ def test_ocr_live_aligns_captures_and_reads(world, monkeypatch):
                 assert json.loads(msg["text"]) == {"t": "end"}
                 break
     assert ocr_live.last_text("aa:bb")
+
+
+# ── cổng an toàn làn D (Task 6) ───────────────────────────────────────────────
+
+def test_keyword_only_never_triggers_lane_d(world):
+    rec, labels, calls = world  # bộ phân loại không có nhãn -> trả None
+    rec.text = "GỌI CHO MẸ"
+    r = _turn("k1")
+    assert r.headers["x-cue"] == "system_busy"
+    import time
+    time.sleep(0.5)
+    assert calls["actions"] == []
+
+
+def test_low_confidence_asks_back(world):
+    rec, labels, calls = world
+    rec.text = "GỌI CHO MẸ"
+    labels["gọi cho mẹ"] = _gemma("contact_call", 0.6)
+    r = _turn("l1")
+    assert "x-cue" not in r.headers and len(r.content) > 1000  # câu hỏi lại
+    import time
+    time.sleep(0.5)
+    assert calls["actions"] == []
+    assert phone.take_pending_confirm("aa:bb")[0] == "contact_call"
+
+
+def test_clef_backend_asks_back(world):
+    rec, labels, calls = world
+    rec.text = "GỌI CHO MẸ"
+    result = clef.ClefResult("contact_call", 0.99)
+    result.source = "clef"
+    labels["gọi cho mẹ"] = result
+    _turn("c1")
+    import time
+    time.sleep(0.5)
+    assert calls["actions"] == []
+
+
+def test_confident_gemma_reads_back_then_fires(world):
+    rec, labels, calls = world
+    rec.text = "GỌI CHO MẸ"
+    labels["gọi cho mẹ"] = _gemma("contact_call")
+    r = _turn("g1")
+    assert len(r.content) > 1000
+    _wait_actions(calls)
+    assert calls["actions"] == [("contact_call", {"contact_name": "mẹ"})]
+
+
+def test_new_turn_cancels_pending_action(world, monkeypatch):
+    rec, labels, calls = world
+    monkeypatch.setattr(config, "ACTION_TTS_LEAD_S", 2.0)  # cửa sổ huỷ rộng, test không phụ thuộc tốc độ
+    rec.text = "GỌI CHO MẸ"
+    labels["gọi cho mẹ"] = _gemma("contact_call")
+    _turn("n1")
+    rec.text = "KỂ CHUYỆN CƯỜI ĐI"
+    labels["kể chuyện cười đi"] = clef.ClefResult("chat", 0.9)
+    _turn("n2")  # lượt mới ngay -> huỷ lệnh chờ
+    import time
+    time.sleep(3.0)
+    assert calls["actions"] == []
+
+
+def test_rubbish_transcript_no_action(world):
+    rec, labels, calls = world
+    rec.text = "Ờ Ờ"
+    labels["ờ ờ"] = clef.ClefResult("chat", 0.5)
+    _turn("r1")
+    import time
+    time.sleep(0.5)
+    assert calls["actions"] == []
+
+
+def test_confirmed_no_cancels(world):
+    rec, labels, calls = world
+    rec.text = "GỌI CHO MẸ"
+    labels["gọi cho mẹ"] = _gemma("contact_call", 0.5)
+    _turn("no1")
+    rec.text = "KHÔNG"
+    labels["không"] = clef.ClefResult("chat", 0.9)
+    r = _turn("no2")
+    assert len(r.content) > 1000  # "Đã huỷ."
+    import time
+    time.sleep(0.5)
+    assert calls["actions"] == []
+    assert phone.take_pending_confirm("aa:bb") is None
+
+
+def test_question_starting_with_yes_word_does_not_confirm(world):
+    rec, labels, calls = world
+    rec.text = "GỌI CHO MẸ"
+    labels["gọi cho mẹ"] = _gemma("contact_call", 0.5)
+    _turn("q1")
+    rec.text = "CÓ GÌ TRƯỚC MẶT"
+    labels["có gì trước mặt"] = clef.ClefResult("chat", 0.9)
+    _turn("q2")
+    import time
+    time.sleep(0.5)
+    assert calls["actions"] == []
+
+
+def test_yes_no_matching_is_whole_utterance():
+    assert phone.is_yes("Đúng rồi".replace(" rồi", "")) and phone.is_yes("Ừ, đồng ý!")
+    assert not phone.is_yes("có gì trước mặt") and not phone.is_yes("được rồi gọi cho bố")
+    assert phone.is_no("Thôi.") and not phone.is_no("không phải, gọi cho bố đi")
+
+
+def test_stale_turn_does_not_schedule():
+    from pipeline import pending_action
+    fired = []
+    gen_a = pending_action.begin_turn("dev-x")
+    pending_action.begin_turn("dev-x")  # lượt B bắt đầu trong lúc A còn ở router
+    assert pending_action.schedule("dev-x", 0.0, lambda: fired.append(1), "t", gen=gen_a) is None
+    import time
+    time.sleep(0.2)
+    assert fired == []
+
+
+def test_keyword_still_allows_music_stop_when_model_down(world):
+    rec, labels, calls = world
+    rec.text = "TẮT NHẠC"
+    _turn("ms1")
+    _wait_actions(calls)
+    assert calls["actions"] and calls["actions"][0][0] == "music_stop"

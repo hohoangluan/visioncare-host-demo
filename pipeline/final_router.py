@@ -12,7 +12,7 @@ import config
 from lanes import general, ocr_live, phone
 from live.session import sessions
 from models import search
-from pipeline import image_quality, speech
+from pipeline import image_quality, pending_action, speech
 from pipeline.image_buffer import image_buffer
 from pipeline.intent_early import Decision
 from pipeline.reply import Reply
@@ -71,6 +71,7 @@ class TurnContext:
         self.device, self.turn_id = device, turn_id
         self.prewarmer = prewarmer
         self.loop = loop
+        self.gen: int | None = None  # thế hệ lượt (pending_action.begin_turn)
         self.spec_answer: Speculation | None = None
         # (intent, text) -> task trích tham số chạy song song với Clef.
         self.spec_params: tuple[tuple, asyncio.Task] | None = None
@@ -182,6 +183,33 @@ async def _params(ctx: TurnContext, intent: str, text: str) -> dict:
     return await phone.extract(intent, text)
 
 
+def _trusted(d: Decision) -> bool:
+    """Chỉ nhãn Gemma đủ tin cậy mới được chạy hành động có tác dụng phụ.
+
+    Clef/không rõ nguồn/luật từ khoá -> hỏi lại. `backend` lạ KHÔNG mặc định là gemma.
+    """
+    return d.backend == "gemma" and d.confidence >= config.ACTION_MIN_CONFIDENCE
+
+
+def _ask_back(ctx: TurnContext, d: Decision, params: dict, lane: str) -> Reply:
+    phone.set_pending_confirm(ctx.device, d.intent, params)
+    logger.info("làn D %s: hỏi lại (backend=%r conf=%.2f)", d.intent, d.backend, d.confidence)
+    return Reply(speech=[phone.ask_confirm(d.intent, params)], intent=d.intent, lane=lane)
+
+
+def _fire_after_readback(ctx: TurnContext, intent: str, text: str, params: dict,
+                         deliver=None) -> str | None:
+    """Đọc lại xong mới chạy; lượt mới / kính ngắt trong lúc đó sẽ huỷ (pending_action)."""
+    line = phone.readback(intent, params)
+    delay = pending_action.readback_delay(line) + config.ACTION_TTS_LEAD_S
+    action = pending_action.schedule(
+        ctx.device, delay,
+        lambda: phone.run_background(intent, text, params, deliver=deliver), label=intent,
+        gen=ctx.gen,
+    )
+    return line if action is not None else None  # None: lượt đã bị lượt mới thay
+
+
 async def _lane_c(ctx: TurnContext, d: Decision, text: str, params: dict | None = None) -> Reply:
     if d.intent == "alert_off":
         sessions.close_device(ctx.device, "nav")
@@ -195,10 +223,15 @@ async def _lane_c(ctx: TurnContext, d: Decision, text: str, params: dict | None 
         if not params.get("destination"):
             phone.set_pending(ctx.device, "nav_start")
             return Reply(cues=["ask_destination"], intent=d.intent, lane="D")
+        if not _trusted(d):
+            return _ask_back(ctx, d, params, "C+D")
         session = ctx.prewarmer.session("nav")
-        # Làn D ở nền: kết quả mở lộ trình đọc qua WS của làn C, không chặn cảnh báo.
-        phone.run_background("nav_start", text, params, deliver=session.outbox.put)
-        return Reply(cues=["nav_alert_on"], live="nav", live_token=session.token,
+        # Cảnh báo làn C bật ngay; mở lộ trình (làn D) chờ đọc lại điểm đến xong,
+        # kết quả đọc qua WS của làn C.
+        line = _fire_after_readback(ctx, "nav_start", text, params, deliver=session.outbox.put)
+        if line is None:
+            return Reply(intent=d.intent, lane="C+D")
+        return Reply(cues=["nav_alert_on"], speech=[line], live="nav", live_token=session.token,
                      intent=d.intent, lane="C+D")
 
     session = ctx.prewarmer.session("nav")  # alert_on
@@ -214,15 +247,34 @@ async def _lane_d(ctx: TurnContext, d: Decision, text: str, params: dict | None 
         # music_play tự hỏi bằng câu riêng (gợi ý ca sĩ), giữ nguyên hành vi cũ.
         phone.set_pending(ctx.device, intent)
         return Reply(cues=[phone.ASK_CUE[intent]], intent=intent, lane="D")
-    if intent == "emergency_call":
-        phone.run_background(intent, text, params)
-        return Reply(cues=["emergency_started"], intent=intent, lane="D")
-    return Reply(speech=phone.speech(intent, text, params), intent=intent, lane="D")
+    if intent not in phone.CONFIRM_INTENTS:
+        # music_stop / music_volume: không nguy hiểm, chạy ngay như cũ.
+        return Reply(speech=phone.speech(intent, text, params), intent=intent, lane="D")
+    if not _trusted(d):
+        return _ask_back(ctx, d, params, "D")
+    line = _fire_after_readback(ctx, intent, text, params)
+    if line is None:
+        return Reply(intent=intent, lane="D")
+    return Reply(speech=[line], intent=intent, lane="D")
 
 
 async def route(ctx: TurnContext, d: Decision, text: str) -> Reply:
     if d.source == "no_speech":
         return Reply(cues=["no_speech"])
+
+    # Lượt trước hỏi "... phải không?": câu này là có/không.
+    confirm = phone.take_pending_confirm(ctx.device)
+    if confirm is not None:
+        intent, params = confirm
+        if phone.is_yes(text):
+            ctx.cancel_speculation()
+            d = Decision(intent, source="confirmed", backend="gemma", confidence=1.0)
+            return await (_lane_c if intent == "nav_start" else _lane_d)(ctx, d, text, params)
+        if phone.is_no(text):
+            ctx.cancel_speculation()
+            return Reply(speech=["Đã huỷ."], intent=intent, lane="D")
+        # Câu khác: bỏ lệnh chờ, xử lý như lượt mới.
+
     if not d.intent:
         return Reply(cues=["system_busy"])
 
@@ -234,6 +286,7 @@ async def route(ctx: TurnContext, d: Decision, text: str) -> Reply:
         params.setdefault(slot, phone._clean(text))
         if not params.get(slot):
             params[slot] = phone._clean(text)
+        # Điền chỗ trống bằng câu nói tự do -> không tin cậy, ép hỏi xác nhận.
         d = Decision(intent, source=d.source)
         ctx.cancel_speculation(keep_params=True)
         return await (_lane_c if intent == "nav_start" else _lane_d)(ctx, d, text, params)
