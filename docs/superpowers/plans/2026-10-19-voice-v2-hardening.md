@@ -142,8 +142,8 @@ Task thực nghiệm (không TDD): mỗi vòng đổi MỘT trục, chạy `tool
 - Produces:
   - `Decision.source` có thêm giá trị `"keyword-blocked"`; `Decision.backend: str` (`"gemma"|"clef"|""`).
   - `phone.CONFIRM_INTENTS = {"contact_call", "emergency_call", "ride_quote", "ride_confirm", "music_play"}` (đọc lại + cửa sổ huỷ); `nav_start` cũng đọc lại điểm đến nhưng cảnh báo làn C bật ngay (không chờ).
-  - `phone.readback(intent: str, params: dict) -> str`, câu cố định: contact_call `"Đang gọi cho {contact_name}."`; emergency_call `"Đang gọi cấp cứu, bấm nút để huỷ."`; ride_quote `"Đang tìm xe đi {destination}."`; ride_confirm `"Đang xác nhận chuyến xe."` / `"Đang huỷ chuyến xe."`; music_play `"Đang mở {song}."` (thiếu song: `"Đang mở nhạc."`); nav_start `"Đang mở chỉ đường tới {destination}."`.
-  - `phone.ask_confirm(intent, params) -> str`: `"Gọi cho {contact_name} phải không?"`, `"Gọi cấp cứu phải không?"`, `"Đặt xe đi {destination} phải không?"`, `"Mở {song} phải không?"`, `"Xác nhận chuyến xe phải không?"`, `"Chỉ đường tới {destination} phải không?"`. Lưu `phone.set_pending_confirm(device, intent, params)`; lượt sau: câu khớp `^(đúng|phải|ừ|ừm|có|ok|đồng ý|gọi đi|được)\b` → chạy (vẫn đọc lại + cửa sổ huỷ); khớp `không|thôi|huỷ|hủy|sai` → câu `"Đã huỷ."`; khác → bỏ pending, xử lý câu như lượt mới. TTL 30 s.
+  - `phone.readback(intent: str, params: dict) -> str`, câu cố định: contact_call `"Đang gọi cho {contact_name}."`; emergency_call `"Đang gọi người thân khẩn cấp, bấm nút để huỷ."` (khẩn cấp = gọi người thân đã cài trong app, không phải 115); ride_quote `"Đang tìm xe đi {destination}."`; ride_confirm `"Đang xác nhận chuyến xe."` / `"Đang huỷ chuyến xe."`; music_play `"Đang mở {song}."` (thiếu song: `"Đang mở nhạc."`); nav_start `"Đang mở chỉ đường tới {destination}."`.
+  - `phone.ask_confirm(intent, params) -> str`: `"Gọi cho {contact_name} phải không?"`, `"Gọi người thân khẩn cấp phải không?"`, `"Đặt xe đi {destination} phải không?"`, `"Mở {song} phải không?"`, `"Xác nhận chuyến xe phải không?"`, `"Chỉ đường tới {destination} phải không?"`. Lưu `phone.set_pending_confirm(device, intent, params)`; lượt sau: câu khớp `^(đúng|phải|ừ|ừm|có|ok|đồng ý|gọi đi|được)\b` → chạy (vẫn đọc lại + cửa sổ huỷ); khớp `không|thôi|huỷ|hủy|sai` → câu `"Đã huỷ."`; khác → bỏ pending, xử lý câu như lượt mới. TTL 30 s.
 - Hành vi:
   - `decide`: bộ phân loại hỏng/quá hạn và luật từ khoá ra nhãn làn D → `Decision("", source="keyword-blocked")` → router trả cue `system_busy` (cue có sẵn) — KHÔNG chạy làn D. Luật ra làn A/B/C giữ như cũ.
   - `_lane_d` / nhánh `nav_start`: nếu `d.backend != "gemma"` hoặc `d.confidence < ACTION_MIN_CONFIDENCE` → hỏi lại (`ask_confirm`). Ngược lại: `Reply(speech=[readback])` ngay, và `pending_action.schedule(device, readback_delay(readback), run, label=intent)` với `run` = gọi `phone.run_background(...)` (đầu ra kết quả: Task 10 đọc qua socket phiên; với POST thì giữ cách hiện có — `speech()` sau readback trong cùng response là KHÔNG được vì lệnh chưa chạy; dùng `run_background(..., deliver=None)` và để kết quả đọc ở lượt sau / qua live outbox như `nav_start` hiện nay). Ngoại lệ `music_stop`, `music_volume`, `nav_stop`, `alert_*`: chạy ngay như cũ.
@@ -294,27 +294,26 @@ Task thực nghiệm (không TDD): mỗi vòng đổi MỘT trục, chạy `tool
 - [ ] **Step 3:** `phone_sim.py` + `e2e_full.py` + `E2E_FULL_FLOW.md` (lệnh chạy, kết quả mẫu). Chạy thật toàn bộ kịch bản; mọi kịch bản PASS; dán bảng kết quả vào `E2E_FULL_FLOW.md`.
 - [ ] **Step 4:** Commit trong VH.
 
-### Task 15b: App Android — test hợp đồng trên JVM với payload thật + checklist máy thật
+### Task 15b: Điện thoại giả lập khớp app Android + checklist máy thật
 
-Máy này không có quyền `/dev/kvm` (user `luanhh` không thuộc nhóm `kvm`) nên không chạy được
-Android emulator; Spotify/Grab chạy trong app của họ trên điện thoại nên giả lập server không
-thay được. Cách bảo đảm "cài về điện thoại chạy đúng": (1) `phone_sim` phát report y hệt app
-thật, (2) app thật được test trên JVM bằng đúng payload server gửi, (3) checklist chạy tay trên
-điện thoại thật (người dùng có Spotify/Grab/Maps).
+App điện thoại do người dùng tự làm trên máy họ (clone về); server này KHÔNG cài JDK/Android
+SDK, không sửa code trong `mobile/`. Việc ở đây: `phone_sim` phát report y hệt app thật, và
+một checklist để người dùng chạy trên điện thoại thật.
 
-**Files (repo AB):**
-- Create: `AB/../mobile/app/src/test/java/com/youreyes/app/command/ServerPayloadContractTest.kt`, `AB/../mobile/app/src/test/resources/server_payloads/*.json` (payload do `WebhookDeliveryAdapter` gửi, ghi lại từ Task 15 cho cả 9 action)
-- Create: `VH/docs/E2E_REAL_PHONE.md`
-- Modify: `AB/scripts/phone_sim.py` (report của từng action lấy đúng trường/giá trị mà `mobile/app/src/main/java/com/youreyes/app/actions/*Actions.kt` dựng — đọc file Kotlin, ghi nguồn từng trường trong chú thích)
+**Files:**
+- Modify: `AB/scripts/phone_sim.py` (report từng action lấy đúng trường/giá trị mà
+  `app-demo-backend/mobile/app/src/main/java/com/youreyes/app/actions/*Actions.kt` dựng — chỉ ĐỌC
+  file Kotlin, ghi nguồn từng trường trong chú thích)
+- Create: `AB/tests/fixtures/server_payloads/*.json` (payload `WebhookDeliveryAdapter` gửi cho cả
+  9 action, ghi lại từ Task 15 — người dùng dùng lại cho test phía app), `VH/docs/E2E_REAL_PHONE.md`
 
-**Interfaces:**
-- `ServerPayloadContractTest`: với mỗi file payload → parse bằng đúng đường của `FcmPushReceiver`/`CommandExecutionService` (hàm parse data message mà receiver dùng) → `CommandDispatcher` với `ActionRegistry` gắn handler giả trả kết quả mẫu → report DTO serialize ra JSON → khẳng định đúng `request_id`, `action`, `execution_state`, khoá `result` theo `contracts/contract-matrix.md`. Thêm ca payload trùng (chống trùng) và action lạ.
-- Môi trường: JDK 17 + Android SDK (cmdline-tools, `platforms;android-<compileSdk>`, `build-tools`) cài vào `~/.local/android` (không cần root; KHÔNG đụng venv). Lệnh: `cd mobile && ./gradlew test` (bản Linux của `gradlew`).
-- `E2E_REAL_PHONE.md`: các bước cho người dùng — build/cài APK, cấu hình server/token, ghép kính, rồi chạy `tools/e2e_full.py --app-url <app server thật> --no-phone-sim` với từng kịch bản (gọi mẹ, gọi tên trùng, huỷ cuộc gọi bằng nút, Spotify phát/dừng/âm lượng, Maps dẫn đường, Grab báo giá/xác nhận/huỷ, SOS với số người thân thử) và cột "kết quả mong đợi" cho từng bước.
-- [ ] **Step 1:** cài JDK 17 + SDK vào `~/.local/android`; `./gradlew test` hiện có PASS (ghi số test). Không được → BLOCKED, báo lý do.
-- [ ] **Step 2:** viết `ServerPayloadContractTest` → chạy → PASS (nếu FAIL vì payload server lệch app: đó là lỗi thật — báo lại, không sửa test cho khớp).
-- [ ] **Step 3:** đối chiếu và sửa `phone_sim.py` theo các `*Actions.kt`; chạy lại `e2e_full.py` PASS.
-- [ ] **Step 4:** viết `E2E_REAL_PHONE.md`. Commit trong AB và VH.
+- [ ] **Step 1:** đối chiếu và sửa `phone_sim.py` theo các `*Actions.kt`; chạy lại `e2e_full.py` PASS.
+- [ ] **Step 2:** lưu 9 payload mẫu + một file README ngắn mô tả từng trường.
+- [ ] **Step 3:** `E2E_REAL_PHONE.md`: build/cài APK, cấu hình server/token, ghép kính, rồi
+  `tools/e2e_full.py --app-url <app server thật> --no-phone-sim` với từng kịch bản (gọi mẹ, tên
+  trùng, huỷ cuộc gọi bằng nút, Spotify phát/dừng/âm lượng, Maps dẫn đường, Grab báo giá/xác
+  nhận/huỷ, khẩn cấp gọi người thân + SMS) và cột "kết quả mong đợi".
+- [ ] **Step 4:** Commit trong AB và VH.
 
 ### Task 16: Bench tải đồng thời
 
