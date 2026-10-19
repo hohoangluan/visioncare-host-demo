@@ -14,7 +14,7 @@ không có tiếng -> `no_speech` ngay, không giải, không gọi Gemma.
 import asyncio
 import logging
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from dataclasses import dataclass, field
 
 import config
@@ -119,7 +119,7 @@ def _speculate(ctx: TurnContext, early: EarlyIntent, text: str) -> None:
 
 async def run(
     device: str, turn_id: str, content_type: str | None, body: AsyncIterator[bytes],
-    device_state: dict, gen: int | None = None,
+    device_state: dict, gen: int | None = None, on_cancel: Callable[[], None] | None = None,
 ) -> TurnResult:
     started = time.monotonic()
     loop = asyncio.get_running_loop()
@@ -174,7 +174,9 @@ async def run(
         reply = await final_router.route(ctx, decision, text)
         t_route = time.monotonic()
         ctx.cancel_speculation()  # phần chạy trước mà router không dùng tới
-    except BaseException:
+    except BaseException as exc:
+        if on_cancel is not None and isinstance(exc, asyncio.CancelledError):
+            on_cancel()  # phiên WS biết lượt này bị huỷ giữa chừng (lượt mới/cancel/ngắt)
         stop.set()
         partials.cancel()
         if ef is not None and ef.task is not None:

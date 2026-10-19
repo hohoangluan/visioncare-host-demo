@@ -8,6 +8,7 @@ Audio câu lệnh đọc bằng chính VieNeu-TTS rồi nén ADPCM (cache ở --
 
     python tools/bench_live.py --base http://127.0.0.1:8000
     python tools/bench_live.py --base https://app.visioncare-host.uk --runs 3
+    python tools/bench_live.py --base http://127.0.0.1:8000 --ws   # cùng luồng, qua WS /v2/session
 """
 
 import argparse
@@ -113,6 +114,55 @@ async def one_turn(http: httpx.AsyncClient, base: str, name: str, audio: bytes, 
     }
 
 
+async def one_turn_ws(ws, name: str, audio: bytes, image: bytes) -> dict:
+    """Cùng một lượt như `one_turn`, nhưng trên socket phiên: cột kết quả giống hệt.
+
+    `headers_ms` ở đây là lúc khung `reply` (cue/live) tới; `first_audio_ms` là khối 0x02 đầu.
+    """
+    turn = str(int(time.time() * 1000) % 10_000_000)
+    marks: dict[str, float] = {}
+    pressed = time.perf_counter()
+    await ws.send(json.dumps({"t": "turn_start", "turn": turn, "t_press_ms": 0}))
+    await ws.send(b"\x01" + image)
+
+    async def sender():
+        start = time.perf_counter()
+        for i in range(0, len(audio), CHUNK):
+            target = start + i / BYTE_RATE
+            await asyncio.sleep(max(0.0, target - time.perf_counter()))
+            await ws.send(b"\x03" + audio[i:i + CHUNK])
+        marks["release"] = time.perf_counter()
+        await ws.send(json.dumps({"t": "turn_end", "turn": turn, "t_release_ms": 0}))
+
+    send_task = asyncio.create_task(sender())
+    got, arrivals, info = 0, [], {"x-cue": None, "x-live": None, "x-live-token": None}
+    while True:
+        msg = await ws.recv()
+        now = time.perf_counter()
+        if isinstance(msg, bytes):
+            got += len(msg) - 1
+            arrivals.append((now, got))
+            marks.setdefault("first_audio", now)
+            continue
+        frame = json.loads(msg)
+        if frame["t"] == "reply" and frame["turn"] == turn:
+            marks["headers"] = now
+            info["x-cue"] = ",".join(frame["cues"]) or None
+            info["x-live"] = frame["live"]
+        elif frame["t"] == "reply_end" and frame["turn"] == turn:
+            marks["done"] = now
+            break
+    await send_task
+    rel = marks["release"]
+    return {
+        "name": name, "audio_s": len(audio) / BYTE_RATE, "image_ms": 0.0,
+        "headers_ms": (marks["headers"] - rel) * 1000,
+        "first_audio_ms": (marks["first_audio"] - rel) * 1000 if "first_audio" in marks else None,
+        "total_ms": (marks["done"] - rel) * 1000, "bytes": got, "pressed_to_release_s": rel - pressed,
+        "starve_ms": _starvation_ms(arrivals), **info,
+    }
+
+
 def _starvation_ms(arrivals: list[tuple[float, int]]) -> float:
     """Loa phát ngay khi có byte đầu: tổng số ms bị đứt tiếng vì dữ liệu tới trễ.
 
@@ -185,6 +235,7 @@ async def main() -> None:
     parser.add_argument("--only", nargs="*")
     parser.add_argument("--cache", default=os.path.join(ROOT, "tools", "board_audio", "v2"))
     parser.add_argument("--street", help="ảnh đường phố có xe cho đo làn C")
+    parser.add_argument("--ws", action="store_true", help="đo qua WS /v2/session thay vì POST")
     parser.add_argument("--resolve", help="host=ip: bỏ qua DNS (như curl --resolve), khi resolver còn cache NXDOMAIN")
     args = parser.parse_args()
     if args.resolve:
@@ -193,6 +244,15 @@ async def main() -> None:
     text_image = _text_image()
     # `space`/`money` cần ảnh cảnh vật: trang giấy trắng bị chặn vì "ảnh quá sáng".
     scene = open(args.street, "rb").read() if args.street else text_image
+    ws = None
+    if args.ws:
+        import websockets
+
+        ws = await websockets.connect(args.base.replace("http", "ws", 1) + "/v2/session", max_size=None)
+        await ws.send(json.dumps({"t": "hello", "device": "bench-glasses", "cue_version": 2, "fw": "bench",
+                                  "accept": "audio/wav;codec=ima_adpcm",
+                                  "token": os.environ.get("VISIONCARE_DEVICE_CLIENT_TOKEN", "")}))
+        print("  WS:", await ws.recv())
     async with httpx.AsyncClient(timeout=60, http2=False) as http:
         results = []
         for name, text in COMMANDS.items():
@@ -201,13 +261,28 @@ async def main() -> None:
             audio = _command_audio(name, text, args.cache, args.tail_s)
             for run in range(args.runs):
                 image = text_image if name == "ocr" else scene
-                r = await one_turn(http, args.base, name, audio, image)
+                r = await (one_turn_ws(ws, name, audio, image) if ws else one_turn(http, args.base, name, audio, image))
                 results.append(r)
                 fa = f"{r['first_audio_ms']:.0f}" if r["first_audio_ms"] is not None else "-"
                 print(f"{name:8s} run{run} headers={r['headers_ms']:.0f}ms first_audio={fa}ms "
                       f"total={r['total_ms']:.0f}ms image={r['image_ms']:.0f}ms starve={r['starve_ms']:.0f}ms "
                       f"cue={r['x-cue']} live={r['x-live']}")
-                if name == "alert" and r["x-live-token"] and args.street:
+                if name == "alert" and ws and r["x-live"] == "nav" and args.street:
+                    street = _qvga(open(args.street, "rb").read())
+                    sent, rtts = {}, []
+                    for _ in range(40):
+                        sent["t"] = time.perf_counter()
+                        await ws.send(b"\x04" + street)
+                        try:
+                            while True:
+                                m = await asyncio.wait_for(ws.recv(), 0.125)
+                                if isinstance(m, str) and '"hazard"' in m:
+                                    rtts.append((time.perf_counter() - sent["t"]) * 1000)
+                        except asyncio.TimeoutError:
+                            pass
+                    print(f"  nav(ws): {len(rtts)} hazard, median "
+                          f"{statistics.median(rtts) if rtts else 0:.0f}ms")
+                elif name == "alert" and r["x-live-token"] and args.street:
                     street = _qvga(open(args.street, "rb").read())
                     rtt = await nav_rtt(args.base, r["x-live-token"], street)
                     vals = rtt["frame_to_hazard_ms"]
@@ -217,6 +292,8 @@ async def main() -> None:
                     else:
                         print("  nav: không có hazard nào (anti-annoy / ảnh không có vật)")
                 await asyncio.sleep(0.5)
+    if ws:
+        await ws.close()
     print(json.dumps(results, ensure_ascii=False, indent=1)[:4000])
 
 

@@ -630,7 +630,14 @@ def _has_speech(speech) -> bool:
     return speech is not None and not (isinstance(speech, (list, tuple)) and not speech)
 
 
-async def _v2_response(reply: Reply, cue_ok: bool, response_format: str, released: float) -> Response:
+async def _reply_audio(
+    reply: Reply, cue_ok: bool, response_format: str, released: float
+) -> tuple[dict[str, str], Iterator[bytes] | None]:
+    """Phần dùng chung của `/v2/turn` (HTTP) và `WS /v2/session`: Reply -> (header cue/live, audio).
+
+    Trả `(headers, None)` khi chỉ có cue. Mảnh audio đầu đã được kéo sẵn ở đây
+    nên lỗi trước byte đầu vẫn đổi được thành câu báo lỗi.
+    """
     global _v2_counter
     headers: dict[str, str] = {}
     lead: list[str] = []
@@ -645,27 +652,43 @@ async def _v2_response(reply: Reply, cue_ok: bool, response_format: str, release
         headers["X-Live-Token"] = reply.live_token or ""
 
     if not lead and not _has_speech(reply.speech):
-        return Response(content=b"", headers=headers)
+        return headers, None
 
     _v2_counter += 1
-    plan = _plan_for(response_format, _v2_counter)
+    idx = _v2_counter
+    plan = _plan_for(response_format, idx)
     pieces = chain(lead, reply.speech if _has_speech(reply.speech) else [])
 
     def stream(text: Iterable[str]) -> Iterator[bytes]:
         return _stream_audio(
-            text, _v2_counter, released, time.monotonic() - released,
+            text, idx, released, time.monotonic() - released,
             encode=plan.encode, byte_rate=plan.byte_rate, prelude=plan.prelude,
             preroll_seconds=config.V2_AUDIO_PREROLL_SECONDS,
         )
 
     audio_stream = stream(pieces)
     try:
-        # Kéo mảnh đầu ở đây: lỗi trước byte đầu vẫn đổi được thành câu báo lỗi.
         first = await run_in_threadpool(next, audio_stream, b"")
-        body: Iterator[bytes] = chain([first], audio_stream)
+        body: Iterator[bytes] = _first_then(first, audio_stream)
     except Exception:  # noqa: BLE001
         logger.exception("v2 turn: lỗi trước byte audio đầu")
         body = stream([_ERROR_MESSAGE])
+    return headers, body
+
+
+def _first_then(first: bytes, rest: Iterator[bytes]) -> Iterator[bytes]:
+    """`chain([first], rest)` nhưng có `.close()` đóng luôn `rest` (kính ngắt giữa câu)."""
+    try:
+        yield first
+        yield from rest
+    finally:
+        rest.close()
+
+
+async def _v2_response(reply: Reply, cue_ok: bool, response_format: str, released: float) -> Response:
+    headers, body = await _reply_audio(reply, cue_ok, response_format, released)
+    if body is None:
+        return Response(content=b"", headers=headers)
 
     if response_format == "wav":
         payload = await run_in_threadpool(lambda: b"".join(body))
@@ -673,7 +696,8 @@ async def _v2_response(reply: Reply, cue_ok: bool, response_format: str, release
 
     audio_headers = _stream_headers(response_format)
     audio_headers["X-Audio-Preroll-Seconds"] = str(config.V2_AUDIO_PREROLL_SECONDS)
-    return StreamingResponse(body, media_type=plan.media_type, headers={**audio_headers, **headers})
+    media_type = _plan_for(response_format, _v2_counter).media_type
+    return StreamingResponse(body, media_type=media_type, headers={**audio_headers, **headers})
 
 
 @app.post("/v2/turn", dependencies=[Depends(guard.turn_guard)])
@@ -727,3 +751,16 @@ async def live_lane(ws: WebSocket, token: str = "") -> None:
         await ws.close()
     except RuntimeError:
         pass
+
+
+@app.websocket("/v2/session")
+async def device_session_lane(ws: WebSocket) -> None:
+    """Một WebSocket mỗi kính (§5.4): lượt, audio trả lời, OCR/nav live cùng một socket.
+
+    Chấp nhận kết nối TRƯỚC rồi mới kiểm `hello` và đóng 4401: đóng trước accept
+    sẽ thành HTTP 403 trên server thật, firmware không đọc được mã lỗi.
+    """
+    from live.device_session import serve
+
+    await ws.accept()
+    await serve(ws, _reply_audio)
