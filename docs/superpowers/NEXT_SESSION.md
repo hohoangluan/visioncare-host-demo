@@ -26,8 +26,8 @@ Ràng buộc chung đã tách sẵn: `VH/.superpowers/sdd/2026-10-19-voice-v2-ha
 ## Trạng thái lúc bàn giao
 
 - Commit mốc `94e6785` (toàn bộ v2 trước khi sửa) → `70b28a3` (plan). Task 1 (dựng tập gold
-  bằng sol) đã được giao cho subagent ở session trước, BASE `70b28a3`. Kiểm:
-  `git log --oneline 70b28a3..`, `ls data/intent/gold_*.jsonl`, `.../task-1-report.md`.
+  bằng sol) đã được giao cho subagent ở session trước, BASE `4c4a0a2` (commit docs cuối của controller). Kiểm:
+  `git log --oneline 4c4a0a2..`, `ls data/intent/gold_*.jsonl`, `.../task-1-report.md`.
   Có commit + report → chạy review Task 1. Không có → giao lại Task 1 (các bước của
   `tools/intent_gold/build.py` chạy lại được từ `data/intent/gold_work/` nếu đã có).
 - Task 17 bước 3 (đo qua Cloudflare) và C9 do session điều phối tự chạy: bật server cổng 18888,
