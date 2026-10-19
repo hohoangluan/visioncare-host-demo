@@ -318,6 +318,8 @@ ACTION_TTS_LEAD_S = float(get("ACTION_TTS_LEAD_S", "0.4"))
 # hỏi lại. Đo 2026-10-19 (Task 4): 0,999 là ngưỡng nhỏ nhất cho action_fp = 0 trên gold_dev
 # (ask_rate 9,1%) và gold_test (FP 0, ask 5%); 0,85 còn FP 1. Lưu ý: dev chỉ có MỘT
 # FP (câu STT méo, conf 0,9987) quyết định ngưỡng — khớp một điểm, không phải biên chắc.
+# Quét lại 2026-10-19 (Task 4d, dev, 5 lượt, định dạng nhãn): ở 0,998 còn FP 1 trong 2/5 lượt,
+# ở 0,99-0,995 cũng 2/5 (ask_rate 2-7%); chỉ 0,999 cho FP 0 cả 5 lượt (ask 7-11%) -> giữ 0,999.
 ACTION_MIN_CONFIDENCE = float(get("ACTION_MIN_CONFIDENCE", "0.999"))
 # Câu TTS đầu của làn A cắt ở ngần này từ để tiếng ra sớm (§9).
 FIRST_SENTENCE_MAX_WORDS = int(get("FIRST_SENTENCE_MAX_WORDS", "8"))
@@ -364,6 +366,11 @@ EARLY_CLASSIFY_SKIP_INFLIGHT = get("EARLY_CLASSIFY_SKIP_INFLIGHT", "1") != "0"
 INTENT_BACKEND = get("INTENT_BACKEND", "auto")
 # Định dạng đầu ra của Gemma: "choice" (nhãn ngắn, Task 4c) hoặc "json" (ba trường, bản cũ).
 INTENT_FORMAT = get("INTENT_FORMAT", "choice")
+# Ai quyết `ocr_mode` / `needs_web` khi INTENT_FORMAT=choice (Task 4d): "rules" = luật từ khoá
+# trong `intent_early` (0 ms), "gemma" = lượt nhãn phụ (+~45 ms cho chat/ocr; quay về bản cũ).
+# Đo 2026-10-19 gold_dev, xen kẽ x2: chat p50 120 -> 60 ms, ocr 125 -> 61 ms, p90 chung 128 -> 81;
+# needs_web đúng 19/29 -> 28/29 (luật khớp dev, test 13 -> 14/19), ocr_mode 8/9 -> 9/9.
+INTENT_AUX = get("INTENT_AUX", "rules")
 INTENT_LLM_TIMEOUT_S = float(get("INTENT_LLM_TIMEOUT_S", "0.8"))
 # Trần chờ intent cuối (cả lượt dự phòng); quá trần thì luật từ khoá / làn chat.
 INTENT_DECIDE_TIMEOUT_S = float(get("INTENT_DECIDE_TIMEOUT_S", "1.5"))

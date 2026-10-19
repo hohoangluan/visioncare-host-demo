@@ -58,6 +58,34 @@ _RULES: tuple[tuple[re.Pattern, str, str], ...] = tuple(
 )
 
 
+# needs_web bằng luật (Task 4d). Hai nhóm: (1) thông tin MỚI nói thẳng ra (thời tiết, giá, tin,
+# tỉ số, giờ mở cửa...); (2) hỏi địa điểm kinh doanh "gần đây/ở đâu" (gold gán web vì phải tra bản
+# đồ). Câu chỉ cảnh vật ngay trước mắt ("phía trước", "trước mặt") và hỏi địa danh hành chính
+# ("thuộc tỉnh nào") KHÔNG phải web.
+_WEB_FRESH = re.compile(
+    r"(?<!\w)(?:thời tiết|nhiệt độ|mưa|nắng|dự báo|giá(?: cả)?|bao nhiêu tiền|tỉ giá|tỷ giá|giá vàng|giá xăng|"
+    r"xăng|tin tức|thời sự|mới nhất|tỉ số|tỷ số|kết quả (?:trận|bóng)|lịch chiếu|lịch thi đấu|"
+    r"giờ mở cửa|giờ đóng cửa|mấy giờ (?:mở|đóng)|còn mở|đang mở|có mở cửa|"
+    r"(?:hôm nay|tối nay|ngày mai|cuối tuần|tuần này) (?:có|diễn ra|trời|sự kiện))(?!\w)"
+)
+_WEB_PLACE = re.compile(
+    r"(?<!\w)(?:quán|tiệm|quầy|chợ|kiosk|bưu điện|cây rút tiền|cây atm|atm|ngân hàng|cửa hàng|siêu thị|"
+    r"nhà thuốc|hiệu thuốc|tiệm thuốc|cà phê|nhà hàng|bệnh viện|phòng khám|trạm xăng|tiệm tạp hoá|"
+    r"tạp hóa|tạp hoá)(?!\w)"
+)
+_WEB_WHERE = re.compile(r"(?<!\w)(?:gần nhất|gần đây|quanh đây|ở đâu|chỗ nào)(?!\w)")
+_WEB_NOT = re.compile(r"(?<!\w)(?:phía trước|trước mặt|bên cạnh tôi|thuộc|thành phố nào|tỉnh nào)(?!\w)")
+
+
+def needs_web_rule(text: str) -> bool:
+    lowered = (text or "").lower()
+    if _WEB_FRESH.search(lowered):
+        return True
+    return bool(
+        _WEB_PLACE.search(lowered) and _WEB_WHERE.search(lowered) and not _WEB_NOT.search(lowered)
+    )
+
+
 _BLOCKED_BY_KEYWORD = {
     "contact_call", "emergency_call", "ride_quote", "ride_confirm", "music_play", "nav_start",
 }

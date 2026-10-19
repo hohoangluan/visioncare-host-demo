@@ -85,3 +85,33 @@ gold_test (một lần, --gate 0,999): B acc 0,925, p50 81, p90 136, FP 0, ask_r
 
 ### Kết luận
 Giữ định dạng nhãn (`config.INTENT_FORMAT=choice`, đặt `json` để quay về bản cũ): p50 262 -> 79 ms (-70%), p90 271 -> ~132 ms. Rủi ro đã biết: acc dev -1,2 đến -1,8 điểm và test -1,9 điểm (đều không có ý nghĩa thống kê), ask_rate tăng, `needs_web`/`ocr_mode` kém hơn. Nếu cần chặt hơn: chạy lượt phụ bằng JSON cũ cho chat/ocr (chat/ocr giữ ~260 ms) hoặc tinh chỉnh prompt lượt phụ.
+
+## Task 4d — bớt hỏi lại làn D + needs_web/ocr_mode bằng luật (2026-10-19, Gemma UIT, concurrency 1, --params)
+
+### Trục A: ngưỡng cổng làn D (`ACTION_MIN_CONFIDENCE`)
+`--gate` chỉ áp lúc tóm tắt nên một lượt đo cho mọi mức; 5 lượt trên gold_dev (định dạng nhãn). Ô = (action_fp, ask_rate) từng lượt:
+| p | lượt 1 | 2 | 3 | 4 | 5 | FP tối đa |
+|---|---|---|---|---|---|---|
+| 0,98 | 1 / 0,037 | 0 / 0,055 | 0 / 0,056 | 2 / 0 | 0 / 0,037 | 2 |
+| 0,99 | 1 / 0,037 | 0 / 0,073 | 0 / 0,056 | 1 / 0,019 | 0 / 0,037 | 1 |
+| 0,995 | 1 / 0,037 | 0 / 0,073 | 0 / 0,074 | 1 / 0,019 | 0 / 0,056 | 1 |
+| 0,998 | 1 / 0,037 | 0 / 0,073 | 0 / 0,074 | 1 / 0,056 | 0 / 0,074 | 1 |
+| 0,999 | 0 / 0,074 | 0 / 0,109 | 0 / 0,111 | 0 / 0,074 | 0 / 0,074 | 0 |
+Cùng câu STT méo (`qf4598156e7:stt_snr10`) luôn là FP, confidence dao động 0,998-0,999 giữa các lượt (logprobs không tái lập tuyệt đối). Không mức nào < 0,999 giữ FP = 0 ổn định -> GIỮ 0,999 (ask_rate 7-11% trên dev; test 10,5-12,5%). Không đánh đổi FP lấy ask_rate.
+
+### Trục B: `INTENT_AUX=rules` thay lượt nhãn phụ
+Luật `needs_web_rule` (`pipeline/intent_early.py`: từ khoá thông tin mới + địa điểm kinh doanh "gần đây/ở đâu" trừ cảnh vật phía trước) và `keyword_rule` cho ocr_mode. Chỉ MỘT lượt Gemma trên đường chờ.
+| gold_dev, xen kẽ x2 | A: aux Gemma | B: luật |
+|---|---|---|
+| acc | 0,944 / 0,944 | 0,938 / 0,938 |
+| p50 / p90 chung (ms) | 80 / 127; 79 / 128 | 70 / 81; 69 / 81 |
+| chat p50 / p90 | 119 / 138; 121 / 138 | 60 / 62; 60 / 62 |
+| ocr p50 / p90 | 124 / 141; 128 / 144 | 61 / 62; 62 / 62 |
+| needs_web đúng /29 (gold web 10) | 19, 19 (đoán web 20, 18) | 28, 28 (đoán web 9) |
+| ocr_mode đúng /9 | 8, 7 | 9, 9 |
+| action_fp @0,999 | 0 / 0 | 0 / 0 |
+McNemar intent B vs A: 0 : 1 và 0 : 1 (p 1,0; cùng một câu dao động). Luật needs_web được viết sau khi đọc câu chat của dev (28/29 là KHỚP DEV, không phải số tổng quát hoá).
+
+gold_test (MỘT lần, kèm đối chứng aux cùng lúc, gate 0,999): B acc 0,953 p50 74 p90 83 FP 0 ask 0,105, needs_web 14/19 (đoán web 6, gold 11), ocr_mode 5/5; A acc 0,944 p50 81 p90 144 FP 0 ask 0,125, needs_web 13/19 (đoán web 9), ocr_mode 4/5. Luật không tệ hơn aux nhưng THIẾU web (bỏ sót 5/11 câu cần tra).
+
+Kết luận: GIỮ `INTENT_AUX=rules` (mặc định); `gemma` quay về lượt phụ. Chat/ocr 120-125 -> 60 ms. Rủi ro: luật bỏ sót câu cần tra web ngoài mẫu từ khoá (recall web test 6/11) — thêm từ khoá khi gặp.

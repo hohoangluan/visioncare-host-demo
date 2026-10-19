@@ -9,6 +9,9 @@ Clef chậm vì MẠNG: riêng một lượt tới api.cloudflare.com không ch�
 Đo lại 2026-10-19 trên gold (concurrency 1), sau chỉnh prompt (Task 4): dev acc 0,894 -> 0,956,
 p50 263 -> 265 ms, p90 269 -> 273 ms; test 0,888 -> 0,963, p50 264 -> 267 ms (docs/benchmarks/INTENT_GOLD.md).
 
+Task 4d (2026-10-19): `config.INTENT_AUX=rules` bỏ lượt nhãn phụ, ocr_mode/needs_web bằng luật từ
+khoá: chat/ocr p50 120 -> 60 ms, p90 chung 128 -> 81 ms (docs/benchmarks/INTENT_GOLD.md).
+
 Confidence của đường Gemma = xác suất nhãn từ logprobs (UIT trả logprobs cả khi
 dùng structured output, kiểm 2026-10-19), không còn hằng 1.0.
 
@@ -101,7 +104,16 @@ async def _choice_reply(text: str, device: dict | None) -> dict:
     base = _PREFIX + _context(device) + f'Câu lệnh: "{text}"\n'
     intent, prob = await llm.generate_choice(base + "Trả nhãn.", list(LABELS))
     mode, web = "read", False
-    if intent == "ocr":
+    if config.INTENT_AUX == "rules":
+        # Bỏ lượt phụ khỏi đường chờ (Task 4d): ocr_mode / needs_web từ luật từ khoá.
+        from pipeline import intent_early  # nhập muộn: intent_early nhập module này
+
+        if intent == "ocr":
+            rule = intent_early.keyword_rule(text)
+            mode = rule[1] if rule is not None and rule[0] == "ocr" else "read"
+        elif intent == "chat":
+            web = intent_early.needs_web_rule(text)
+    elif intent == "ocr":
         mode, _ = await llm.generate_choice(base + _MODE_TAIL, list(_OCR_MODES))
     elif intent == "chat":
         answer, _ = await llm.generate_choice(base + _WEB_TAIL, ["web", "no_web"])

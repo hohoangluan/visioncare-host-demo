@@ -626,6 +626,7 @@ def test_choice_format_confidence_and_aux_calls(monkeypatch):
     from pipeline import intent_classifier
 
     monkeypatch.setattr(config, "INTENT_FORMAT", "choice")
+    monkeypatch.setattr(config, "INTENT_AUX", "gemma")
     asked = []
 
     def choice(content, lps):
@@ -652,6 +653,45 @@ def test_choice_format_confidence_and_aux_calls(monkeypatch):
     monkeypatch.setattr(llm.client, "complete_raw", ocr_raw)
     res = asyncio.run(intent_classifier._gemma("đọc từng chữ", None))
     assert (res.intent, res.ocr_mode, res.needs_web) == ("ocr", "raw", False)
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("Hôm nay thời tiết thế nào", True),
+    ("Giá vàng bây giờ bao nhiêu", True),
+    ("Quán ăn bình dân quanh đây ở đâu", True),
+    ("Bưu điện gần nhất nằm ở đâu", True),
+    ("Trạm xe buýt phía trước ở đâu", False),
+    ("Vịnh hạ long thuộc tỉnh nào vậy kính", False),
+    ("Kể nghe chuyện ma", False),
+])
+def test_needs_web_rule(text, expected):
+    from pipeline.intent_early import needs_web_rule
+    assert needs_web_rule(text) is expected
+
+
+def test_aux_rules_skip_second_call(monkeypatch):
+    """Task 4d: INTENT_AUX=rules -> chỉ MỘT lượt Gemma, ocr_mode/needs_web từ luật từ khoá."""
+    from models import llm
+    from pipeline import intent_classifier
+
+    monkeypatch.setattr(config, "INTENT_FORMAT", "choice")
+    monkeypatch.setattr(config, "INTENT_AUX", "rules")
+    calls = []
+
+    def make(label):
+        async def fake_raw(messages, max_tokens=None, **extra):
+            calls.append(label)
+            return {"message": {"content": label},
+                    "logprobs": {"content": [{"token": label, "logprob": -0.01}]}}
+        return fake_raw
+
+    monkeypatch.setattr(llm.client, "complete_raw", make("chat"))
+    res = asyncio.run(intent_classifier._gemma("thời tiết hôm nay", None))
+    assert (res.intent, res.needs_web) == ("chat", True)
+    monkeypatch.setattr(llm.client, "complete_raw", make("ocr"))
+    res = asyncio.run(intent_classifier._gemma("đọc nguyên văn tờ này", None))
+    assert (res.intent, res.ocr_mode) == ("ocr", "raw")
+    assert calls == ["chat", "ocr"]
 
 
 def test_choice_rejects_label_outside_set(monkeypatch):
