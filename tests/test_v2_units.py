@@ -592,3 +592,27 @@ def test_label_prob_missing_logprobs_is_one(monkeypatch):
 
 def test_clef_result_source():
     assert clef.ClefResult("chat", 0.9).source == "clef"
+
+
+def test_ocr_mode_raw_prompt():
+    from lanes import ocr_live
+    from models.ocr import prompts
+
+    assert ocr_live._prompt("raw") == prompts._RAW
+    assert ocr_live._prompt("specialized") == prompts._SPECIALIZED
+    assert ocr_live._prompt("read") == prompts._NORMAL
+
+
+def test_keyword_raw_mode():
+    assert keyword_rule("đọc nguyên văn tờ giấy này") == ("ocr", "raw")
+    assert keyword_rule("đọc từng chữ giúp tôi") == ("ocr", "raw")
+    assert keyword_rule("đọc toa thuốc này") == ("ocr", "specialized")
+    assert keyword_rule("đọc giúp tôi") == ("ocr", "read")
+
+
+def test_timeout_prefers_uxga_fallback():
+    from lanes import ocr_live
+
+    assert ocr_live.pick_image(None, b"uxga", b"vga") == b"uxga"
+    assert ocr_live.pick_image(b"new", b"uxga", b"vga") == b"new"
+    assert ocr_live.pick_image(None, None, b"vga") == b"vga"

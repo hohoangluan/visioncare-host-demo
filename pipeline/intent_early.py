@@ -48,6 +48,8 @@ _RULES: tuple[tuple[re.Pattern, str, str], ...] = tuple(
         (r"đọc lại", "ocr", "reread"),
         (r"tóm tắt", "ocr", "summarize"),
         (r"mệnh giá|tờ tiền|số tiền|bao nhiêu tiền|tiền gì", "money", ""),
+        (r"nguyên văn|y nguyên|từng chữ", "ocr", "raw"),
+        (r"chuyên ngành|hợp đồng|đơn thuốc|toa thuốc|hướng dẫn sử dụng", "ocr", "specialized"),
         (r"^(?:hãy |xin |làm ơn )?đọc", "ocr", "read"),
         (r"có an toàn|vật cản|chướng ngại|có nguy hiểm không", "hazard", ""),
         (r"trước mặt|có gì|xung quanh|khung cảnh", "space", ""),

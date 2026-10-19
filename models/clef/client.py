@@ -46,6 +46,8 @@ _OCR_MODES = {
     "read": "đọc to nguyên văn chữ",
     "summarize": "tóm tắt nội dung văn bản",
     "reread": "đọc lại nội dung vừa đọc lần trước, không cần chụp mới",
+    "raw": "đọc nguyên văn, giữ ngôn ngữ gốc, không dịch",
+    "specialized": "đọc văn bản chuyên ngành (hợp đồng, toa thuốc, hướng dẫn sử dụng), giữ nguyên thuật ngữ",
 }
 
 

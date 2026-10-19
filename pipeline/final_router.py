@@ -160,7 +160,7 @@ async def _lane_b(ctx: TurnContext, d: Decision, text: str) -> Reply:
         return Reply(speech=_sync(ctx, ocr_live.spoken(entry.jpeg, "money", ctx.device)),
                      intent="money", lane="B")
 
-    mode = "summarize" if d.ocr_mode == "summarize" else "read"
+    mode = d.ocr_mode if d.ocr_mode in ("summarize", "raw", "specialized") else "read"
     if config.OCR_ACCEPT_BUFFER:
         task = ctx.prewarmer.assess_buffer()
         problem, boxes = await task if task is not None else ("look_around", [])

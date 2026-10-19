@@ -56,7 +56,15 @@ def _prompt(mode: str) -> str:
         return _SUMMARIZE
     if mode == "money":
         return read_money._PROMPT
+    if mode in ("raw", "specialized"):  # dùng lại đúng văn bản prompt của models/ocr/prompts.py
+        return prompts.build(mode)
     return prompts.build("normal")
+
+
+def pick_image(hi_res: bytes | None, fallback_jpeg: bytes | None, best_vga: bytes | None) -> bytes | None:
+    """Hết trần căn khung mà chưa có ảnh UXGA mới: ưu tiên UXGA buffer (đọc chữ rõ hơn
+    hẳn VGA), VGA căn khung tốt nhất chỉ là phương án cuối."""
+    return hi_res or fallback_jpeg or best_vga
 
 
 async def read_image(jpeg: bytes, mode: str, device: str) -> AsyncIterator[str]:
@@ -194,7 +202,7 @@ async def run(ws: WebSocket, session: LiveSession) -> None:
                 capture_sent, capture_deadline = True, time.monotonic() + 3.0
                 await ws.send_text(protocol.capture("uxga"))
 
-        image = hi_res or best_vga or session.params.get("fallback_jpeg")
+        image = pick_image(hi_res, session.params.get("fallback_jpeg"), best_vga)
         if image is None or box.closed or session.closed.is_set():
             return
         loop = asyncio.get_running_loop()
