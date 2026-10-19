@@ -36,7 +36,7 @@ CUDA_VISIBLE_DEVICES=2 ~/.venvs/seevia/bin/python tools/e2e_full.py \
 (hoặc thêm `--vh-url http://127.0.0.1:18888` để dùng VH đang chạy; khi đó đặt `VISIONCARE_DEVICE_CLIENT_TOKEN`).
 Không có `phone_sim_log.jsonl`, nên công cụ suy "lệnh đã gửi" từ log VH (`Calling VisionCare API: POST .../service/<op>`), báo FAIL nếu app server
 trả `HTTPError`, và KHÔNG kiểm tham số/`report`/"kết quả đọc": bạn tự nhìn điện thoại theo cột "kết quả mong đợi".
-Kết quả của `call`/`music_play`/`emergency`/`ride` được đọc cho kính qua khung `result-<request_id>` (xem `FIRMWARE_ENDPOINTS.md` §2.2); kịch bản thật nên nghe thử.
+Kết quả của `call`/`music_play`/`emergency`/`ride` được đọc cho kính qua khung `result-<request_id>` (xem `FIRMWARE_ENDPOINTS.md` §4.1); kịch bản thật nên nghe thử.
 
 ## 3. Kịch bản và kết quả mong đợi
 

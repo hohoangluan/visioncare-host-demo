@@ -1,274 +1,277 @@
-# Endpoint cho firmware ESP32-S3 (voice server v2)
+# Firmware kính: việc kính phải làm và endpoint
 
-Dành cho người viết firmware kính. Mọi con số và khung dưới đây đọc từ mã nguồn:
-`live/device_session.py` (WebSocket), `pipeline/guard.py` (token, trần, rate limit),
-`config.py` (mục "Voice server v2"), `live/protocol.py` (khung live), `pipeline/cues.py`.
-Chỗ nào server chưa làm xong thì ghi rõ "(server ghi nhận từ Task 14)".
+Dành cho người viết firmware ESP32-S3. Mọi khung, mã và con số đọc từ mã nguồn
+(`live/device_session.py`, `live/ws_adapter.py`, `live/protocol.py`, `pipeline/guard.py`,
+`pipeline/pending_action.py`, `pipeline/cues.py`, `app.py`, `config.py`) và đối chiếu với E2E thật
+(`docs/E2E_FULL_FLOW.md`). Đường chính là **một WebSocket mỗi kính: `WS /v2/session`**.
+Đường POST cũ (`/process`) vẫn chạy cho firmware cũ (mục 8).
 
-Hợp đồng cũ (`POST /process`, WAV ADPCM 60 byte header) vẫn ở `HUONG_DAN_SERVER.md`.
-Đường chính từ nay là **một WebSocket mỗi kính**: `WS /v2/session`.
+## 1. Checklist việc kính phải làm (theo thứ tự)
 
----
+**Bật máy**
+1. Nạp token từ NVS (mục 2). Không biên dịch cứng, không in ra log/serial, không đặt trong URL.
+2. Khai `cue_version` = giá trị trong `assets/cues/manifest.json` của bộ clip đang nằm trong flash (mục 7).
 
-## 1. Token
+**Kết nối**
+3. Mở `wss://api.visioncare-host.uk/v2/session` (TLS, cổng 443). Server `accept` trước rồi mới kiểm `hello`, nên
+   **luôn đọc mã đóng WS**, không dựa vào HTTP status.
+4. Gửi `hello` làm khung đầu tiên trong **10 s** (kèm token). Chờ `hello_ok` rồi mới được gửi `turn_start`.
+5. Gửi `ping` mỗi **25 s**, kể cả khi rảnh (Cloudflare cắt kết nối idle ~100 s; server tự đóng 1001 sau 90 s im lặng).
+6. **Giữ socket mở**, không mở lại mỗi lượt.
 
-- Server đọc token từ biến `VISIONCARE_DEVICE_CLIENT_TOKEN`. **Để trống = mọi endpoint kính trả 503**
-  (HTTP) hoặc đóng 4401 (WS).
-- Firmware lưu token trong NVS (partition mã hoá nếu bật flash encryption), nạp lúc provisioning.
-  Không biên dịch cứng vào firmware, không in ra serial/log, không gửi qua URL (query string bị
-  Cloudflare ghi log).
-- Cách gửi, chọn một:
-  - Trong khung `hello` của WS (`"token": "..."`), hoặc
-  - Header `Authorization: Bearer <token>` hoặc `X-Device-Token: <token>` lúc bắt tay HTTP
-    (server chỉ dùng header khi `token` trong `hello` rỗng).
-- Server so token bằng `hmac.compare_digest`; mọi endpoint, kể cả từ `localhost`, đều đòi token
-  (qua Cloudflare tunnel, mọi request đều đến từ 127.0.0.1).
+**Bấm nút -> nhả nút (một lượt)**
+7. Bấm: dừng mọi thứ đang phát, gửi `turn_start` (`turn` = id kính tự sinh, `t_press_ms` = `millis()`).
+   Server huỷ lượt trước và lệnh điện thoại đang chờ (mục 5).
+8. Gửi ngay ảnh lượt `0x01` + JPEG (<= 2 MB), song song với audio.
+9. Trong lúc giữ nút, stream audio `0x03` + ADPCM theo từng mảnh (mọi cỡ), không gom đến lúc nhả.
+10. Nhả: gửi `turn_end` (`turn` khớp, `t_release_ms`).
 
-## 2. Kết nối `WS /v2/session`
+**Phát audio theo hàng đợi**
+11. Nhận `reply` -> phát mọi `cues` từ flash ngay (clip không qua mạng) -> các khối `0x02` đến sau đó -> `reply_end`.
+12. Phát **tuần tự đúng thứ tự nhận**: server đã xếp hàng, kính không cần tự trộn (mục 4.2). Dựng đệm `preroll_s` (0,2 s) trước
+    khi phát khối đầu.
+13. Báo `played` (`first_byte_ms`, `first_audio_ms`) sau mỗi lượt có audio.
 
-- URL: `wss://api.visioncare-host.uk/v2/session` (TLS, cổng 443; server nội bộ ở cổng 18888).
-- Server **accept trước** rồi mới kiểm `hello` (đóng trước accept thành HTTP 403, firmware không
-  đọc được mã lỗi). Nên firmware luôn đọc **mã đóng** WS, không dựa vào HTTP status.
-- Khung text là JSON UTF-8; khung binary có **byte đầu là loại**.
+**Hazard (chỉ đường)**
+14. Khung `hazard` có thể đến bất cứ lúc nào, kể cả giữa hai khối `0x02`: phát bíp/clip ngay, không chờ `reply_end`.
 
-### 2.1 Kính gửi lên server
+**Live (OCR / chỉ đường)**
+15. Chỉ làm đúng lệnh vừa nhận (`cam`, `capture`, `cue`, `end`); gửi khung `0x04` + JPEG (mục 6).
+
+**Rớt mạng / mở lại**
+16. Socket rớt: dừng phát, tắt camera live, bỏ lượt dở, mở lại theo backoff 0,5 -> 1 -> 2 -> 4 -> 8 s (trần 8 s, nhiễu
+    +-20%, thành công thì về 0,5 s). Sau khi mở lại gửi `hello` mới. Nhận `4000` thì **không** tự mở lại (mục 9).
+
+## 2. Token
+
+- Server đọc từ `VISIONCARE_DEVICE_CLIENT_TOKEN`; đây là token **kính** cho MỌI endpoint kính (HTTP và WS), kể cả `localhost`
+  (qua Cloudflare tunnel mọi request đều tới từ 127.0.0.1).
+- Cách gửi: trường `token` trong `hello`, hoặc header `Authorization: Bearer <token>` (cũng nhận `X-Device-Token: <token>`)
+  lúc bắt tay. Server chỉ dùng header khi `token` trong `hello` rỗng. So bằng `hmac.compare_digest`.
+- Server chưa cấu hình token: HTTP **503**, WS đóng **4401**. Thiếu/sai token: HTTP **401**, WS đóng **4401**.
+- Hiện một token dùng chung cho mọi kính và `device` do kính tự khai; token theo từng kính nằm ở plan 2.
+
+## 3. Khung kính -> server
+
+Khung text là JSON UTF-8; khung binary có **byte đầu là loại**. Mọi khung WS tối đa ~2,1 MB (`--ws-max-size 2100000`; quá thì
+server đóng 1009 hoặc trả `error too_large`).
 
 | Khung | Nội dung | Ghi chú |
 |---|---|---|
-| text `hello` | `{"t":"hello","device":"glasses-123","token":"...","cue_version":2,"fw":"1.0.3","accept":"ima_adpcm"}` | **Bắt buộc là khung đầu tiên, trong 10 s.** `device` cắt ở 64 ký tự. `accept` chỉ được ghi log (audio ra luôn là ADPCM, xem §5). |
-| text `turn_start` | `{"t":"turn_start","turn":"<id>","t_press_ms":123456}` | Bấm nút. `turn` là chuỗi do kính sinh (ví dụ bộ đếm + `millis()`), dùng để đối chiếu mọi khung của lượt. Xem §2.3 về huỷ. |
-| binary `0x01` + JPEG | ảnh của lượt | Gửi ngay sau `turn_start`, song song với audio. Trần 2 MB (§7). Chỉ nhận khi đang có lượt. |
-| binary `0x03` + ADPCM | audio lượt, mảnh bất kỳ cỡ nào | Stream trong lúc nói (server đoán ý sớm trên mảnh đã tới, không chờ nhả nút). IMA ADPCM 4-bit, mono, 16 kHz, **khối 256 byte, không header RIFF** (xem §5). Trần 30 s. |
-| text `turn_end` | `{"t":"turn_end","turn":"<id>","t_release_ms":125000}` | Nhả nút. `turn` phải khớp lượt đang chạy, không khớp thì bị bỏ qua. |
-| binary `0x04` + JPEG | khung live | Chỉ có nghĩa khi server đã bật live (§4); ngoài live thì bị bỏ. Trần 300 KB, tối đa 15 fps. |
-| text `cancel` | `{"t":"cancel"}` | Bỏ lượt hiện tại + live + lệnh làn D đang chờ đọc xong. |
-| text `played` | `{"t":"played","turn":"<id>","first_byte_ms":412,"first_audio_ms":455}` | Báo mốc phát. Server ghi một dòng bổ sung `{"turn","device","glasses":{first_byte_ms,first_audio_ms}}` vào `turns.jsonl` (ghép với dòng chính của lượt theo `turn`, xem §6). |
-| text `ping` | `{"t":"ping"}` | Server trả `{"t":"pong"}`. Gửi mỗi **25 s** (§3). |
+| text `hello` | `{"t":"hello","device":"glasses-123","token":"...","cue_version":2,"fw":"1.0.3","accept":"ima_adpcm"}` | Khung đầu tiên, trong 10 s. `device` cắt ở 64 ký tự (rỗng -> id mặc định của server). `fw`, `accept` chỉ ghi log. Sai/thiếu -> `error bad_frame` + đóng 4400; sai token -> đóng 4401. `hello` gửi lặp sau đó bị bỏ qua. |
+| text `turn_start` | `{"t":"turn_start","turn":"<id>","t_press_ms":123456}` | Bấm nút. `turn` là chuỗi do kính sinh. Huỷ lượt đang chạy (mục 5). Vượt `DEVICE_TURNS_PER_MIN` (30/phút) -> `error rate_limited`, lượt bị bỏ, các khung ảnh/audio sau đó bị bỏ lặng lẽ. |
+| binary `0x01` + JPEG | ảnh của lượt | Sau `turn_start`. Trần 2 MB (`DEVICE_MAX_IMAGE_BYTES`) -> `error too_large`. Không có lượt đang chạy thì bị bỏ lặng lẽ. |
+| binary `0x03` + ADPCM | audio lượt | IMA ADPCM 4-bit, mono, 16 kHz, khối 256 byte, không header RIFF (mục 10). Trần 30 s (`DEVICE_MAX_AUDIO_S`): vượt thì một `error too_large` rồi bỏ phần còn lại. |
+| text `turn_end` | `{"t":"turn_end","turn":"<id>","t_release_ms":125000}` | Nhả nút. `turn` không khớp lượt đang chạy thì bị bỏ qua. |
+| binary `0x04` + JPEG | khung live | Chỉ có nghĩa khi live đang bật; ngoài live bị bỏ. Trần 300 KB (`LIVE_MAX_FRAME_BYTES`), tối đa 15 fps (`LIVE_MAX_FPS`), khung dư bị bỏ. |
+| text `cancel` | `{"t":"cancel"}` | Huỷ lượt, live OCR và lệnh điện thoại đang chờ. Live **nav** vẫn chạy. |
+| text `played` | `{"t":"played","turn":"<id>","first_byte_ms":412,"first_audio_ms":455}` | Mốc phát (mục 7). |
+| text `ping` | `{"t":"ping"}` | Server trả `pong`. |
 
-Khung text sai JSON/thiếu `t`/loại lạ, binary rỗng/loại lạ, ảnh/audio gửi khi chưa có `turn_start`
-đều trả `{"t":"error","code":"bad_frame"}`; kết nối **vẫn mở**.
+Text sai JSON/thiếu `t`/loại lạ, binary rỗng/loại lạ -> `{"t":"error","code":"bad_frame"}`, kết nối **vẫn mở**.
 
-### 2.2 Server gửi xuống kính
+## 4. Khung server -> kính
 
 | Khung | Nội dung | Ghi chú |
 |---|---|---|
-| text `hello_ok` | `{"t":"hello_ok","session":"a1b2c3d4e5f6","cue_version":2,"ping_s":25}` | Từ đây mới được gửi `turn_start`. `cue_version` là bản cue của server. |
-| text `reply` | `{"t":"reply","turn":"<id>","cues":["received"],"live":null,"audio":{...}}` | Gửi **ngay** khi có kết quả, trước audio. Kính phát `cues` từ flash trong lúc TTS dựng mảnh đầu. |
-| binary `0x02` + ADPCM | khối audio, bội số của 256 byte | Phát dần; dựng đệm `preroll_s` trước khi phát để loa không đói. |
-| text `reply_end` | `{"t":"reply_end","turn":"<id>"}` | Hết audio của lượt. |
-| text `cam` / `capture` / `cue` / `hazard` / `end` | khung live | Mở sau `reply_end` của lượt có `live` khác `null` (§4). Khi nav live đang chạy (nó sống qua các lượt sau), **khung JSON `hazard`/`cue`/`end` có thể tới bất cứ lúc nào, kể cả giữa hai khối `0x02` của một `reply`**: kính phải xử lý chúng ngay, không chờ `reply_end`. |
+| text `hello_ok` | `{"t":"hello_ok","session":"a1b2c3d4e5f6","cue_version":2,"ping_s":25}` | `cue_version` là bản cue của server. |
+| text `reply` | `{"t":"reply","turn":"<id>","cues":["received"],"live":null,"audio":{...}}` | Gửi **ngay** khi có kết quả, trước audio. `live` là `"ocr"`, `"nav"` hoặc `null`. `audio` là `null` khi chỉ có cue, nếu không `{"format":"ima_adpcm;rate=16000;channels=1;block=256","sample_rate":16000,"preroll_s":0.2}`. |
+| binary `0x02` + ADPCM | khối audio | Bội số của 256 byte. |
+| text `reply_end` | `{"t":"reply_end","turn":"<id>"}` | Hết audio của `reply` đó. |
+| text `cam` / `capture` / `cue` / `hazard` / `end` | khung live | Mục 6. |
 | text `pong` | `{"t":"pong"}` | |
 | text `error` | `{"t":"error","code":"rate_limited"\|"too_large"\|"bad_frame"}` | Kết nối giữ nguyên. |
 
-`reply.live` là `"ocr"`, `"nav"` hoặc `null`. `reply.audio` là `null` khi chỉ có cue, nếu không là
-`{"format":"ima_adpcm;rate=16000;channels=1;block=256","sample_rate":16000,"preroll_s":0.2}`.
+Kính có `cue_version` thấp hơn server: `reply.cues` là `[]` và cue được **đọc thành tiếng** trong audio (kính cũ vẫn nghe đủ).
 
-Nếu `hello.cue_version` thấp hơn `CUE_VERSION` của server thì `reply.cues` là `[]` và các cue được
-**đọc thành tiếng** trong audio (kính cũ vẫn nghe đủ). Vì vậy kính phải khai `cue_version` đúng với
-bộ clip đang có trong flash (§6).
+### 4.1 Khung `result-*` do server chủ động đẩy
 
-**Câu kết quả do server chủ động đẩy (`result-<request_id>`).** Hành động làn D chạy nền ("gọi mẹ", "đặt xe",
-"phát nhạc", "khẩn cấp") được đọc lại ngay, lệnh tới điện thoại sau cửa sổ huỷ; khi điện thoại báo kết quả
-(thành công, `MULTIPLE_CONTACTS_FOUND`, `CONTACT_NOT_FOUND`, lỗi quyền...) server đẩy **một lượt trả lời không do
-kính yêu cầu** xuống đúng socket của kính, cùng dạng với lượt thường:
+Lệnh làn D chạy nền (gọi điện, đặt xe, phát nhạc, khẩn cấp) được đọc lại ngay; lệnh tới điện thoại sau cửa sổ huỷ (mục 5). Khi
+điện thoại báo kết quả (thành công, `MULTIPLE_CONTACTS_FOUND`, `CONTACT_NOT_FOUND`, lỗi quyền...) server đẩy **một lượt trả lời
+kính không yêu cầu** xuống đúng socket, cùng dạng với lượt thường:
 
-| Khung | Ghi chú |
-|---|---|
-| text `reply` | `{"t":"reply","turn":"result-<request_id>","cues":[],"live":null,"audio":{...}}`. `turn` bắt đầu bằng `result-`; kết quả có nhiều câu thì các lượt sau là `result-<request_id>.1`, `.2`... |
-| binary `0x02` ... + text `reply_end` | audio đọc kết quả, `reply_end.turn` trùng id trên |
+```
+{"t":"reply","turn":"result-<request_id>","cues":[],"live":null,"audio":{...}}
+0x02 ...
+{"t":"reply_end","turn":"result-<request_id>"}
+```
 
-Kính xử lý như mọi `reply` (phát audio, có thể báo `played`) và không được coi là trả lời cho lượt bấm gần nhất.
+Kết quả nhiều câu thì các câu sau mang `turn` = `result-<request_id>.1`, `.2`... Kính xử lý như mọi `reply` (phát, có thể báo
+`played`) và **không** coi đó là trả lời cho lượt bấm gần nhất. Ngoại lệ: kết quả mở lộ trình của `nav_start` được đọc trong live
+nav (mục 6), không qua `result-*`. Kính chỉ dùng HTTP (`/v2/turn`, `/process`) không có phiên WS nên **không nhận được** khung này
+và không nghe kết quả lệnh.
 
-**Một kênh audio `0x02` có thứ tự.** Server giữ MỘT hàng đợi audio cho mỗi phiên: mỗi câu (lượt trả lời
-`reply`...`reply_end`, câu `result-*`, câu nói của chỉ đường live như kết quả mở lộ trình / "vẫn đang thực hiện...", cue
-đọc thay clip cho kính cũ, câu đọc chữ của OCR live) được gửi **trọn câu** rồi mới tới câu sau, theo thứ tự tới (FIFO).
-Hai câu không bao giờ xen khối `0x02` vào nhau, nên kính chỉ cần phát tuần tự theo thứ tự nhận. Chỉ **khung JSON** là
-không xếp hàng (hazard mức >= 2 vẫn tới ngay và ngắt câu của chỉ đường live; câu bị ngắt được đọc lại khi yên). `turn_start`, `cancel`, đóng socket hoặc phiên thay thế **bỏ** câu kết quả đang phát
-dở và các câu chưa đọc (người dùng đã chuyển sang việc khác). Kính không có phiên WS (đường POST `/v2/turn`, `/process`)
-không nhận kênh đẩy này.
+### 4.2 Hàng đợi audio theo phiên
 
-### 2.3 Huỷ và lượt mới
+Server giữ **MỘT kênh audio `0x02` có thứ tự** cho mỗi phiên. Mỗi câu (`reply`...`reply_end` của lượt, câu `result-*`, câu nói của
+chỉ đường live, câu đọc chữ của OCR live, cue đọc thay clip cho kính cũ) được gửi **trọn câu** rồi mới tới câu sau, FIFO. Hai câu
+không bao giờ xen khối `0x02` vào nhau, nên kính chỉ phát tuần tự theo thứ tự nhận.
 
-- `turn_start` mới luôn **huỷ lượt đang chạy** (STT, Gemma, TTS dừng, audio đang phát dở bị cắt) và
-  huỷ lệnh làn D đang chờ đọc xong ("gọi mẹ", "đặt xe"...). Lệnh chờ mà kính chưa nghe xong thì
-  không bao giờ được thi hành sau khi bấm lại hay rớt mạng.
-- `turn_start` mới **không** dừng phiên live **nav** đang chạy: chỉ đường vẫn chạy và vẫn cảnh báo
-  vật cản trong lúc người dùng hỏi thứ khác. Nav chỉ kết thúc khi: người dùng ra lệnh dừng chỉ đường
-  (server gửi `end`), `cancel`, socket đóng, hoặc phiên mới của cùng kính thay thế.
-- `turn_start` mới **huỷ** phiên live **OCR** đang chạy (kính nên dừng gửi khung 0x04 khi nhận được
-  `end` hoặc ngay khi bấm nút).
-- Nhạc đang phát hoặc điện thoại đang dẫn đường: **chỉ khi lượt không có lời nói** (bấm nút rồi nhả, VAD không thấy
-  tiếng) server hiểu là "dừng" (dừng nhạc / dừng chỉ đường, kèm `end` nếu nav live đang chạy). Lượt có lời được phân loại
-  bình thường: "tăng âm lượng" lúc đang nghe nhạc là đổi âm lượng, câu hỏi thường lúc đang dẫn đường không tắt chỉ đường.
-- `cancel` huỷ lượt, live OCR và lệnh chờ; live **nav** vẫn chạy (như `turn_start`). Hành vi nav ở trên là quy định
-  hiện hành (controller, Task 10 fix); nếu kính nhận hành vi khác thì đọc lại `live/device_session.py`.
-- OCR live mở giữa lúc đang chỉ đường **tạm thay** nav live (kính chỉ có một phiên live). Khi OCR live kết thúc (xong,
-  bị lượt mới huỷ...) server tự dựng lại nav live: kính nhận lại `cam` của nav và cảnh báo vật cản chạy tiếp.
-- Mọi khung WS của kính (binary hay text) tối đa **~2,1 MB** (`uvicorn --ws-max-size 2100000`); quá thì server đóng
-  socket (1009) hoặc trả `error: too_large`.
+- Câu của live (nav/OCR/cue đọc thay clip) **không có** `reply`/`reply_end` bao quanh: chỉ là khối `0x02` liên tục, hết câu thì
+  ngừng đến. Phát hết đệm rồi đợi khối kế.
+- Chỉ **khung JSON** không xếp hàng. Hazard mức >= 2 tới ngay và **ngắt** câu nói của chỉ đường đang gửi (khối `0x02` ngừng giữa
+  chừng, câu được đọc lại đầy đủ khi yên ~1,5 s). Kính nên cho phép phát cụt, không coi là lỗi.
+- `turn_start`, `cancel`, đóng socket hoặc phiên thay thế **bỏ** câu `result-*` đang phát dở và các câu chưa đọc.
 
-## 3. Giữ kết nối và mở lại
+## 5. Đọc lại lệnh, bấm huỷ, xác nhận "...phải không?"
 
-- Gửi `ping` mỗi **25 s**. Server đóng `1001` nếu im lặng quá 90 s (Cloudflare cắt kết nối idle
-  khoảng 100 s, nên ping 25 s là bắt buộc, kể cả khi đang chờ người dùng).
-- Khi socket rớt (WiFi, 1001, 4000, lỗi mạng): mở lại với **backoff 0,5 → 1 → 2 → 4 → 8 s** (giữ 8 s
-  làm trần, cộng nhiễu ±20%). Mở lại thành công thì đặt lại backoff về 0,5 s. Sau khi mở lại phải gửi
-  `hello` mới; lượt đang dở của phiên cũ **đã bị huỷ sạch** phía server, không tiếp tục được.
-- Không mở nhiều socket cho cùng một kính: phiên mới thay phiên cũ (4000, §8). Đừng tự động mở lại
-  khi nhận 4000 trừ khi chính kính vừa mở phiên mới.
+Với lệnh có tác dụng phụ (gọi điện, khẩn cấp, đặt xe, mở chỉ đường):
 
-## 4. Live: OCR và chỉ đường
+1. **Đọc lại**: server trả `reply` + audio đọc lại ("Đang gọi cho mẹ.", khẩn cấp: "Đang gọi người thân khẩn cấp, bấm nút để huỷ.").
+   Kính phát ngay như mọi audio.
+2. **Cửa sổ huỷ**: đồng hồ đếm từ lúc **khối `0x02` đầu tiên của câu đọc lại rời server** (không phải lúc route xong), dài bằng thời
+   gian đọc câu + đệm đầu phát + 0,15 s biên + 0,4 s TTS. Thực đo E2E: nhả nút -> lệnh tới điện thoại 2,4–3,7 s, phần lớn là thời
+   gian đọc lại. Audio đọc lại chưa tới kính thì lệnh **không bao giờ chạy** (fail closed).
+3. **Huỷ**: trong cửa sổ đó, bấm nút (`turn_start`), gửi `cancel`, hoặc đóng socket đều huỷ lệnh; lệnh không được gửi tới điện thoại.
+   Kính không phải làm gì thêm ngoài việc gửi đúng khung. Rớt mạng giữa chừng cũng huỷ.
+4. **Nghi ngờ thì hỏi lại**: nếu độ tin cậy nhãn dưới 0,999 (hoặc không phải Gemma), server trả "Gọi cho mẹ phải không?" và chưa chạy gì
+   (~1 trên 10 lệnh làn D). Với kính đây là một `reply` bình thường; người dùng trả lời bằng **lượt kế tiếp** ("đúng", "có", "không", "thôi"...).
+   Chỉ câu ngắn (<= 3 từ, toàn từ đồng ý/từ chối) mới tính; câu khác bị coi là lượt mới. Hết hạn sau 30 s. Câu trả lời cho một câu hỏi
+   thiếu thông tin ("Bạn muốn đi đâu?", hạn 60 s) cũng được hỏi xác nhận lại trước khi chạy.
+5. **Bấm nút không nói** khi đang phát nhạc hoặc đang chỉ đường = "dừng" (dừng nhạc / dừng chỉ đường, kèm `end` nếu nav live đang chạy).
+   Bấm rồi nói thì lượt được phân loại bình thường.
 
-Live chạy **trên chính socket này**, không mở WS riêng. Server chỉ bật live sau `reply_end` của lượt
-yêu cầu nó (`reply.live` = `"ocr"` hoặc `"nav"`). Khung live giữ nguyên `live/protocol.py`:
+## 6. Live: OCR và chỉ đường (nav)
+
+Live chạy **trên chính socket này**, bật sau `reply_end` của lượt có `reply.live` là `"ocr"` hoặc `"nav"`. Kính chỉ làm **đúng lệnh vừa nhận**.
 
 | Khung | Ý nghĩa |
 |---|---|
-| `{"t":"cam","size":"vga","fps":5,"quality":12}` | đặt camera: cỡ ảnh (`qvga`/`vga`/...), khung/giây, chất lượng JPEG; kính làm đúng và bắt đầu gửi 0x04 |
-| `{"t":"capture","size":"uxga"}` | chụp **một** ảnh độ phân giải cao, gửi lại bằng 0x04 |
-| `{"t":"cue","id":"move_closer"}` | phát clip cue từ flash |
-| `{"t":"hazard","level":2,"dir":"left","kind":"vehicle"}` | cảnh báo vật cản: kính phát bíp/clip theo mức và hướng |
-| `{"t":"end"}` | kết thúc live; kính dừng gửi 0x04 và tắt camera live |
-| binary `0x02` + ADPCM | lời nói trong live (OCR đọc chữ, nav đọc kết quả mở lộ trình) |
+| `{"t":"cam","size":"vga","fps":5,"quality":12}` | đặt camera (OCR: vga 5 fps; nav: `qvga` 8 fps, quality 15) rồi gửi `0x04` liên tục |
+| `{"t":"capture","size":"uxga"}` | chụp **một** ảnh UXGA, gửi lại bằng `0x04` |
+| `{"t":"cue","id":"look_left"}` | phát clip cue từ flash (OCR: hướng dẫn căn chữ) |
+| `{"t":"hazard","level":2,"dir":"left","kind":"car"}` | cảnh báo vật cản. `level` 1–3; `dir` `left`/`center`/`right`; `kind` là tên lớp vật: `person`, `bicycle`, `car`, `motorbike`, `bus`, `truck`, `dog`, `traffic_light`, `hydrant`, `stop_sign`, `parking_meter`, `bench`, `chair`, `plant`. Theo spec: phát `hazard_<level>`; mức >= 2 thêm `dir_*`, mức 3 thêm `stop_now` (clip có sẵn, mục 7). Server đã chống làm phiền; kính phát mọi khung nhận được. |
+| `{"t":"end"}` | kết thúc live: dừng gửi `0x04`, tắt camera live |
 
-Kính chỉ làm **đúng lệnh vừa nhận**, không tự suy đoán.
+**Nav sống qua lượt mới.** `turn_start`/`cancel` KHÔNG dừng nav live: người dùng hỏi gì giữa đường vẫn được cảnh báo vật cản. Nav
+chỉ kết thúc khi `end` (người dùng nói/bấm dừng chỉ đường, `alert_off`), socket đóng, hoặc phiên thay thế.
+**OCR live thì bị lượt mới huỷ** (dừng gửi `0x04` khi bấm nút hoặc khi nhận `end`). OCR mở giữa lúc đang chỉ đường **tạm thay** nav
+(kính chỉ có một phiên live); OCR xong server tự dựng lại nav (kính nhận lại `cam` của nav).
 
-### 4.1 Chuỗi khung mẫu: một lượt chat
-
-```
-kính  -> {"t":"hello","device":"glasses-123","token":"…","cue_version":2,"fw":"1.0.3","accept":"ima_adpcm"}
-server-> {"t":"hello_ok","session":"a1b2c3d4e5f6","cue_version":2,"ping_s":25}
-kính  -> {"t":"turn_start","turn":"t42","t_press_ms":10000}
-kính  -> 0x01 <JPEG 250 KB>
-kính  -> 0x03 <ADPCM 2048 B> ... (nhiều khung 0x03 khi đang nói)
-kính  -> {"t":"turn_end","turn":"t42","t_release_ms":12300}
-server-> {"t":"reply","turn":"t42","cues":["received"],"live":null,
-          "audio":{"format":"ima_adpcm;rate=16000;channels=1;block=256","sample_rate":16000,"preroll_s":0.2}}
-server-> 0x02 <ADPCM 768 B> ... (nhiều khung 0x02)
-server-> {"t":"reply_end","turn":"t42"}
-kính  -> {"t":"played","turn":"t42","first_byte_ms":13050,"first_audio_ms":13120}
-```
-
-### 4.1b Chuỗi khung mẫu: gọi điện (lệnh làn D + kết quả do server đẩy)
+Chuỗi mẫu:
 
 ```
-kính  -> turn_start / 0x03... / turn_end                      ("gọi cho Nam")
-server-> {"t":"reply","turn":"t45","cues":[],"live":null,"audio":{...}}   (đọc lại "Đang gọi cho Nam.")
-server-> 0x02 ... ; {"t":"reply_end","turn":"t45"}
-          ... cửa sổ huỷ ~2 s (bấm nút/cancel/ngắt mạng lúc này thì lệnh KHÔNG được gửi) ...
-          server gửi lệnh tới điện thoại; điện thoại báo MULTIPLE_CONTACTS_FOUND
-server-> {"t":"reply","turn":"result-9f1c...","cues":[],"live":null,"audio":{...}}   (server chủ động)
-server-> 0x02 ... ; {"t":"reply_end","turn":"result-9f1c..."}   ("Có nhiều người trùng tên trong danh bạ...")
+-- chat --
+kính   {"t":"turn_start","turn":"t42","t_press_ms":10000} ; 0x01 <JPEG> ; 0x03 <ADPCM>... ; {"t":"turn_end","turn":"t42","t_release_ms":12300}
+server {"t":"reply","turn":"t42","cues":["received"],"live":null,"audio":{...}} ; 0x02... ; {"t":"reply_end","turn":"t42"}
+kính   {"t":"played","turn":"t42","first_byte_ms":13050,"first_audio_ms":13120}
+
+-- gọi điện --
+server reply(t45, đọc lại "Đang gọi cho Nam.") ; 0x02... ; reply_end   ... cửa sổ huỷ ... lệnh tới điện thoại
+server {"t":"reply","turn":"result-9f1c...",...} ; 0x02... ; {"t":"reply_end","turn":"result-9f1c..."}   (server chủ động)
+
+-- OCR live --
+server reply(live:"ocr", cues:["ocr_start"]) ; reply_end ; {"t":"cam","size":"vga","fps":5,"quality":12}
+kính   0x04 <JPEG>...   server {"t":"cue","id":"look_left"} ... {"t":"capture","size":"uxga"}   kính 0x04 <UXGA>
+server 0x02... (đọc nội dung) ; {"t":"end"}
+
+-- nav --
+server reply(live:"nav", cues:["nav_alert_on"]) ; reply_end ; {"t":"cam","size":"qvga","fps":8,"quality":15}
+kính   0x04 <JPEG>...   server {"t":"hazard","level":2,"dir":"left","kind":"car"}
+kính   (bấm nút hỏi giờ: turn_start mới, nav vẫn chạy, hazard vẫn tới)   server {"t":"end"} khi người dùng dừng
 ```
 
-### 4.2 Chuỗi khung mẫu: OCR live
+## 7. Cue clips và `played`
 
-```
-kính  -> turn_start / 0x01 / 0x03... / turn_end        ("đọc giúp tôi tờ giấy này")
-server-> {"t":"reply","turn":"t43","cues":["received"],"live":"ocr","audio":{...}}   (cue + lời hướng dẫn)
-server-> 0x02 ... ; {"t":"reply_end","turn":"t43"}
-server-> {"t":"cam","size":"vga","fps":5,"quality":12}      (bắt đầu căn khung)
-kính  -> 0x04 <JPEG> ... (mỗi khung ≤ 300 KB, ≤ 15 fps)
-server-> {"t":"cue","id":"look_left"}                         (hướng dẫn căn chữ)
-server-> {"t":"capture","size":"uxga"}                        (đủ chuẩn: chụp nét)
-kính  -> 0x04 <JPEG UXGA>
-server-> 0x02 ... (đọc nội dung)
-server-> {"t":"end"}
-```
+- Clip nằm ở `assets/cues/`: một file `<id>.wav` mỗi mã cue (WAV IMA ADPCM 16 kHz mono, khối 256 byte) cùng `manifest.json`
+  `{"cue_version": N, "clips": {id: {"file","bytes","seconds","text","sha256"}}}`. Hiện `cue_version` = **2**, 32 clip:
+  `received`, `shutter`, `hazard_1..3` (âm, không lời); `system_busy`, `no_speech`, `no_image`; `ask_destination`, `ask_contact_name`,
+  `ask_song`, `ask_ride_destination`, `phone_pending`, `emergency_started`; `ocr_start`, `look_left/right/up/down`, `look_around`,
+  `move_closer`, `move_away`, `hold_still`, `ocr_no_text`, `ocr_nothing_to_reread`; `dir_left/center/right`, `stop_now`,
+  `nav_alert_on`, `nav_alert_off`. `received` là tiếng "tíc" khi nhả nút.
+- Nạp flash theo manifest, kiểm `sha256`, khai `hello.cue_version` = giá trị trong manifest. Đổi chữ cue thì tăng `CUE_VERSION` và
+  sinh lại bằng `python tools/make_cue_clips.py --out assets/cues` (test `test_cue_manifest_complete` đỏ nếu quên).
+- `played` ghi đủ 4 mốc theo `millis()` của kính: `t_press_ms` (trong `turn_start`), `t_release_ms` (trong `turn_end`), `first_byte_ms`
+  (byte audio đầu tới kính), `first_audio_ms` (tiếng đầu ra loa). Server ghi mỗi lượt một dòng vào `<STORAGE_DIR>/metrics/turns.jsonl` và
+  thêm một dòng bổ sung khi `played` tới (ghép theo `turn`). Kính cứ gửi đủ mốc, kể cả với `result-*`.
 
-### 4.3 Chuỗi khung mẫu: chỉ đường (nav)
+## 8. Đường HTTP còn giữ
 
-```
-kính  -> turn_start / 0x01 / 0x03... / turn_end        ("dẫn tôi đến chợ Bến Thành")
-server-> {"t":"reply","turn":"t44","cues":[],"live":"nav","audio":{...}}
-server-> 0x02 ... ; {"t":"reply_end","turn":"t44"}
-server-> {"t":"cam","size":"qvga","fps":8,"quality":15}
-kính  -> 0x04 <JPEG QVGA> ... (liên tục)
-server-> {"t":"hazard","level":2,"dir":"left","kind":"vehicle"}     (kính bíp ngay từ flash)
-   ...    người dùng bấm nút hỏi giờ: turn_start mới -> nav VẪN chạy, hazard vẫn tới
-server-> {"t":"end"}                                           (người dùng nói "dừng chỉ đường")
-```
-
-## 5. Định dạng audio
-
-- **Kính -> server (0x03) và server -> kính (0x02):** IMA ADPCM 4-bit (`WAVE_FORMAT_DVI_ADPCM`),
-  mono, **16 000 Hz**, **khối 256 byte** (505 mẫu/khối, ~8 110 byte/giây), **không header RIFF/WAV**.
-  Mỗi khối tự đủ (4 byte đầu giữ mẫu và chỉ số bước) nên có thể giải mã từng khối.
-- Mảnh audio kính gửi (0x03) có thể là mọi cỡ; mảnh server gửi (0x02) luôn là bội số 256 byte.
-- Chuỗi `accept` trong `hello` chưa có tác dụng. Đường POST cũ (`/process`, `/v2/turn`) vẫn có
-  MP3/PCM theo `RESPONSE_FORMAT`; WS thì luôn ADPCM.
-
-## 6. Clip cue trong flash
-
-- Cue là tiếng phát sẵn từ flash của kính, không qua mạng/TTS: server chỉ gửi mã (`"cues":["received"]`).
-  Bảng mã nằm ở `pipeline/cues.py` (`CUES`); `received` là tiếng "tíc" khi nhả nút.
-- Kính khai `cue_version` trong `hello`. Server hiện tại: `CUE_VERSION = 2`. Nếu số của kính thấp hơn,
-  server không gửi mã cue mà đọc thành câu nói qua TTS.
-- Đổi chữ của cue thì phải tăng `CUE_VERSION` và nạp lại clip vào flash.
-- Clip nằm trong repo ở `assets/cues/` (một file `<id>.wav` mỗi mã cue, WAV IMA ADPCM 16 kHz mono, khối 256 byte,
-  cùng định dạng audio trả lời) cùng `assets/cues/manifest.json`:
-  `{"cue_version": N, "clips": {id: {"file","bytes","seconds","text","sha256"}}}`. Firmware nạp flash theo
-  manifest và khai `cue_version` = giá trị trong manifest. Sinh lại bằng
-  `python tools/make_cue_clips.py --out assets/cues` (TTS chạy trên GPU); cue không lời (`received`, `shutter`,
-  `hazard_1..3`) sinh bằng numpy. Test `test_cue_manifest_complete` đỏ nếu bảng cue đổi mà clip chưa sinh lại.
-- Khung `played` đủ **4 mốc** của một lượt: `t_press_ms` (trong `turn_start`), `t_release_ms` (trong
-  `turn_end`), `first_byte_ms` (byte audio đầu tới kính) và `first_audio_ms` (tiếng đầu ra loa), tất
-  cả tính theo đồng hồ `millis()` của kính. Server ghi mỗi lượt một dòng JSON vào
-  `<STORAGE_DIR>/metrics/turns.jsonl` (timing phía server + `glasses` với `t_press_ms`/`t_release_ms` đã có
-  lúc lượt xong) và khi `played` tới thì thêm một dòng `{"turn","glasses":{first_byte_ms,first_audio_ms}}`;
-  ghép hai dòng theo `turn`. Mọi dòng log của lượt mang `[<device> <turn>]`. Kính cứ gửi đủ mốc.
-
-## 7. Các trần
-
-| Hạng mục | Giá trị | Biến | Khi vượt |
-|---|---|---|---|
-| Ảnh lượt (0x01) / `/v2/image` | 2 MB | `DEVICE_MAX_IMAGE_BYTES` | WS: `error too_large`, bỏ ảnh; HTTP: 413 |
-| Audio một lượt | 30 s | `DEVICE_MAX_AUDIO_S` | WS: một `error too_large`, bỏ phần còn lại |
-| Khung live (0x04) | 300 KB | `LIVE_MAX_FRAME_BYTES` | bỏ khung đó |
-| Tốc độ khung live | 15 fps | `LIVE_MAX_FPS` | khung dư bị bỏ |
-| Lượt/phút | 30 | `DEVICE_TURNS_PER_MIN` | WS: `error rate_limited`, lượt bị bỏ qua; HTTP: 429 |
-| Ảnh/phút (HTTP `/v2/image`) | 40 | `DEVICE_IMAGES_PER_MIN` | 429 |
-| Body `POST /process` | ảnh + audio + 64 KB | `DEVICE_MAX_PROCESS_BYTES` | 413 trước khi parse |
-
-Rate limit khoá theo `device`. Khi nhận `rate_limited`, kính báo người dùng bằng cue cục bộ, chờ vài
-giây, không thử lại dồn dập.
-
-## 8. Mã đóng WebSocket
-
-| Mã | Ý nghĩa | Kính làm gì |
-|---|---|---|
-| `4000` | phiên mới của cùng kính đã thay phiên này | không tự mở lại (đã có phiên khác) |
-| `4400` | khung đầu không phải `hello` hợp lệ, hoặc quá 10 s chưa có `hello` | sửa firmware |
-| `4401` | token sai/thiếu/server chưa cấu hình token | không thử lại vòng lặp; báo lỗi cấu hình |
-| `1001` | server đóng vì im lặng quá 90 s | mở lại theo backoff (§3) |
-| khác / rớt mạng | | mở lại theo backoff (§3) |
-
-## 9. Máy trạng thái kính (gợi ý)
-
-```
-OFFLINE --connect--> CONNECTING --hello_ok--> IDLE
-IDLE --nhấn nút--> LISTENING (turn_start, gửi 0x01 + 0x03)
-LISTENING --nhả nút--> WAITING (turn_end)
-WAITING --reply--> PLAYING (phát cue, rồi 0x02 sau preroll)
-PLAYING --reply_end--> IDLE | LIVE_OCR | LIVE_NAV (theo reply.live)
-LIVE_OCR --end/nhấn nút--> IDLE (hoặc LISTENING)
-LIVE_NAV --nhấn nút--> LISTENING (nav vẫn chạy nền) ; LIVE_NAV --end--> IDLE
-mọi trạng thái --socket rớt--> OFFLINE (huỷ phát/camera, backoff mở lại)
-```
-
-Nhấn nút ở bất kỳ trạng thái nào: dừng phát, gửi `turn_start` mới (server huỷ lượt cũ). Rớt socket giữa
-lượt: bỏ lượt đó, mở lại và để người dùng nói lại.
-
-## 10. Đường HTTP còn giữ
-
-Đều **đòi token** (`Authorization: Bearer` hoặc `X-Device-Token`), đều giới hạn như §7.
+Đều đòi token (`Authorization: Bearer`) và chịu cùng trần/rate limit như mục 11.
 
 | Endpoint | Việc | Lỗi |
 |---|---|---|
-| `POST /process` | đường cũ: multipart `image` + `audio` (WAV ADPCM), trả audio | 401 sai/thiếu token, 413 body quá cỡ, 429 quá tốc độ, 503 server chưa cấu hình token |
-| `POST /v2/image` | ảnh lượt (header `X-Turn-Id`, `X-Device-Id`), trả 204 | 401, 413, 429, 503 |
-| `POST /v2/turn` | audio ADPCM chunked của lượt, trả cue/audio; header `X-Cue`, `X-Live`, `X-Live-Token` | 401, 429, 503 |
-| `WS /v2/live` | live theo token một lần (`X-Live-Token`) | đóng 4401 |
-| `GET /health` | kiểm sống, không cần token | |
+| `POST /process` | **đường cũ**: multipart `audio` (+ `image` tuỳ chọn), trả audio stream, luôn 200 (lỗi cũng thành câu nói). Chạy chung pipeline v2 (`single_shot`: OCR đọc thẳng ảnh, chỉ đường chỉ gửi lệnh mở bản đồ, không có live). Hợp đồng chi tiết: `docs/HUONG_DAN_SERVER.md` | 401, 413 (trước khi parse), 429, 503 |
+| `POST /v2/image` | ảnh lượt (header `X-Turn-Id`, `X-Device-Id`), 204 | 401, 413, 429, 503 |
+| `POST /v2/turn` | audio ADPCM chunked, trả audio; header `X-Cue`, `X-Live`, `X-Live-Token`; kính khai `X-Cue-Version` | 401, 429, 503 |
+| `WS /v2/live` | live theo token một lần (`X-Live-Token`) cho kính dùng HTTP | đóng 4401 |
+| `GET /health` | kiểm sống, **không cần token** | |
 
-WS `/v2/session` thay cho cả bốn đường trên khi có mạng ổn; giữ HTTP làm dự phòng.
+Các đường HTTP là dự phòng; không có kênh đẩy `result-*`, không có `played`.
+
+## 9. Mã đóng WebSocket
+
+| Mã | Ý nghĩa | Kính làm gì |
+|---|---|---|
+| `4000` | phiên mới của cùng kính đã thay phiên này | không tự mở lại |
+| `4400` | khung đầu không phải `hello` hợp lệ, hoặc quá 10 s chưa có `hello` | sửa firmware |
+| `4401` | token sai/thiếu/server chưa cấu hình | không lặp lại; báo lỗi cấu hình |
+| `1001` | server đóng vì im lặng quá 90 s | mở lại theo backoff |
+| `1009` | khung quá lớn | sửa firmware |
+| khác / rớt mạng | | mở lại theo backoff |
+
+Mỗi kính chỉ một socket: phiên mới thay phiên cũ (đóng 4000 và huỷ sạch việc dở của phiên cũ).
+
+## 10. Định dạng audio
+
+Cả hai chiều (`0x03`, `0x02`): IMA ADPCM 4-bit, mono, **16 000 Hz**, **khối 256 byte** (505 mẫu/khối, ~8 110 byte/s), **không header
+RIFF/WAV**. Mỗi khối tự đủ (4 byte đầu giữ mẫu và chỉ số bước) nên giải mã từng khối được. Mảnh kính gửi cỡ tuỳ ý; mảnh server gửi
+luôn là bội số 256 byte. Trên WS luôn là ADPCM; MP3/PCM chỉ có ở đường HTTP cũ theo `RESPONSE_FORMAT`.
+
+## 11. Các trần
+
+| Hạng mục | Giá trị | Biến | Khi vượt |
+|---|---|---|---|
+| Ảnh lượt (`0x01`, `/v2/image`) | 2 MB | `DEVICE_MAX_IMAGE_BYTES` | WS `error too_large`; HTTP 413 |
+| Audio một lượt | 30 s | `DEVICE_MAX_AUDIO_S` | WS một `error too_large`, bỏ phần còn lại |
+| Khung live (`0x04`) | 300 KB, 15 fps | `LIVE_MAX_FRAME_BYTES`, `LIVE_MAX_FPS` | bỏ khung |
+| Lượt/phút | 30 | `DEVICE_TURNS_PER_MIN` | WS `error rate_limited`; HTTP 429 |
+| Ảnh/phút (HTTP) | 40 | `DEVICE_IMAGES_PER_MIN` | 429 |
+| Body `POST /process` | ảnh + audio + 64 KB | `DEVICE_MAX_PROCESS_BYTES` | 413 |
+
+Rate limit khoá theo `device`. Nhận `rate_limited` thì báo người dùng bằng cue cục bộ, chờ vài giây, không thử lại dồn dập.
+
+## 12. Độ trễ: dùng WS, không dùng POST qua Cloudflare
+
+Đo trên `5963ad5` (bench trên chính máy server -> điểm Hồng Kông -> tunnel -> server, 4 lượt/luồng, **không gồm WiFi kính**).
+Trung vị nhả nút -> tiếng đầu (ms):
+
+| lượt | local POST | local WS | CF POST | CF WS |
+|---|--:|--:|--:|--:|
+| chat | 776 | 688 | 848 | 775 |
+| space | 656 | 593 | 736 | 657 |
+| ocr | 726 | 655 | 872 | 773 |
+| money | 609 | 539 | 805 | 680 |
+| contact | 537 | 444 | 708 | 619 |
+
+Qua Cloudflare, WS nhanh hơn POST **70–125 ms** (bỏ TLS và kết nối mới mỗi lượt). Header trả về: CF POST ~385–510 ms so với CF WS
+~285–335 ms. Ảnh qua POST CF mất 400–590 ms; trên WS không có lượt POST ảnh riêng. Cloudflare còn thêm 80–175 ms (chặng edge ->
+cloudflared -> origin) mà firmware không giảm được. Hệ quả cho firmware:
+
+1. **Dùng `WS /v2/session`**; POST chỉ là dự phòng.
+2. **Giữ socket mở** (TLS bắt tay ~70–130 ms mỗi kết nối bị bỏ khỏi đường nóng), ping mỗi 25 s.
+3. **Gửi ảnh qua socket** (`0x01`), không `POST /v2/image` riêng. Gửi ảnh ngay sau `turn_start`; ảnh tới sau audio thì lượt phải chờ
+   tối đa `IMAGE_WAIT_S` = 1,5 s trước khi trả lời làn cần ảnh.
+4. Stream `0x03` trong lúc nói, đừng gom đến lúc nhả nút: server đoán ý và khởi động sớm trên phần đã tới.
+
+## 13. Máy trạng thái gợi ý
+
+```
+OFFLINE --connect--> CONNECTING --hello_ok--> IDLE
+IDLE --nhấn nút--> LISTENING (turn_start, 0x01 + 0x03)
+LISTENING --nhả nút--> WAITING (turn_end)
+WAITING --reply--> PLAYING (cue từ flash, rồi 0x02 sau preroll)
+PLAYING --reply_end--> IDLE | LIVE_OCR | LIVE_NAV (theo reply.live)
+LIVE_OCR --end/nhấn nút--> IDLE (hoặc LISTENING)
+LIVE_NAV --nhấn nút--> LISTENING (nav vẫn chạy nền) ; LIVE_NAV --end--> IDLE
+mọi trạng thái --socket rớt--> OFFLINE (dừng phát/camera, backoff mở lại)
+```
+
+Nhấn nút ở bất kỳ trạng thái nào: dừng phát, gửi `turn_start` mới. Rớt socket giữa lượt: bỏ lượt đó, mở lại và để người dùng nói lại.
+
+## 14. Đã kiểm bằng E2E thật
+
+`tools/e2e_full.py` (kính giả qua `WS /v2/session` -> VH -> app server -> phone_sim), `5963ad5`, 1 lượt mỗi kịch bản, tất cả PASS:
+`call_mom`, `call_nam` (điện thoại báo `MULTIPLE_CONTACTS_FOUND`, người dùng nghe được), `ride` (`ride_quote` rồi `ride_confirm`), `music`
+(có lời = đổi âm lượng, bấm không lời = dừng), `nav` (hazard, chat giữa chừng không tắt nav, bấm nút dừng gửi `end`), `emergency`,
+`call_cancel` (điện thoại không nhận lệnh nào). Nhả nút -> tiếng đầu 502–560 ms; lệnh -> kết quả được đọc 483–992 ms. Bảng đầy đủ: `docs/E2E_FULL_FLOW.md`.
