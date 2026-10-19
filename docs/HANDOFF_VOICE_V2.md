@@ -45,6 +45,10 @@ Header: local ~130–220, CF POST ~385–510, CF WS ~285–335. Ảnh POST qua C
 TLS ~70–130 ms mỗi kết nối; chặng edge -> cloudflared -> origin ~150–240 ms. WS nhanh hơn POST **70–125 ms**; phần Cloudflare còn lại
 80–175 ms là chặng tunnel. Không có thay đổi code nào đo ra nhanh hơn nên không đổi gì. Số thô: `.superpowers/sdd/2026-10-19-voice-v2-hardening/cf-bench/`.
 
+Đo lại sau khi đổi rule Cloudflare (2026-10-20): header POST nhanh hơn 60–170 ms, ảnh POST 400–590 → 224–420 ms, nhưng
+tiếng đầu gần như không đổi (CF POST chat 848 → 843, contact 708 → 703; CF WS 619–815, trong nhiễu n=4). Edge vẫn HKG,
+nút thắt vẫn là chặng tunnel.
+
 ## 2. Quyết định tôi đã thay bạn
 
 Toàn văn (kèm "cost if wrong") nằm trong ledger `.superpowers/sdd/2026-10-19-voice-v2-hardening/progress.md` (git-ignored, `grep Ruling`).
