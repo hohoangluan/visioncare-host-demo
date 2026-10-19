@@ -6,6 +6,9 @@
 Clef chậm vì MẠNG: riêng một lượt tới api.cloudflare.com không chạy model đã
 423 ms, còn Gemma UIT cách 15 ms.
 
+Confidence của đường Gemma = xác suất nhãn từ logprobs (UIT trả logprobs cả khi
+dùng structured output, kiểm 2026-10-19), không còn hằng 1.0.
+
 Phần đầu prompt cố định (danh sách nhãn) để prefix cache của vLLM giữ sẵn; bối
 cảnh thiết bị và câu lệnh đứng cuối.
 """
@@ -42,6 +45,9 @@ _PREFIX = (
 )
 
 
+_warned_no_logprobs = False
+
+
 def _context(device: dict | None) -> str:
     d = device or {}
 
@@ -69,7 +75,8 @@ async def _gemma(text: str, device: dict | None) -> ClefResult | None:
     prompt = _PREFIX + _context(device) + f'Câu lệnh: "{text}"\nTrả JSON.'
     try:
         reply = await asyncio.wait_for(
-            llm.generate_json(prompt, _SCHEMA, max_tokens=40), config.INTENT_LLM_TIMEOUT_S,
+            llm.generate_json(prompt, _SCHEMA, max_tokens=40, logprobs=True),
+            config.INTENT_LLM_TIMEOUT_S,
         )
     except asyncio.CancelledError:
         raise
@@ -80,10 +87,18 @@ async def _gemma(text: str, device: dict | None) -> ClefResult | None:
     if intent not in LABELS:
         return None
     mode = reply.get("ocr_mode")
+    prob = reply.get("_label_prob")
+    global _warned_no_logprobs
+    if prob is None:
+        if not _warned_no_logprobs:
+            _warned_no_logprobs = True
+            logger.warning("Gemma không trả logprobs: confidence giữ 1.0")
+        prob = 1.0
     result = ClefResult(
-        intent=intent, confidence=1.0,
+        intent=intent, confidence=prob,
         ocr_mode=mode if mode in ("read", "summarize", "reread") else "read",
         needs_web=bool(reply.get("needs_web")), seconds=time.monotonic() - started,
+        source="gemma",
     )
     logger.info(
         "Gemma intent '%s' -> %s (mode=%s web=%s) %.2fs",

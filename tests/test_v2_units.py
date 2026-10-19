@@ -248,11 +248,11 @@ def test_classifier_prefers_gemma_and_falls_back_to_clef(monkeypatch):
     from models import llm
     from pipeline import intent_classifier
 
-    async def gemma_ok(prompt, schema, max_tokens=120):
+    async def gemma_ok(prompt, schema, max_tokens=120, logprobs=False):
         assert prompt.rstrip().endswith('"tắt đi"\nTrả JSON.')  # câu lệnh đứng cuối (prefix cache)
         return {"intent": "music_stop", "ocr_mode": "read", "needs_web": False}
 
-    async def gemma_down(prompt, schema, max_tokens=120):
+    async def gemma_down(prompt, schema, max_tokens=120, logprobs=False):
         raise llm.LLMError("down")
 
     async def clef_ok(text, device=None):
@@ -547,3 +547,48 @@ def test_search_ok_answer_uses_results(monkeypatch):
 def test_search_unavailable_or_failed_injects_warning(monkeypatch, available, found):
     pieces, msgs = _web_turn(monkeypatch, available=available, found=found)
     assert "KHÔNG tra cứu được" in msgs[0]["content"] and pieces[-1]
+
+
+def _lp_choice(content_tokens):
+    """Response giả của vLLM: token ghép lại thành content, kèm logprob từng token."""
+    return {
+        "message": {"content": "".join(t for t, _ in content_tokens)},
+        "logprobs": {"content": [{"token": t, "logprob": lp} for t, lp in content_tokens]},
+    }
+
+
+def test_label_prob_from_logprobs(monkeypatch):
+    """Xác suất nhãn = tích các token phủ giá trị `intent` (music + _play), bỏ token khác."""
+    import math
+    from models import llm
+
+    choice = _lp_choice([('{"', -0.5), ("intent", -0.1), ('":"', -0.0),
+                         ("music", -0.2), ("_play", -0.3), ('"', -0.7), (',"ocr_mode":"read"}', -0.9)])
+
+    async def fake_raw(messages, max_tokens=None, **extra):
+        assert extra["logprobs"] is True
+        return choice
+
+    monkeypatch.setattr(llm.client, "complete_raw", fake_raw)
+    out = asyncio.run(llm.generate_json("p", {}, logprobs=True))
+    assert out["_label_prob"] == pytest.approx(math.exp(-0.5))
+    assert out["intent"] == "music_play"
+
+
+def test_label_prob_missing_logprobs_is_one(monkeypatch):
+    from models import llm
+    from pipeline import intent_classifier
+
+    async def fake_raw(messages, max_tokens=None, **extra):
+        return {"message": {"content": '{"intent":"music_stop","ocr_mode":"read","needs_web":false}'},
+                "logprobs": None}
+
+    monkeypatch.setattr(llm.client, "complete_raw", fake_raw)
+    monkeypatch.setattr(intent_classifier, "_warned_no_logprobs", False)
+    res = asyncio.run(intent_classifier._gemma("tắt đi", None))
+    assert res.confidence == 1.0 and res.source == "gemma"
+    assert intent_classifier._warned_no_logprobs is True
+
+
+def test_clef_result_source():
+    assert clef.ClefResult("chat", 0.9).source == "clef"

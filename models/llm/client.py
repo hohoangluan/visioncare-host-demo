@@ -12,6 +12,7 @@ import asyncio
 import base64
 import json
 import logging
+import math
 import re
 import time
 from collections.abc import AsyncIterator
@@ -119,7 +120,8 @@ async def stream_chat(
     raise LLMError(f"Không gọi được Gemma: {last_exc!r}")
 
 
-async def complete(messages: list[dict], max_tokens: int | None = None, **extra) -> str:
+async def complete_raw(messages: list[dict], max_tokens: int | None = None, **extra) -> dict:
+    """Như `complete` nhưng trả nguyên `choices[0]` (có `logprobs` nếu yêu cầu)."""
     body = _body(messages, max_tokens or config.LLM_MAX_TOKENS, False, **extra)
     last_exc: Exception | None = None
     for base in list(_order):
@@ -130,7 +132,7 @@ async def complete(messages: list[dict], max_tokens: int | None = None, **extra)
             if resp.status_code >= 500 or resp.status_code == 429:
                 raise LLMError(f"HTTP {resp.status_code}")
             resp.raise_for_status()
-            return resp.json()["choices"][0]["message"]["content"] or ""
+            return resp.json()["choices"][0]
         except asyncio.CancelledError:
             raise
         except (LLMError, httpx.HTTPError, KeyError, ValueError) as exc:
@@ -140,25 +142,68 @@ async def complete(messages: list[dict], max_tokens: int | None = None, **extra)
     raise LLMError(f"Không gọi được Gemma: {last_exc!r}")
 
 
+async def complete(messages: list[dict], max_tokens: int | None = None, **extra) -> str:
+    choice = await complete_raw(messages, max_tokens, **extra)
+    return choice["message"]["content"] or ""
+
+
+def value_prob(choice: dict, key: str) -> float | None:
+    """Xác suất của giá trị chuỗi trường `key` = tích exp(logprob) các token phủ lên
+    đoạn giá trị đó (ghép theo offset ký tự, vì tokenizer cắt "music_play" thành
+    "music" + "_" + "play"). `None` khi server không trả logprobs hoặc không dò
+    được vị trí giá trị."""
+    items = (choice.get("logprobs") or {}).get("content")
+    if not items:
+        return None
+    content = choice["message"].get("content") or ""
+    m = re.search(r'"%s"\s*:\s*"((?:[^"\\]|\\.)*)"' % re.escape(key), content)
+    if not m or m.start(1) == m.end(1):
+        return None
+    lo, hi = m.span(1)
+    pos, total, hit = 0, 0.0, False
+    for it in items:
+        end = pos + len(it.get("token", ""))
+        if pos < hi and end > lo:
+            lp = it.get("logprob")
+            if lp is None:
+                return None
+            total += lp
+            hit = True
+        pos = end
+    return math.exp(total) if hit else None
+
+
 _JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)
 
 
-async def generate_json(prompt: str, schema: dict, max_tokens: int = 120) -> dict:
-    """Trích JSON theo schema (structured output của vLLM)."""
-    text = await complete(
+async def generate_json(
+    prompt: str, schema: dict, max_tokens: int = 120, logprobs: bool = False,
+) -> dict:
+    """Trích JSON theo schema (structured output của vLLM).
+
+    `logprobs=True`: thêm khoá `_label_prob` = xác suất giá trị trường `intent`
+    (hoặc None). Kiểm 2026-10-19: llm.uit.edu.vn TRẢ `logprobs.content[]` kèm
+    structured output (json_schema) khi gửi `logprobs: true, top_logprobs: 1`.
+    """
+    extra = {"logprobs": True, "top_logprobs": 1} if logprobs else {}
+    choice = await complete_raw(
         [user_message(prompt)], max_tokens=max_tokens, temperature=0.0,
         response_format={
             "type": "json_schema",
             "json_schema": {"name": "params", "schema": schema},
-        },
+        }, **extra,
     )
+    text = choice["message"].get("content") or ""
     match = _JSON_BLOCK.search(text)
     if not match:
         raise LLMError(f"Gemma không trả JSON: {text[:200]!r}")
     try:
-        return json.loads(match.group(0))
+        out = json.loads(match.group(0))
     except ValueError as exc:
         raise LLMError(f"JSON hỏng: {text[:200]!r}") from exc
+    if logprobs:
+        out["_label_prob"] = value_prob(choice, "intent")
+    return out
 
 
 async def prewarm(messages: list[dict]) -> None:

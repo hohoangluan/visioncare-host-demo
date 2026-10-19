@@ -53,6 +53,7 @@ class ClefResult:
     ocr_mode: str = "read"
     needs_web: bool = False
     seconds: float = 0.0
+    source: str = "clef"  # "gemma" | "clef"
 
 
 _client = net.LoopClient(
