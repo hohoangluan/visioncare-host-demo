@@ -812,6 +812,19 @@ async def turn_lane(request: Request) -> Response:
     return await _v2_response(reply, cue_ok, response_format, released, device)
 
 
+if config.V2_DEBUG_STATS:
+    @app.get("/v2/debug/stats")
+    async def debug_stats(request: Request, reset: int = 0) -> dict:
+        """Bộ đếm Gemma cho bench tải (Task 16). Chỉ có khi V2_DEBUG_STATS=1; vẫn cần token kính."""
+        from models.llm import client as llm
+
+        guard.check_token(request.headers)
+        out = llm.stats()
+        if reset:
+            llm.reset_stats()
+        return out
+
+
 @app.websocket("/v2/live")
 async def live_lane(ws: WebSocket, token: str = "") -> None:
     """Làn realtime B/C (§5.3). Token một lần, lấy từ `X-Live-Token`."""

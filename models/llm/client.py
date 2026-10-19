@@ -10,6 +10,7 @@ trước câu trả lời, tức là người dùng phải chờ nó sinh xong m
 
 import asyncio
 import base64
+import contextlib
 import json
 import logging
 import math
@@ -37,6 +38,47 @@ _client = net.LoopClient(lambda: net.async_client(
 # Thứ tự đường thử. `warm()` xếp lại theo độ trễ đo được; lỗi thì đẩy xuống cuối.
 _order: list[str] = list(config.LLM_BASE_URLS)
 _ping_task: asyncio.Task | None = None
+
+
+# Đếm request Gemma đang bay (Task 16): bench tải cần biết đỉnh đồng thời và tổng mỗi lượt.
+# `per_device` khoá theo `device_ctx.current` nên hai kính không lẫn số; đọc qua `stats()`.
+_inflight = 0
+_max_inflight = 0
+_total = 0
+_per_device: dict[str, int] = {}
+
+
+@contextlib.contextmanager
+def _track():
+    global _inflight, _max_inflight, _total
+    from pipeline import device_ctx
+
+    _inflight += 1
+    _total += 1
+    _max_inflight = max(_max_inflight, _inflight)
+    dev = device_ctx.current.get()
+    _per_device[dev] = _per_device.get(dev, 0) + 1
+    try:
+        yield
+    finally:
+        _inflight -= 1
+
+
+@contextlib.asynccontextmanager
+async def _track_async():
+    with _track():
+        yield
+
+
+def stats() -> dict:
+    return {"inflight": _inflight, "max_inflight": _max_inflight, "total": _total,
+            "per_device": dict(_per_device)}
+
+
+def reset_stats() -> None:
+    global _max_inflight, _total
+    _max_inflight, _total = _inflight, 0
+    _per_device.clear()
 
 
 def _headers() -> dict:
@@ -88,7 +130,7 @@ async def stream_chat(
         started = time.monotonic()
         produced = False
         try:
-            async with _client.get().stream(
+            async with _track_async(), _client.get().stream(
                 "POST", f"{base}/chat/completions", json=body, headers=_headers(),
             ) as resp:
                 if resp.status_code >= 500 or resp.status_code == 429:
@@ -126,9 +168,10 @@ async def complete_raw(messages: list[dict], max_tokens: int | None = None, **ex
     last_exc: Exception | None = None
     for base in list(_order):
         try:
-            resp = await _client.get().post(
-                f"{base}/chat/completions", json=body, headers=_headers(),
-            )
+            with _track():
+                resp = await _client.get().post(
+                    f"{base}/chat/completions", json=body, headers=_headers(),
+                )
             if resp.status_code >= 500 or resp.status_code == 429:
                 raise LLMError(f"HTTP {resp.status_code}")
             resp.raise_for_status()

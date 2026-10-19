@@ -12,7 +12,7 @@ import threading
 from typing import Callable, Dict
 
 import config
-from pipeline import tts
+from pipeline import device_ctx, tts
 
 log = logging.getLogger("pending_action")
 
@@ -57,8 +57,12 @@ class PendingAction:
             if _pending.get(self.device) is self:
                 del _pending[self.device]
             self.fired.set()
+        # `threading.Timer` chạy trong thread mới với ContextVar mặc định: không đặt lại thì
+        # `run_background` copy nhầm kính mặc định và lệnh gọi/chỉ đường đi về sai kính
+        # (bench_load 2026-10-19: GLASSES_DEVICE_NOT_LINKED device_id=glasses-123).
         try:
-            self._fn()
+            with device_ctx.use(self.device):
+                self._fn()
         except Exception:
             log.exception("làn D: lệnh chờ %s lỗi", self.label)
 

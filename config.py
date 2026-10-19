@@ -344,6 +344,9 @@ HAZARD_MIN_SCORE = float(get("HAZARD_MIN_SCORE", "0.35"))
 HAZARD_NUM_THREADS = int(get("HAZARD_NUM_THREADS", "4"))
 HAZARD_REPEAT_S = float(get("HAZARD_REPEAT_S", "2"))
 HAZARD_LEVEL1_GAP_S = float(get("HAZARD_LEVEL1_GAP_S", "5"))
+# Bật GET /v2/debug/stats (số request Gemma đang bay/đỉnh/tổng) cho tools/bench_load.py. Mặc định tắt:
+# endpoint không tồn tại (404) khi cờ này không phải "1".
+V2_DEBUG_STATS = get("V2_DEBUG_STATS", "") == "1"
 # Tắt bước warm mạng/detector lúc khởi động (test đặt 0).
 V2_WARM = get("V2_WARM", "1") != "0"
 # Model ONNX của server (hazard, text detector): "auto" = CUDA nếu có, "cpu", "cuda".
