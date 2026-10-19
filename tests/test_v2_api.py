@@ -431,3 +431,53 @@ def test_keyword_still_allows_music_stop_when_model_down(world):
     _turn("ms1")
     _wait_actions(calls)
     assert calls["actions"] and calls["actions"][0][0] == "music_stop"
+
+
+def test_client_disconnect_cancels_llm(world, monkeypatch):
+    """POST bị client ngắt giữa lượt: Gemma bị huỷ, TTS dừng <= 0,5 s, lệnh chờ làn D bị huỷ."""
+    import asyncio
+    import time
+
+    from app import _v2_response
+    from pipeline import pending_action, speech
+    from pipeline.reply import Reply
+
+    monkeypatch.setattr(config, "V2_AUDIO_PREROLL_SECONDS", 0.1)
+    seen = {"cancelled": None}
+
+    async def blocking_stream(messages, max_tokens=None, **extra):
+        try:
+            yield "Phía trước có một cái bàn. Bên phải "
+            await asyncio.Event().wait()  # Gemma "nghĩ" mãi
+        except asyncio.CancelledError:
+            seen["cancelled"] = time.monotonic()
+            raise
+
+    monkeypatch.setattr(llm, "stream_chat", blocking_stream)
+    fired = []
+
+    async def go():
+        loop = asyncio.get_running_loop()
+        pending_action.schedule("dc-dev", 30, lambda: fired.append(1), "gọi mẹ",
+                                gen=pending_action.generation("dc-dev"))
+        reply = Reply(speech=speech.sync_iter(llm.stream_chat([]), loop))
+        resp = await _v2_response(reply, True, "adpcm_stream", time.monotonic(), "dc-dev")
+        got_audio = asyncio.Event()
+
+        async def reader():  # như Starlette: `async for` trên body_iterator, bị huỷ khi client rớt
+            async for _ in resp.body_iterator:
+                got_audio.set()
+
+        task = asyncio.create_task(reader())
+        await asyncio.wait_for(got_audio.wait(), 5)
+        t0 = time.monotonic()
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        while seen["cancelled"] is None and time.monotonic() - t0 < 2:
+            await asyncio.sleep(0.01)
+        return t0
+
+    t0 = asyncio.run(go())
+    assert seen["cancelled"] is not None and seen["cancelled"] - t0 <= 0.5
+    assert not pending_action.cancel("dc-dev", "kiểm")  # đã bị huỷ lúc ngắt
+    assert fired == []

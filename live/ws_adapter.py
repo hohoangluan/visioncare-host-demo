@@ -14,9 +14,11 @@ là định dạng `protocol.parse_frame` mong đợi) và báo ngắt bằng `f
 """
 
 import asyncio
+import json
 from collections.abc import Awaitable, Callable
 
 from live import protocol
+from pipeline import cues, speech
 
 _QUEUE_MAX = 8  # runner chỉ giữ khung mới nhất (_Mailbox); đầy thì bỏ khung cũ nhất
 
@@ -26,7 +28,11 @@ class LiveSocket:
         self,
         send_text: Callable[[str], Awaitable[None]],
         send_bytes: Callable[[bytes], Awaitable[None]],
+        speak_cues: bool = False,
     ) -> None:
+        # Kính có `cue_version` cũ hơn server (không có clip trong flash): khung
+        # {"t":"cue"} đổi thành câu nói TTS, giống `_send_reply` làm với cue của lượt.
+        self._speak_cues = speak_cues
         self._send_text = send_text
         self._send_bytes = send_bytes
         self._inbox: asyncio.Queue = asyncio.Queue(_QUEUE_MAX)
@@ -53,6 +59,17 @@ class LiveSocket:
         return await self._inbox.get()
 
     async def send_text(self, data: str) -> None:
+        if self._speak_cues and '"cue"' in data:
+            try:
+                frame = json.loads(data)
+            except ValueError:
+                frame = None
+            if isinstance(frame, dict) and frame.get("t") == "cue":
+                text = cues.fallback_text(str(frame.get("id", "")))
+                if text:
+                    async for chunk in speech.adpcm_stream([text]):
+                        await self._send_bytes(protocol.audio(chunk))
+                return
         await self._send_text(data)
 
     async def send_bytes(self, data: bytes) -> None:

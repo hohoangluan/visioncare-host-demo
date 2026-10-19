@@ -358,7 +358,7 @@ class DeviceSession:
             self._unclaimed = reply.live_token if reply.live else None
             _, body = await self._reply_audio(reply, cue_ok, RESPONSE_FORMAT, released)
             if body is not None:
-                async for chunk in _iter_in_thread(body):
+                async for chunk in _iter_in_thread(body, getattr(reply.speech, "abort", None)):
                     await self.send_bytes(protocol.audio(chunk))
             await self.send_json({"t": "reply_end", "turn": turn.id})
             if reply.live:
@@ -378,7 +378,7 @@ class DeviceSession:
         if live is None:
             logger.warning("v2 session %s: token live hết hạn", self.session_id)
             return
-        sock = LiveSocket(self.send_text, self.send_bytes)
+        sock = LiveSocket(self.send_text, self.send_bytes, speak_cues=self.cue_version < cues.CUE_VERSION)
         runner = ocr_live.run if live.mode == "ocr" else nav_live.run
         self._live_session, self._live_sock = live, sock
         # Chạy ở task riêng để vòng nhận (và turn_start/cancel) không bị chặn; task
@@ -386,11 +386,13 @@ class DeviceSession:
         self._live_task = asyncio.create_task(runner(sock, live))
 
 
-async def _iter_in_thread(body):
+async def _iter_in_thread(body, abort: Callable[[], None] | None = None):
     """Iterator đồng bộ (TTS+ADPCM) -> async iterator; thread tự đóng generator khi bị huỷ.
 
     Đóng generator từ thread khác khi nó đang chạy sẽ ném ValueError, nên chỉ chính
-    thread đọc mới được đóng nó (trong `finally`).
+    thread đọc mới được đóng nó (trong `finally`). Thread đọc có thể đang chặn chờ
+    mảnh text kế của Gemma; `abort` (= `SyncIter.abort` của `reply.speech`) huỷ bước
+    đó để nó thoát ngay khi kính ngắt (<= 0,5 s) thay vì chờ Gemma.
     """
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue = asyncio.Queue()
@@ -415,16 +417,21 @@ async def _iter_in_thread(body):
             loop.call_soon_threadsafe(queue.put_nowait, done)
 
     device_ctx.run_in_thread(worker, name="ws-reply")
+    finished = False
     try:
         while True:
             item = await queue.get()
             if item is done:
+                finished = True
                 return
             if isinstance(item, BaseException):
+                finished = True
                 raise item
             yield item
     finally:
         stop.set()
+        if not finished and abort is not None:
+            abort()
 
 
 async def serve(ws: WebSocket, reply_audio: ReplyAudio) -> None:

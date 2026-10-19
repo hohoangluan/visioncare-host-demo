@@ -824,3 +824,118 @@ def test_cue_manifest_complete():
         assert int.from_bytes(data[20:22], "little") == adpcm.FORMAT_TAG
         assert int.from_bytes(data[24:28], "little") == adpcm.SAMPLE_RATE
         assert (len(data) - adpcm.WAV_HEADER_BYTES) % adpcm.BLOCK_ALIGN == 0, cue_id
+
+class _FakeNavWS:
+    def __init__(self) -> None:
+        self.sent: list[tuple[str, object]] = []
+        self.inbox: asyncio.Queue = asyncio.Queue()
+
+    async def receive(self):
+        return await self.inbox.get()
+
+    async def send_text(self, text):
+        self.sent.append(("t", text))
+
+    async def send_bytes(self, data):
+        self.sent.append(("b", data))
+
+
+def _fake_speech(monkeypatch, chunks=40):
+    from pipeline import speech
+
+    async def fake_adpcm(text):
+        for _ in range(chunks):
+            await asyncio.sleep(0.01)
+            yield b"x" * 8
+
+    monkeypatch.setattr(speech, "adpcm_stream", fake_adpcm)
+
+
+def test_hazard_preempts_outbox_audio(monkeypatch):
+    """Hazard mức >= 2 ngắt audio outbox đang gửi, chặn gửi tiếp, rồi đọc lại cả câu khi yên."""
+    from lanes import nav_live
+    from live.session import LiveSession
+
+    monkeypatch.setattr(nav_live, "HAZARD_QUIET_S", 0.4)
+    _fake_speech(monkeypatch)
+
+    async def go():
+        ws, session, clock = _FakeNavWS(), LiveSession("tok", "dev", "nav"), nav_live._HazardClock()
+        session.outbox.put("Đã mở lộ trình tới chợ Bến Thành.")
+        task = asyncio.create_task(nav_live._speak_outbox(ws, session, clock))
+        while len(ws.sent) < 5:
+            await asyncio.sleep(0.005)
+        clock.mark()
+        n = len(ws.sent)
+        await asyncio.sleep(0.25)  # còn trong 0,4 s im lặng: không được gửi thêm
+        during = len(ws.sent) - n
+        await asyncio.sleep(1.0)  # yên rồi: đọc lại từ đầu
+        task.cancel()
+        await asyncio.gather(task, return_exceptions=True)
+        return during, len(ws.sent)
+
+    during, total = asyncio.run(go())
+    assert during <= 1  # tối đa khối đang bay lúc hazard tới
+    assert total >= 5 + 40  # phần đã gửi + cả câu đọc lại
+
+
+def test_nav_run_hazard_goes_first_and_silences_outbox(monkeypatch):
+    from lanes import nav_live
+    from live.session import LiveSession
+
+    class FakeYolo:
+        def detect(self, bgr):
+            return [hazard.Detection("motorbike", "vehicle", 0.9, (0.35, 0.2, 0.75, 0.95))]
+
+    monkeypatch.setattr(hazard, "detector", lambda: FakeYolo())
+    _fake_speech(monkeypatch)
+
+    async def go():
+        ws, session = _FakeNavWS(), LiveSession("tok", "dev", "nav")
+        task = asyncio.create_task(nav_live.run(ws, session))
+        await ws.inbox.put({"type": "websocket.receive", "bytes": bytes([1]) + _jpeg(320, 240)})
+        for _ in range(300):
+            if any(k == "t" and '"hazard"' in v for k, v in ws.sent):
+                break
+            await asyncio.sleep(0.01)
+        session.outbox.put("Đã mở lộ trình.")  # tới SAU hazard, trong 1,5 s im lặng
+        await asyncio.sleep(0.4)
+        session.closed.set()
+        await ws.inbox.put({"type": "websocket.disconnect", "code": 1000})
+        await asyncio.gather(task, return_exceptions=True)
+        return ws.sent
+
+    sent = asyncio.run(go())
+    assert any(k == "t" and '"hazard"' in v and '"level": 3' in v for k, v in sent)
+    assert not any(k == "b" for k, _ in sent)
+
+
+def test_live_old_cue_version_speaks_cue(monkeypatch):
+    from live import protocol
+    from live.ws_adapter import LiveSocket
+    from pipeline import speech
+
+    spoken = []
+
+    async def fake_adpcm(text):
+        spoken.extend(text)
+        yield b"aa"
+
+    monkeypatch.setattr(speech, "adpcm_stream", fake_adpcm)
+    cue_id = next(c for c in cues.CUES if cues.fallback_text(c))
+
+    async def run(speak_cues):
+        sent = []
+
+        async def st(s):
+            sent.append(("t", s))
+
+        async def sb(b):
+            sent.append(("b", b))
+
+        await LiveSocket(st, sb, speak_cues=speak_cues).send_text(protocol.cue(cue_id))
+        return sent
+
+    assert asyncio.run(run(False)) == [("t", protocol.cue(cue_id))]  # kính mới: gửi mã cue
+    old = asyncio.run(run(True))  # kính cũ: nói câu
+    assert old == [("b", protocol.audio(b"aa"))] and spoken == [cues.fallback_text(cue_id)]

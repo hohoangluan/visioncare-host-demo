@@ -688,7 +688,32 @@ def _first_then(first: bytes, rest: Iterator[bytes]) -> Iterator[bytes]:
         rest.close()
 
 
-async def _v2_response(reply: Reply, cue_ok: bool, response_format: str, released: float) -> Response:
+async def _stream_until_disconnect(body: Iterator[bytes], reply: Reply, device: str | None):
+    """Audio trả lời cho `StreamingResponse`, dọn sạch khi kính ngắt giữa chừng.
+
+    Starlette huỷ task gửi khi client rớt nhưng KHÔNG đóng iterator đồng bộ: Gemma và
+    TTS cứ chạy nốt, còn lệnh làn D đang chờ đọc xong vẫn nổ. Ở đây `finally` làm 3 việc:
+    đóng generator audio (trong thread đọc), huỷ bước Gemma đang bay (`abort`), và huỷ
+    lệnh chờ của kính. Phát hết bình thường thì KHÔNG huỷ lệnh chờ — nó đang đếm ngược
+    đúng bằng thời gian đọc lại lệnh.
+    """
+    from live.device_session import _iter_in_thread
+    from pipeline import pending_action
+
+    completed = False
+    try:
+        async for chunk in _iter_in_thread(body, getattr(reply.speech, "abort", None)):
+            yield chunk
+        completed = True
+    finally:
+        if not completed and device is not None:
+            if pending_action.cancel(device, "kính ngắt"):
+                logger.info("v2 turn: kính ngắt giữa lượt, huỷ lệnh chờ của %s", device)
+
+
+async def _v2_response(
+    reply: Reply, cue_ok: bool, response_format: str, released: float, device: str | None = None,
+) -> Response:
     headers, body = await _reply_audio(reply, cue_ok, response_format, released)
     if body is None:
         return Response(content=b"", headers=headers)
@@ -700,7 +725,9 @@ async def _v2_response(reply: Reply, cue_ok: bool, response_format: str, release
     audio_headers = _stream_headers(response_format)
     audio_headers["X-Audio-Preroll-Seconds"] = str(config.V2_AUDIO_PREROLL_SECONDS)
     media_type = _plan_for(response_format, _v2_counter).media_type
-    return StreamingResponse(body, media_type=media_type, headers={**audio_headers, **headers})
+    return StreamingResponse(
+        _stream_until_disconnect(body, reply, device), media_type=media_type, headers={**audio_headers, **headers},
+    )
 
 
 @app.post("/v2/turn", dependencies=[Depends(guard.turn_guard)])
@@ -728,8 +755,9 @@ async def turn_lane(request: Request) -> Response:
         reply, released = result.reply, result.released_at
     except Exception:  # noqa: BLE001 - kính luôn phải nghe được gì đó
         logger.exception("v2 turn %s thất bại", turn_id)
+        pending_action.cancel(device, "lượt lỗi/kính ngắt")  # lượt hỏng thì không có lời đọc lại nào để chờ
         reply, released = Reply(cues=["system_busy"]), time.monotonic()
-    return await _v2_response(reply, cue_ok, response_format, released)
+    return await _v2_response(reply, cue_ok, response_format, released, device)
 
 
 @app.websocket("/v2/live")

@@ -17,9 +17,10 @@ import cv2
 import numpy as np
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-from lanes.ocr_live import _Mailbox, receive_frames, speak_ws
+from lanes.ocr_live import _Mailbox, receive_frames
 from live import hazard, protocol
 from live.session import LiveSession, sessions
+from pipeline import speech
 
 logger = logging.getLogger("blind_assist")
 
@@ -35,20 +36,66 @@ def process_frame(det, tracker: hazard.HazardTracker, jpeg: bytes) -> hazard.Haz
     return tracker.assess(det.detect(bgr))
 
 
-async def _speak_outbox(ws: WebSocket, session: LiveSession) -> None:
+HAZARD_QUIET_S = 1.5  # sau hazard mức >= 2, chừng này giây im lặng mới được nói tiếp
+_HIGH_LEVEL = 2
+
+
+class _HazardClock:
+    """Lần cuối thấy hazard mức >= 2. Dùng chung vòng cảnh báo và người đọc `outbox`."""
+
+    def __init__(self) -> None:
+        self._last_high = -1e9
+
+    def mark(self) -> None:
+        self._last_high = time.monotonic()
+
+    def quiet(self) -> bool:
+        return time.monotonic() - self._last_high >= HAZARD_QUIET_S
+
+
+async def _speak_outbox(ws: WebSocket, session: LiveSession, clock: _HazardClock | None = None) -> None:
+    """Đọc `session.outbox` qua socket nhưng nhường đường cho cảnh báo vật cản.
+
+    Trên `WS /v2/session` khung hazard và audio trả lời dùng chung một socket (khoá gửi
+    chỉ giữ từng khung nên hazard chen được giữa hai khối 0x02). Người khiếm thị đang
+    nghe đọc lệnh thì tiếng đó không được che mất "xe máy phía trước": có hazard mức >= 2
+    trong HAZARD_QUIET_S thì chưa nói, và đang nói thì dừng ngay, đưa câu về đầu hàng
+    (đọc lại cả câu khi yên — thà nghe lại còn hơn nghe cụt).
+    """
+    clock = clock or _HazardClock()
+    retry: str | None = None
     while not session.closed.is_set():
-        try:
-            text = session.outbox.get_nowait()
-        except queue.Empty:
-            await asyncio.sleep(0.1)
+        text = retry
+        retry = None
+        if text is None:
+            try:
+                text = session.outbox.get_nowait()
+            except queue.Empty:
+                await asyncio.sleep(0.1)
+                continue
+        if not clock.quiet():
+            retry = text
+            await asyncio.sleep(0.05)
             continue
-        await speak_ws(ws, [text])
+        stream = speech.adpcm_stream([text])
+        interrupted = False
+        try:
+            async for chunk in stream:
+                if not clock.quiet():
+                    interrupted = True
+                    break
+                await ws.send_bytes(protocol.audio(chunk))
+        finally:
+            await stream.aclose()
+        if interrupted:
+            retry = text
 
 
 async def run(ws: WebSocket, session: LiveSession) -> None:
     box = _Mailbox()
     receiver = asyncio.create_task(receive_frames(ws, box, session))
-    talker = asyncio.create_task(_speak_outbox(ws, session))
+    clock = _HazardClock()
+    talker = asyncio.create_task(_speak_outbox(ws, session, clock))
     det = hazard.detector()
     tracker, anti = hazard.HazardTracker(), hazard.AntiAnnoy()
     frames, total_ms = 0, 0.0
@@ -60,6 +107,8 @@ async def run(ws: WebSocket, session: LiveSession) -> None:
                 continue
             started = time.perf_counter()
             result = await asyncio.to_thread(process_frame, det, tracker, frame)
+            if result.level >= _HIGH_LEVEL:
+                clock.mark()  # TRƯỚC khi gửi: audio outbox phải dừng ngay, hazard đi trước
             if anti.step(result.level):
                 await ws.send_text(protocol.hazard(result.level, result.dir, result.kind))
                 logger.info("hazard level=%d dir=%s kind=%s", result.level, result.dir, result.kind)
