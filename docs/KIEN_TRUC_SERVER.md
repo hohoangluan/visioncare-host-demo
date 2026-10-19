@@ -1,7 +1,7 @@
 # App server — kiến trúc và bản đồ mã nguồn
 
 Dành cho session sau: hệ thống có **hai server riêng biệt**, ở hai repo, hai cổng.
-Repo này (`Sever_test`) chỉ là một nửa. File này mô tả nửa còn lại — app server —
+Repo này (`visioncare-host-demo`, voice server) chỉ là một nửa. File này mô tả nửa còn lại — app server —
 và chỉ rõ chỗ nào sửa chức năng nào.
 
 `HUONG_DAN_SERVER.md` mô tả hợp đồng board ↔ voice server. File này mô tả tầng trên nó.
@@ -12,10 +12,10 @@ và chỉ rõ chỗ nào sửa chức năng nào.
 
 | | Voice server | App server |
 |---|---|---|
-| Repo | `d:\Study\innostar\Sever_test` (repo này) | `D:\Study\innostar\app_demo_backend\apps\backend` |
-| Cổng | **8000** (Windows demo) / **18888** (Linux GPU, sau Cloudflare tunnel) | **8001** |
+| Repo | `SeeVia_system/visioncare-host-demo` (repo này) | `SeeVia_system/app-demo-backend/server` (repo git riêng) |
+| Cổng | **8000** (Docker, `demo.sh`) / **18888** (GPU, sau Cloudflare tunnel) | **8001** |
 | Entry | `app.py` | `app.main:app`, chạy với `--app-dir src` |
-| Việc | STT → phân loại ý định → TTS, trả audio stream cho kính | Nhận lệnh điều khiển, đẩy xuống điện thoại qua FCM |
+| Việc | STT → phân loại ý định → TTS, trả audio stream cho kính | Nhận lệnh điều khiển, đẩy xuống điện thoại (`DELIVERY_TRANSPORT` = fcm / webhook / fake) |
 | Ngôn ngữ | Python / FastAPI | Python / FastAPI + SQLAlchemy + Postgres |
 
 Voice server v2 (kính nói chuyện qua `WS /v2/session`; xem `FIRMWARE_ENDPOINTS.md`):
@@ -30,17 +30,19 @@ Voice server v2 (kính nói chuyện qua `WS /v2/session`; xem `FIRMWARE_ENDPOIN
 
 Chạy app server:
 
-```powershell
-cd D:\Study\innostar\app_demo_backend\apps\backend
-.\.venv\Scripts\python.exe -m uvicorn app.main:app --app-dir src --host 0.0.0.0 --port 8001
+Cả demo (Postgres + app server :8001 + voice server :8000): `./demo.sh` ở `SeeVia_system/`
+(token lấy từ `SeeVia_system/.env`, nguồn duy nhất). Chạy riêng app server:
+
+```bash
+cd SeeVia_system/app-demo-backend/server
+uv run uvicorn app.main:app --app-dir src --host 0.0.0.0 --port 8001
 ```
 
 Hai chỗ dễ vấp:
 
 - `.env` của app server ghi `HTTP_PORT=8000`, nhưng cờ `--port 8001` trên dòng lệnh
   mới có hiệu lực. **Đừng sửa `.env` cho khớp** — voice server đang giữ cổng 8000.
-- `[WinError 10048] only one usage of each socket address` = **đã có instance chạy ở
-  8001**, không phải lỗi code. Kiểm tra: `Get-NetTCPConnection -LocalPort 8001 -State Listen`
+- `address already in use` = **đã có instance chạy ở 8001**, không phải lỗi code. Kiểm tra: `ss -ltnp | grep 8001`
 
 ---
 
@@ -50,19 +52,20 @@ Hai chỗ dễ vấp:
 Kính ESP32
    │  POST /process   (ảnh + audio)
    ▼
-Voice server :8000                          repo Sever_test
-   │  pipeline/stt.py           giọng nói -> text
-   │  pipeline/intent_local.py  text      -> intent + tham số
-   │  handlers/<action>.py      hỏi thêm nếu thiếu tham số
+Voice server :8000                          repo visioncare-host-demo
+   │  (v2: WS /v2/session, xem FIRMWARE_ENDPOINTS.md)
+   │  pipeline/stt_stream.py    giọng nói -> text
+   │  pipeline/intent_classifier.py text -> intent + tham số (làn D, ngưỡng 0,999)
+   │  pipeline/pending_action.py đọc lại, cửa sổ huỷ, hỏi thêm nếu thiếu tham số
    │  handlers/action_flow.py   run_action() gửi lệnh đi
    │  POST api/v1/service/...   {"song": ..., "request_id": ...}
    ▼
-App server :8001                            repo app_demo_backend
+App server :8001                            repo app-demo-backend/server
    │  api/service.py            nhận, chuẩn hoá tham số
    │  services/operation.py     ghi DB, trả 202 + request_id
-   │  workers/delivery.py       đẩy xuống điện thoại qua FCM
+   │  workers/delivery.py       đẩy xuống điện thoại (FCM hoặc webhook)
    ▼
-Android                                     apps/android
+Android                                     app-demo-backend/mobile
    │  actions/ActionRegistry.kt  chọn handler theo action
    │  media/SpotifyRemoteManager.kt (nhạc), ...
    ▼
@@ -78,7 +81,7 @@ Voice server  POST /internal/action-results  -> đọc kết quả thành lời
 
 ## 3. Bản đồ app server — sửa gì ở đâu
 
-Gốc: `D:\Study\innostar\app_demo_backend\apps\backend\src\app\`
+Gốc: `SeeVia_system/app-demo-backend/server/src/app/`
 
 | Cần sửa | File |
 |---|---|
@@ -95,7 +98,7 @@ Gốc: `D:\Study\innostar\app_demo_backend\apps\backend\src\app\`
 | Xác thực token Public/Device API | `auth.py`, `security.py` |
 | Bảng dữ liệu | `models/`, migration ở `alembic/` |
 
-Phía Android (`D:\Study\innostar\app_demo_backend\apps\android\app\src\main\java\com\youreyes\app\`):
+Phía Android (`SeeVia_system/app-demo-backend/mobile/app/src/main/java/com/youreyes/app/`, người dùng tự làm):
 
 | Cần sửa | File |
 |---|---|
