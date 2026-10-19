@@ -96,7 +96,7 @@ def world(monkeypatch):
     sessions.clear()
 
 
-def _gemma(intent, confidence=0.95):
+def _gemma(intent, confidence=0.9995):
     """Nhãn do Gemma gán (làn D chỉ tin nguồn này)."""
     result = clef.ClefResult(intent, confidence)
     result.source = "gemma"
@@ -335,7 +335,7 @@ def test_low_confidence_asks_back(world):
 def test_clef_backend_asks_back(world):
     rec, labels, calls = world
     rec.text = "GỌI CHO MẸ"
-    result = clef.ClefResult("contact_call", 0.99)
+    result = clef.ClefResult("contact_call", 0.9995)
     result.source = "clef"
     labels["gọi cho mẹ"] = result
     _turn("c1")
