@@ -133,6 +133,8 @@ class _Mailbox:
 
 
 async def receive_frames(ws: WebSocket, box: _Mailbox, session: LiveSession) -> None:
+    min_gap = 1.0 / config.LIVE_MAX_FPS if config.LIVE_MAX_FPS > 0 else 0.0
+    last = 0.0
     try:
         while not session.closed.is_set():
             msg = await ws.receive()
@@ -140,6 +142,11 @@ async def receive_frames(ws: WebSocket, box: _Mailbox, session: LiveSession) -> 
                 break
             data = msg.get("bytes")
             if data:
+                # Khung quá trần/quá fps: bỏ khung, KHÔNG đóng phiên (Task 9).
+                now = time.monotonic()
+                if len(data) > config.LIVE_MAX_FRAME_BYTES or now - last < min_gap:
+                    continue
+                last = now
                 frame = protocol.parse_frame(data)
                 if frame is not None:
                     box.put(frame)

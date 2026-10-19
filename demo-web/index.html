@@ -66,6 +66,12 @@
     </fieldset>
 
     <label class="field">
+      <span>Token thiết bị</span>
+      <input type="password" id="set-token" autocomplete="off" spellcheck="false">
+      <small>Trùng <code>VISIONCARE_DEVICE_CLIENT_TOKEN</code> của server.</small>
+    </label>
+
+    <label class="field">
       <span>Đường dẫn server</span>
       <input type="text" id="set-base" inputmode="url" autocomplete="off" spellcheck="false" placeholder="/api">
       <small>Mặc định <code>/api</code> — do <code>serve.py</code> chuyển tiếp tới server kính.</small>

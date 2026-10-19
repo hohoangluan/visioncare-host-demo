@@ -63,9 +63,15 @@ def _text_image(w=1600, h=1200) -> bytes:
     return cv2.imencode(".jpg", img, [cv2.IMWRITE_JPEG_QUALITY, 85])[1].tobytes()
 
 
+def _auth() -> dict:
+    """Token kính lấy từ biến môi trường (không bao giờ ghi vào code/log)."""
+    token = os.environ.get("VISIONCARE_DEVICE_CLIENT_TOKEN", "")
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
 async def one_turn(http: httpx.AsyncClient, base: str, name: str, audio: bytes, image: bytes) -> dict:
     turn = str(int(time.time() * 1000) % 10_000_000)
-    headers = {"X-Device-Id": "bench-glasses", "X-Turn-Id": turn, "X-Cue-Version": "2",
+    headers = {"X-Device-Id": "bench-glasses", **_auth(), "X-Turn-Id": turn, "X-Cue-Version": "2",
                "Accept": "audio/wav;codec=ima_adpcm"}
     marks: dict[str, float] = {}
 
@@ -129,7 +135,7 @@ async def nav_rtt(base: str, token: str, frame: bytes, frames: int = 40) -> dict
 
     url = base.replace("http", "ws", 1) + f"/v2/live?token={token}"
     rtts, sent_at = [], {}
-    async with websockets.connect(url, max_size=None) as ws:
+    async with websockets.connect(url, max_size=None, additional_headers=_auth()) as ws:
         await ws.send(json.dumps({"t": "hello", "device": "bench-glasses", "cue_version": 2}))
         print("  WS:", await ws.recv())
 

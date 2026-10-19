@@ -51,3 +51,38 @@ def no_prerendered_phrases():
 def no_v2_network_warm(monkeypatch):
     """`with TestClient(app)` chạy startup: không để nó bắt tay tới Clef/Gemma thật."""
     monkeypatch.setattr(config, "V2_WARM", False)
+
+
+TEST_DEVICE_TOKEN = "test-device-token"
+AUTO_TOKEN = True  # test guard tắt qua fixture `no_auto_token`
+
+
+@pytest.fixture(autouse=True)
+def device_token(monkeypatch):
+    """Token kính GIẢ cho test (không bao giờ dùng token thật) + rate limiter sạch.
+
+    Mọi request của `TestClient` (kể cả client dựng ở cấp module, trước khi fixture
+    chạy) tự mang `X-Device-Token` giả, để các test API cũ giữ nguyên assertion.
+    """
+    from starlette.testclient import TestClient
+
+    from pipeline import guard
+
+    monkeypatch.setattr(config, "VISIONCARE_DEVICE_CLIENT_TOKEN", TEST_DEVICE_TOKEN)
+    guard.reset()
+    original = TestClient.build_request
+
+    def build_request(self, *args, **kwargs):
+        request = original(self, *args, **kwargs)
+        if AUTO_TOKEN and "x-device-token" not in request.headers and "authorization" not in request.headers:
+            request.headers["x-device-token"] = TEST_DEVICE_TOKEN
+        return request
+
+    monkeypatch.setattr(TestClient, "build_request", build_request)
+    yield
+    guard.reset()
+
+
+@pytest.fixture
+def no_auto_token(monkeypatch):
+    monkeypatch.setattr(__import__("tests.conftest", fromlist=["x"]), "AUTO_TOKEN", False)

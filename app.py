@@ -14,14 +14,14 @@ import wave
 from collections.abc import Callable, Iterable, Iterator
 from itertools import chain
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket
-from fastapi.responses import Response, StreamingResponse
+from fastapi import Depends, FastAPI, File, HTTPException, Request, UploadFile, WebSocket
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from starlette.concurrency import run_in_threadpool
 
 import config
 from handlers import chat
 from models import vlm
-from pipeline import adpcm, cues, device_ctx, intent_local, phrases, router, stt, tts
+from pipeline import adpcm, cues, device_ctx, guard, intent_local, phrases, router, stt, tts
 from pipeline import turn as turn_v2
 from pipeline.image_buffer import image_buffer
 from pipeline.reply import Reply
@@ -196,6 +196,11 @@ def _dummy_wav() -> bytes:
     return buf.getvalue()
 
 
+@app.exception_handler(guard.GuardError)
+async def _guard_error(request: Request, exc: guard.GuardError) -> JSONResponse:
+    return JSONResponse({"error": exc.error}, status_code=exc.status)
+
+
 @app.on_event("startup")
 def preload_models() -> None:
     """Load STT/TTS và chạy thử mỗi model 1 lần.
@@ -207,6 +212,7 @@ def preload_models() -> None:
 
     Không còn model cục bộ nào cho ảnh: cả 4 handler đều đọc ảnh qua Gemini.
     """
+    guard.log_startup()
     stt._load_asr()
     stt.transcribe(_dummy_wav())
     intent_local.warm()
@@ -460,7 +466,7 @@ def _plan_for(response_format: str, idx: int) -> _Plan:
     )
 
 
-@app.post("/process")
+@app.post("/process", dependencies=[Depends(guard.turn_guard)])
 def process(
     request: Request,
     image: UploadFile | None = File(None),
@@ -598,10 +604,22 @@ async def warm_v2() -> None:
     logger.info("warm v2 xong %.2fs", time.monotonic() - started)
 
 
-@app.post("/v2/image", status_code=204)
+@app.post("/v2/image", status_code=204, dependencies=[Depends(guard.image_guard)])
 async def image_lane(request: Request) -> Response:
     """Làn ảnh (§5.1): JPEG lúc bấm nút -> Image Buffer trong RAM, trả 204 ngay."""
-    data = await request.body()
+    # Đọc theo stream và dừng ngay khi vượt trần: `await request.body()` sẽ gom
+    # cả body khổng lồ vào RAM trước khi ta kịp từ chối.
+    cap = config.DEVICE_MAX_IMAGE_BYTES
+    declared = request.headers.get("content-length")
+    if declared and declared.isdigit() and int(declared) > cap:
+        return JSONResponse({"error": "image too large"}, status_code=413)
+    parts, size = [], 0
+    async for chunk in request.stream():
+        size += len(chunk)
+        if size > cap:
+            return JSONResponse({"error": "image too large"}, status_code=413)
+        parts.append(chunk)
+    data = b"".join(parts)
     if data:
         image_buffer.put(_device_id(request.headers), request.headers.get("x-turn-id", ""), data)
     return Response(status_code=204)
@@ -657,7 +675,7 @@ async def _v2_response(reply: Reply, cue_ok: bool, response_format: str, release
     return StreamingResponse(body, media_type=plan.media_type, headers={**audio_headers, **headers})
 
 
-@app.post("/v2/turn")
+@app.post("/v2/turn", dependencies=[Depends(guard.turn_guard)])
 async def turn_lane(request: Request) -> Response:
     """Làn âm thanh (§5.2): ADPCM chunked trong lúc nói -> cue/live/audio. Luôn 200."""
     from handlers.action_flow import device_state
@@ -692,6 +710,11 @@ async def live_lane(ws: WebSocket, token: str = "") -> None:
     from lanes import nav_live, ocr_live
     from live.session import sessions
 
+    # Token kính trước, rồi mới tới token phiên một lần: sai/thiếu đều đóng 4401
+    # và không đụng tới `sessions` (không đốt token phiên của người khác).
+    if not guard.token_ok(ws.headers):
+        await ws.close(code=4401)
+        return
     session = sessions.claim(token)
     if session is None:
         await ws.close(code=4401)

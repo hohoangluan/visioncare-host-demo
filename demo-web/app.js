@@ -8,7 +8,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Cấu hình
 // ---------------------------------------------------------------------------
 
-const DEFAULTS = { mode: "live", base: "/api", facing: "environment", format: "audio/mpeg" };
+const DEFAULTS = { mode: "live", base: "/api", facing: "environment", format: "audio/mpeg", token: "" };
 // Quá 15 giây là không còn là một câu lệnh: STT của server tốn thời gian tỉ lệ
 // với độ dài audio, và quên bấm dừng sẽ treo cả lượt demo.
 const MAX_RECORD_MS = 15000;
@@ -301,7 +301,7 @@ async function runLive(wav, frame) {
     res = await fetch(`${settings.base}/process`, {
       method: "POST",
       body: form,
-      headers: { Accept: settings.format },
+      headers: { Accept: settings.format, ...(settings.token ? { "X-Device-Token": settings.token } : {}) },
     });
   } catch {
     throw new Error("Không kết nối được server. Kiểm tra server đang chạy hoặc đổi sang chế độ Mô phỏng.");
@@ -436,6 +436,7 @@ document.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("cli
 $("btn-settings").addEventListener("click", () => {
   dlg.querySelector(`input[name="mode"][value="${settings.mode}"]`).checked = true;
   $("set-base").value = settings.base;
+  $("set-token").value = settings.token;
   $("set-facing").value = settings.facing;
   $("set-format").value = settings.format;
   dlg.showModal();
@@ -445,6 +446,7 @@ $("set-save").addEventListener("click", () => {
   settings.mode = dlg.querySelector('input[name="mode"]:checked').value;
   settings.base = $("set-base").value.trim().replace(/\/+$/, "") || DEFAULTS.base;
   settings.facing = $("set-facing").value;
+  settings.token = $("set-token").value.trim();
   settings.format = $("set-format").value;
   saveSettings();
   checkHealth();

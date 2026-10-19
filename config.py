@@ -278,6 +278,15 @@ LLM_OCR_IMAGE_MAX_SIDE = int(get("LLM_OCR_IMAGE_MAX_SIDE", "1600"))
 # Clef (Cloudflare Workers AI) — phân loại intent cuối và trên partial.
 CLOUDFLARE_API_TOKEN = get("CLOUDFLARE_API_TOKEN", "")
 CLOUDFLARE_ACCOUNT_ID = get("CLOUDFLARE_ACCOUNT_ID", "")
+# Bảo vệ endpoint kính (Task 9): trần kích thước + rate limit qua tunnel công khai.
+# Token kính nằm ở VISIONCARE_DEVICE_CLIENT_TOKEN (rỗng = mọi endpoint kính trả 503).
+VISIONCARE_DEVICE_CLIENT_TOKEN = get("VISIONCARE_DEVICE_CLIENT_TOKEN", "")
+DEVICE_MAX_IMAGE_BYTES = int(get("DEVICE_MAX_IMAGE_BYTES", "2000000"))
+DEVICE_MAX_AUDIO_S = float(get("DEVICE_MAX_AUDIO_S", "30"))
+LIVE_MAX_FRAME_BYTES = int(get("LIVE_MAX_FRAME_BYTES", "300000"))
+DEVICE_TURNS_PER_MIN = float(get("DEVICE_TURNS_PER_MIN", "30"))
+DEVICE_IMAGES_PER_MIN = float(get("DEVICE_IMAGES_PER_MIN", "40"))
+LIVE_MAX_FPS = float(get("LIVE_MAX_FPS", "15"))
 CLEF_MODEL = get("CLEF_MODEL", "clef-flash")
 CLEF_MODEL_ID = get("CLEF_MODEL_ID", "@cf/cloudflare/clef-flash")
 CLEF_TIMEOUT_S = float(get("CLEF_TIMEOUT_S", "1"))

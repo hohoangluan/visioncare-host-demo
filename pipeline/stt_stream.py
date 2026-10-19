@@ -9,12 +9,16 @@ Khối ADPCM tự mang predictor/step index riêng nên giải từng khối nga
 256 byte là đúng y như giải cả file một lần.
 """
 
+import logging
 import struct
 import threading
 
 import numpy as np
 
+import config
 from pipeline import adpcm, stt
+
+logger = logging.getLogger("blind_assist")
 
 _FORMAT_PCM = 0x0001
 
@@ -51,6 +55,7 @@ class StreamingTranscriber:
         self._decoded_at = -1  # số mẫu ở lần giải gần nhất
         self._text = ""
         self.bytes_in = 0
+        self.capped = False
 
     # ── nhận audio ──────────────────────────────────────────────────────
 
@@ -83,7 +88,13 @@ class StreamingTranscriber:
         return False
 
     def feed(self, data: bytes) -> None:
-        if not data:
+        if not data or self.capped:
+            return
+        # Trần audio (Task 9): quá DEVICE_MAX_AUDIO_S thì ngừng nhận, lượt kết
+        # thúc với phần đã có — chặn buffer phình vô hạn từ kẻ giữ nút mãi.
+        if self._n_samples >= config.DEVICE_MAX_AUDIO_S * (self._rate or 1):
+            self.capped = True
+            logger.warning("audio vượt %.0fs: bỏ phần còn lại", config.DEVICE_MAX_AUDIO_S)
             return
         self.bytes_in += len(data)
         with self._lock:
