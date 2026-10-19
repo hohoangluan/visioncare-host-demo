@@ -167,38 +167,6 @@ STT_MODEL_DIR = get("STT_MODEL_DIR", "./models/stt")
 # Thêm nữa còn phản tác dụng — 8 luồng chậm hơn cả 1 luồng vì tranh nhau lõi.
 STT_NUM_THREADS = int(get("STT_NUM_THREADS", "2"))
 
-# ── Phân loại ý định chạy cục bộ (SetFit + ONNX int8) ────────────────────
-#
-# Đứng TRƯỚC Gemini chứ không thay Gemini: câu nào đủ chắc thì xong trong ~8ms,
-# câu nào không chắc thì vẫn rơi xuống Gemini. Dựng model bằng
-# `tools/train_intent_setfit.py`; chưa có model thì mọi câu đi đường Gemini.
-INTENT_LOCAL_ENABLED = get("INTENT_LOCAL_ENABLED", "1") != "0"
-INTENT_LOCAL_DIR = get("INTENT_LOCAL_DIR", "./models/intent_encoder")
-INTENT_LOCAL_NUM_THREADS = int(get("INTENT_LOCAL_NUM_THREADS", "2"))
-
-# Hai ngưỡng, đo trên tập eval 236 câu (bảng đầy đủ trong README):
-#   conf>=0.50 biên>=0.15  nhận 98.3%  đúng 94.8%  (12 câu sai mà vẫn nhận)
-#   conf>=0.70 biên>=0.35  nhận 95.8%  đúng 96.0%  ( 9 câu)
-#   conf>=0.80 biên>=0.50  nhận 93.2%  đúng 96.4%  ( 8 câu)
-#   conf>=0.90 biên>=0.70  nhận 14.0%  đúng 100%   ( 0 câu)
-#
-# Chọn 0.80/0.50: điểm cuối cùng trước cái vực giữa 0.80 và 0.90 (93.2% rơi
-# thẳng xuống 14.0%), nên siết thêm một nấc là mất gần hết phần lợi về tốc độ.
-#
-# Cần CẢ HAI, không phải một. Xác suất cao vẫn có thể là "hai nhãn cùng cao" —
-# đúng tình huống `nav_stop` tranh với `music_stop`. Biên hẹp nghĩa là model
-# đang lưỡng lự, và đó là lúc phải hỏi Gemini chứ không phải lấy cái nhỉnh hơn.
-INTENT_LOCAL_MIN_CONF = float(get("INTENT_LOCAL_MIN_CONF", "0.50"))
-INTENT_LOCAL_MIN_MARGIN = float(get("INTENT_LOCAL_MIN_MARGIN", "0.15"))
-
-# Ngưỡng riêng cho các head THAM SỐ (chat needs_location/needs_web,
-# music_volume direction, ride_confirm confirm). Chúng là bài nhị phân nên xác
-# suất trải khác hẳn head 16 nhãn — dùng chung ngưỡng là sai loại bài.
-#
-# Không chắc thì rơi xuống Gemini y như hôm nay, nên đặt chặt không gây hại gì
-# ngoài việc mất phần lợi tốc độ. Đặt lỏng mới nguy: đọc sai `needs_web` là
-# Gemini trả lời thời tiết bằng thứ nó tự bịa.
-INTENT_LOCAL_PARAM_MIN_CONF = float(get("INTENT_LOCAL_PARAM_MIN_CONF", "0.75"))
 TTS_VOICE = get("TTS_VOICE", "Ngọc Linh")
 TTS_STYLE = get("TTS_STYLE", "tu_nhien")
 

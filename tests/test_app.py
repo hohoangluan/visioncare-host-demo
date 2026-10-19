@@ -1,3 +1,4 @@
+import asyncio
 import inspect
 import io
 import logging
@@ -19,6 +20,8 @@ import config
 from app import app, _stream_audio
 from app import process as process_endpoint
 from pipeline import tts
+from pipeline.image_buffer import image_buffer
+from tests.conftest import fake_turn
 
 
 client = TestClient(app)
@@ -69,6 +72,18 @@ def _fake_pcm_stream(text_chunks):
     yield b"\x03\x04" * 100
 
 
+def _consuming_pcm_stream(text_chunks):
+    """Như `_fake_pcm_stream` nhưng đọc hết text (để lượt v2 giả chạy tới cùng)."""
+    "".join(text_chunks)
+    yield from _fake_pcm_stream(text_chunks)
+
+
+@pytest.fixture(autouse=True)
+def _clean_image_buffer():
+    image_buffer.clear()  # turn id `process-<n>` đếm lại từ 1 ở mỗi thư mục debug mới
+    yield
+
+
 def test_health():
     response = client.get("/health")
     assert response.status_code == 200
@@ -114,7 +129,7 @@ def test_startup_does_not_load_any_local_ocr_model():
 
 
 def test_process_streams_raw_pcm_without_wav_header(stream_mode):
-    with patch("pipeline.router.resolve_speech", return_value=iter(["xin chào"])), patch(
+    with fake_turn(["xin chào"]), patch(
         "pipeline.tts.synthesize_text_stream", _fake_pcm_stream
     ):
         response = client.post("/process", files=_files())
@@ -133,7 +148,7 @@ def test_stream_headers_carry_everything_client_needs(stream_mode, monkeypatch):
     """
     monkeypatch.setattr(config, "AUDIO_PREROLL_SECONDS", 2.0)
 
-    with patch("pipeline.router.resolve_speech", return_value=iter(["xin chào"])), patch(
+    with fake_turn(["xin chào"]), patch(
         "pipeline.tts.synthesize_text_stream", _fake_pcm_stream
     ):
         response = client.post("/process", files=_files())
@@ -152,7 +167,7 @@ def test_stream_headers_carry_everything_client_needs(stream_mode, monkeypatch):
 def test_preroll_header_follows_config(stream_mode, monkeypatch):
     monkeypatch.setattr(config, "AUDIO_PREROLL_SECONDS", 3.5)
 
-    with patch("pipeline.router.resolve_speech", return_value=iter(["xin chào"])), patch(
+    with fake_turn(["xin chào"]), patch(
         "pipeline.tts.synthesize_text_stream", _fake_pcm_stream
     ):
         response = client.post("/process", files=_files())
@@ -161,7 +176,7 @@ def test_preroll_header_follows_config(stream_mode, monkeypatch):
 
 
 def test_process_declares_pcm_format_in_header(stream_mode):
-    with patch("pipeline.router.resolve_speech", return_value=iter(["xin chào"])), patch(
+    with fake_turn(["xin chào"]), patch(
         "pipeline.tts.synthesize_text_stream", _fake_pcm_stream
     ):
         response = client.post("/process", files=_files())
@@ -176,10 +191,10 @@ def test_process_returns_streaming_response_not_buffered_body(stream_mode):
     thứ quyết định MCU nghe sớm hay phải chờ. (Kiểm qua TestClient không được:
     nó gom cả body rồi mới trả, che mất tính tuần tự.)
     """
-    with patch("pipeline.router.resolve_speech", return_value=iter(["xin chào"])), patch(
+    with fake_turn(["xin chào"]), patch(
         "pipeline.tts.synthesize_text_stream", _fake_pcm_stream
     ):
-        response = process_endpoint(_request(), image=None, audio=None)
+        response = asyncio.run(process_endpoint(_request(), image=None, audio=None))
 
     assert isinstance(response, StreamingResponse)
     # Starlette bọc sync generator bằng iterate_in_threadpool -> TTS chạy ở
@@ -213,8 +228,8 @@ def test_stream_pcm_yields_each_chunk_before_synthesizing_the_next(tmp_path, mon
     assert rest == [b"\x01\x01", b"\x02\x02"]
 
 
-def test_process_speaks_text_from_router(stream_mode):
-    with patch("pipeline.router.resolve_speech", return_value=iter(["nội dung ", "đọc"])), patch(
+def test_process_speaks_text_from_turn(stream_mode):
+    with fake_turn(["nội dung ", "đọc"]), patch(
         "pipeline.tts.synthesize_text_stream", side_effect=_fake_pcm_stream
     ) as mock_stream:
         client.post("/process", files=_files())
@@ -223,32 +238,46 @@ def test_process_speaks_text_from_router(stream_mode):
     assert spoken == f"{app_module._RECEIVED_MESSAGE}\nnội dung đọc"
 
 
-def test_process_speaks_received_message_before_running_anything(stream_mode):
-    """Câu chào phải ra TRƯỚC khi STT/Gemini chạy, không phải sau.
+def test_process_speaks_received_message_before_the_turn_finishes(stream_mode):
+    """Câu chào phải ra TRƯỚC khi lượt v2 (STT/Clef/Gemma) xong, không phải sau.
 
     Đây là toàn bộ lý do nó tồn tại: người khiếm thị bấm gửi xong không có gì để
     nhìn, im lặng vài giây đầu không phân biệt được với "gửi hụt, bấm lại đi".
-    Kéo `resolve_speech` trước rồi mới nói thì câu chào tới sau đúng quãng im
-    lặng mà nó sinh ra để xoá.
+    Lượt giả ở đây CHỜ cho tới khi câu chào đã được đưa vào TTS; nếu server chờ
+    lượt xong rồi mới nói câu chào thì nó hết giờ và test hỏng.
     """
+    import threading
+
+    from pipeline.reply import Reply
+    from pipeline.turn import TurnResult
+
+    opened = threading.Event()
     order = []
 
-    def slow_resolve(image, audio, opening_seconds=0.0):
-        order.append("resolve")
+    def speech():
+        order.append("turn_speech")
         yield "kết quả"
 
     def recording_tts(text_chunks):
         for chunk in text_chunks:
             order.append(chunk)
+            opened.set()
             yield b"\x01\x02" * 100
 
-    with patch("pipeline.router.resolve_speech", slow_resolve), patch(
+    async def slow_run(device, turn_id, content_type, body, state, **kwargs):
+        async for _ in body:
+            pass
+        assert await asyncio.to_thread(opened.wait, 5), "câu chào không ra trước khi lượt xong"
+        return TurnResult(Reply(speech=speech()))
+
+    with patch("pipeline.turn.run", slow_run), patch(
         "pipeline.tts.synthesize_text_stream", recording_tts
     ):
-        client.post("/process", files=_files())
+        response = client.post("/process", files=_files())
 
+    assert response.status_code == 200
     assert order[0] == f"{app_module._RECEIVED_MESSAGE}\n"
-    assert order[1] == "resolve"
+    assert order[1] == "turn_speech"
 
 
 def test_process_missing_image_still_streams_pcm(stream_mode):
@@ -276,7 +305,7 @@ def test_process_pipeline_error_still_streams_error_speech(stream_mode):
         spoken.append("".join(text_chunks))
         yield b"\x01\x02" * 100
 
-    with patch("pipeline.router.resolve_speech", side_effect=RuntimeError("boom")), patch(
+    with fake_turn(error=RuntimeError("boom")), patch(
         "pipeline.tts.synthesize_text_stream", capture
     ):
         response = client.post("/process", files=_files())
@@ -286,7 +315,7 @@ def test_process_pipeline_error_still_streams_error_speech(stream_mode):
     assert spoken == ["Có lỗi xảy ra, vui lòng thử lại"]
 
 
-def test_process_streams_error_speech_when_gemini_fails_on_first_piece(stream_mode):
+def test_process_streams_error_speech_when_model_fails_on_first_piece(stream_mode):
     """Gemini 503 nổ lúc kéo mảnh text đầu — vẫn phải đổi thành câu báo lỗi.
 
     Với Gemini streaming, lệnh gọi API chỉ thật sự chạy khi có người kéo mảnh
@@ -295,15 +324,15 @@ def test_process_streams_error_speech_when_gemini_fails_on_first_piece(stream_mo
     """
     spoken = []
 
-    def failing_text(image, audio):
+    def failing_text():
         raise RuntimeError("503 UNAVAILABLE")
-        yield  # pragma: no cover - để hàm này là generator, giống router thật
+        yield  # pragma: no cover - để hàm này là generator, giống reply thật
 
     def capture(text_chunks):
         spoken.append("".join(text_chunks))
         yield b"\x01\x02" * 100
 
-    with patch("pipeline.router.resolve_speech", failing_text), patch(
+    with fake_turn(failing_text), patch(
         "pipeline.tts.synthesize_text_stream", capture
     ):
         response = client.post("/process", files=_files())
@@ -322,7 +351,7 @@ def test_wav_mode_returns_complete_playable_file(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "STORAGE_DIR", str(tmp_path))
     monkeypatch.setattr(config, "RESPONSE_FORMAT", "wav")
 
-    with patch("pipeline.router.resolve_speech", return_value=iter(["xin chào"])), patch(
+    with fake_turn(["xin chào"]), patch(
         "pipeline.tts.synthesize_text_stream", _fake_pcm_stream
     ):
         response = client.post("/process", files=_files())
@@ -342,7 +371,7 @@ def test_wav_mode_sets_content_length(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "STORAGE_DIR", str(tmp_path))
     monkeypatch.setattr(config, "RESPONSE_FORMAT", "wav")
 
-    with patch("pipeline.router.resolve_speech", return_value=iter(["xin chào"])), patch(
+    with fake_turn(["xin chào"]), patch(
         "pipeline.tts.synthesize_text_stream", _fake_pcm_stream
     ):
         response = client.post("/process", files=_files())
@@ -360,7 +389,7 @@ def test_wav_mode_still_speaks_errors(tmp_path, monkeypatch):
         spoken.append("".join(text_chunks))
         yield b"\x01\x02" * 100
 
-    with patch("pipeline.router.resolve_speech", side_effect=RuntimeError("boom")), patch(
+    with fake_turn(error=RuntimeError("boom")), patch(
         "pipeline.tts.synthesize_text_stream", capture
     ):
         response = client.post("/process", files=_files())
@@ -374,7 +403,7 @@ def test_stream_mode_unchanged(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "STORAGE_DIR", str(tmp_path))
     monkeypatch.setattr(config, "RESPONSE_FORMAT", "pcm_stream")
 
-    with patch("pipeline.router.resolve_speech", return_value=iter(["xin chào"])), patch(
+    with fake_turn(["xin chào"]), patch(
         "pipeline.tts.synthesize_text_stream", _fake_pcm_stream
     ):
         response = client.post("/process", files=_files())
@@ -446,7 +475,7 @@ def test_preroll_zero_sends_immediately(tmp_path, monkeypatch):
         assert next(stream) == b"\x01\x02"
 
 
-def test_process_streams_error_speech_when_gemini_dies_before_any_audio():
+def test_process_streams_error_speech_when_model_dies_before_any_audio():
     """Gemini rớt sau mảnh text đầu nhưng trước khi TTS kịp sinh byte nào.
 
     Đúng tình huống của request120: mất mạng giữa chừng, chưa mảnh text nào
@@ -455,7 +484,7 @@ def test_process_streams_error_speech_when_gemini_dies_before_any_audio():
     """
     spoken = []
 
-    def dying_text(image, audio):
+    def dying_text():
         yield "Trước mặt bạn"  # chưa có dấu chấm -> chưa thành câu, chưa có PCM
         raise RuntimeError("SSL: CERTIFICATE_VERIFY_FAILED")
 
@@ -465,7 +494,7 @@ def test_process_streams_error_speech_when_gemini_dies_before_any_audio():
 
     # Không patch synthesize_text_stream: cần đúng hành vi gom câu thật thì
     # mới tái hiện được "có text rồi nhưng chưa ra byte audio nào".
-    with patch("pipeline.router.resolve_speech", dying_text), patch(
+    with fake_turn(dying_text), patch(
         "pipeline.tts.synthesize_stream", fake_sentence_tts
     ):
         response = client.post("/process", files=_files())
@@ -489,7 +518,7 @@ def test_stream_pcm_reraises_error_raised_before_first_chunk(tmp_path, monkeypat
             next(stream)
 
 
-def test_process_does_not_drain_gemini_before_streaming(stream_mode, tmp_path, monkeypatch):
+def test_process_does_not_drain_reply_before_streaming(stream_mode, tmp_path, monkeypatch):
     """Chỉ kéo đủ để bắt lỗi sớm, không gom hết rồi mới phát.
 
     Tắt đệm để kiểm riêng điểm này — có đệm thì lượng kéo do số giây audio
@@ -499,29 +528,29 @@ def test_process_does_not_drain_gemini_before_streaming(stream_mode, tmp_path, m
     monkeypatch.setattr(config, "AUDIO_PREROLL_SECONDS", 0.0)
     pulled = []
 
-    def counting_text(image, audio):
+    def counting_text():
         for piece in ["một. ", "hai. ", "ba."]:
             pulled.append(piece)
             yield piece
 
     def one_sentence_then_stop(text_chunks):
-        """Mô phỏng TTS: đọc text tới khi đủ một câu rồi trả PCM."""
+        """Mô phỏng TTS: đọc text tới khi đủ một câu (chấm hoặc xuống dòng) rồi trả PCM."""
         for text in text_chunks:
-            if text.strip().endswith("."):
+            if text.endswith(("\n", ". ", ".")):
                 yield b"\x01\x02" * 100
 
-    with patch("pipeline.router.resolve_speech", counting_text), patch(
+    with fake_turn(counting_text), patch(
         "pipeline.tts.synthesize_text_stream", one_sentence_then_stop
     ):
-        process_endpoint(
+        asyncio.run(process_endpoint(
             _request(),
             image=UploadFile(file=io.BytesIO(b"fake img"), filename="i.jpg"),
             audio=UploadFile(file=io.BytesIO(_wav_bytes()), filename="a.wav"),
-        )
+        ))
 
-    # Byte đầu tới từ câu chào (đứng trước `resolve_speech`), nên lúc đó chưa
-    # kéo mảnh nào của Gemini. Điều cần giữ là "không gom hết 3 mảnh rồi mới
-    # phát" — kéo hết mới là hỏng.
+    # Byte đầu tới từ câu chào (đứng trước câu trả lời của lượt), nên lúc đó chưa
+    # kéo mảnh nào của câu trả lời. Điều cần giữ là "không gom hết 3 mảnh rồi
+    # mới phát" — kéo hết mới là hỏng.
     assert pulled == [], f"đã kéo {len(pulled)} mảnh trước khi stream"
 
 
@@ -543,7 +572,7 @@ def test_process_logs_time_to_first_byte_and_total(stream_mode, caplog, tmp_path
         yield b"\x00\x00"
 
     with caplog.at_level(logging.INFO, logger="blind_assist"):
-        with patch("pipeline.router.resolve_speech", return_value=iter(["xin chào"])), patch(
+        with fake_turn(["xin chào"]), patch(
             "pipeline.tts.synthesize_text_stream", slow_stream
         ):
             client.post("/process", files=_files())
@@ -559,13 +588,18 @@ def test_process_logs_time_spent_before_streaming_starts(stream_mode, caplog, tm
     """Tách phần STT/OCR/Gemini ra khỏi phần TTS để biết chỗ nào tốn giây."""
     monkeypatch.setattr(config, "STORAGE_DIR", str(tmp_path))
 
-    def slow_resolve(image, audio, opening_seconds=0.0):
-        time.sleep(0.2)
-        return "xin chào"
+    from pipeline.reply import Reply
+    from pipeline.turn import TurnResult
+
+    async def slow_run(device, turn_id, content_type, body, state, **kwargs):
+        async for _ in body:
+            pass
+        await asyncio.sleep(0.2)  # STT/Clef/Gemma của lượt
+        return TurnResult(Reply(speech=["xin chào"]))
 
     with caplog.at_level(logging.INFO, logger="blind_assist"):
-        with patch("pipeline.router.resolve_speech", slow_resolve), patch(
-            "pipeline.tts.synthesize_text_stream", _fake_pcm_stream
+        with patch("pipeline.turn.run", slow_run), patch(
+            "pipeline.tts.synthesize_text_stream", _consuming_pcm_stream
         ):
             client.post("/process", files=_files())
 
@@ -580,7 +614,7 @@ def test_process_logs_audio_duration(stream_mode, caplog, tmp_path, monkeypatch)
         yield b"\x00\x00" * tts.OUTPUT_SAMPLE_RATE
 
     with caplog.at_level(logging.INFO, logger="blind_assist"):
-        with patch("pipeline.router.resolve_speech", return_value=iter(["xin chào"])), patch(
+        with fake_turn(["xin chào"]), patch(
             "pipeline.tts.synthesize_text_stream", one_second_of_audio
         ):
             client.post("/process", files=_files())
@@ -591,7 +625,7 @@ def test_process_logs_audio_duration(stream_mode, caplog, tmp_path, monkeypatch)
 def test_process_saves_streamed_audio_as_wav_for_debug(stream_mode, tmp_path, monkeypatch):
     monkeypatch.setattr(config, "STORAGE_DIR", str(tmp_path))
 
-    with patch("pipeline.router.resolve_speech", return_value=iter(["xin chào"])), patch(
+    with fake_turn(["xin chào"]), patch(
         "pipeline.tts.synthesize_text_stream", _fake_pcm_stream
     ):
         client.post("/process", files=_files())
@@ -622,7 +656,7 @@ def test_process_error_midstream_appends_error_speech(stream_mode, monkeypatch):
         yield b"\x01\x02" * 100
         raise RuntimeError("TTS chết giữa chừng")
 
-    with patch("pipeline.router.resolve_speech", return_value=iter(["xin chào"])), patch(
+    with fake_turn(["xin chào"]), patch(
         "pipeline.tts.synthesize_text_stream", failing_stream
     ):
         response = client.post("/process", files=_files())
@@ -656,7 +690,7 @@ def test_process_mp3_stream_sets_content_type_and_headers(mp3_mode, tmp_path, mo
     monkeypatch.setattr(config, "STORAGE_DIR", str(tmp_path))
     monkeypatch.setattr(config, "AUDIO_PREROLL_SECONDS", 0.0)
 
-    with patch("pipeline.router.resolve_speech", return_value=iter(["xin chào"])), patch(
+    with fake_turn(["xin chào"]), patch(
         "pipeline.tts.synthesize_text_stream", lambda t: iter([_pcm_seconds(0.3)])
     ):
         response = client.post("/process", files=_files())
@@ -677,7 +711,7 @@ def test_process_mp3_stream_saves_debug_file_as_mp3(mp3_mode, tmp_path, monkeypa
     monkeypatch.setattr(config, "STORAGE_DIR", str(tmp_path))
     monkeypatch.setattr(config, "AUDIO_PREROLL_SECONDS", 0.0)
 
-    with patch("pipeline.router.resolve_speech", return_value=iter(["xin chào"])), patch(
+    with fake_turn(["xin chào"]), patch(
         "pipeline.tts.synthesize_text_stream", lambda t: iter([_pcm_seconds(0.3)])
     ):
         client.post("/process", files=_files())
@@ -720,7 +754,7 @@ def test_error_during_preroll_speaks_error_instead_of_a_blip(tmp_path, monkeypat
         if len(spoken) == 1:
             raise RuntimeError("TTS chết giữa chừng")
 
-    with patch("pipeline.router.resolve_speech", return_value=iter(["xin chào"])), patch(
+    with fake_turn(["xin chào"]), patch(
         "pipeline.tts.synthesize_text_stream", dies_during_preroll
     ):
         response = client.post("/process", files=_files())
@@ -738,26 +772,33 @@ def _flat_jpeg(color: int) -> bytes:
     return buf.getvalue()
 
 
-def test_process_passes_bad_image_through_to_the_router(stream_mode, tmp_path, monkeypatch):
+def test_process_hands_image_and_audio_to_the_turn(stream_mode, tmp_path, monkeypatch):
     """`app.py` KHÔNG được tự chặn theo chất lượng ảnh.
 
     Ở đây chưa biết người dùng hỏi gì, mà cùng một tấm ảnh tối có thể là vô dụng
     ("đọc chữ giùm tôi") hoặc hoàn toàn không liên quan ("gọi cho mẹ"). Quyết
-    định đó thuộc về `pipeline/router.py`, sau khi đã có intent.
+    định đó thuộc về Final Router (`image_quality`), sau khi đã có intent.
     """
     monkeypatch.setattr(config, "STORAGE_DIR", str(tmp_path))
+    image = _flat_jpeg(10)
     files = {
-        "image": ("i.jpg", _flat_jpeg(10), "image/jpeg"),
+        "image": ("i.jpg", image, "image/jpeg"),
         "audio": ("a.wav", _wav_bytes(), "audio/wav"),
     }
 
-    with patch(
-        "pipeline.router.resolve_speech", return_value=iter(["đang gọi"])
-    ) as mock_resolve, patch("pipeline.tts.synthesize_text_stream", _fake_pcm_stream):
+    with fake_turn(["đang gọi"]) as calls, patch(
+        "pipeline.tts.synthesize_text_stream", _fake_pcm_stream
+    ):
         response = client.post("/process", files=files)
 
     assert response.status_code == 200
-    mock_resolve.assert_called_once()
+    assert len(calls) == 1
+    call = calls[0]
+    assert call["turn_id"].startswith("process-")
+    assert call["body"] == _wav_bytes()
+    assert call["single_shot"] is True and call["transport"] == "process"
+    entry = image_buffer.get(call["device"], call["turn_id"])
+    assert entry is not None and entry.jpeg == image
 
 
 def test_process_works_without_any_image(stream_mode, tmp_path, monkeypatch):
@@ -765,14 +806,14 @@ def test_process_works_without_any_image(stream_mode, tmp_path, monkeypatch):
     monkeypatch.setattr(config, "STORAGE_DIR", str(tmp_path))
     files = {"audio": ("a.wav", _wav_bytes(), "audio/wav")}
 
-    with patch(
-        "pipeline.router.resolve_speech", return_value=iter(["đang gọi cho mẹ"])
-    ) as mock_resolve, patch("pipeline.tts.synthesize_text_stream", _fake_pcm_stream):
+    with fake_turn(["đang gọi cho mẹ"]) as calls, patch(
+        "pipeline.tts.synthesize_text_stream", _fake_pcm_stream
+    ):
         response = client.post("/process", files=files)
 
     assert response.status_code == 200
-    mock_resolve.assert_called_once()
-    assert mock_resolve.call_args[0][0] is None
+    assert len(calls) == 1
+    assert image_buffer.get(calls[0]["device"], calls[0]["turn_id"]) is None
 
 
 def test_process_needs_audio(tmp_path, monkeypatch):
@@ -785,33 +826,8 @@ def test_process_needs_audio(tmp_path, monkeypatch):
         spoken.append("".join(text_chunks))
         yield b"\x01\x02" * 100
 
-    with patch("pipeline.router.resolve_speech") as mock_resolve, patch(
-        "pipeline.tts.synthesize_stream", capture
-    ):
+    with fake_turn() as calls, patch("pipeline.tts.synthesize_stream", capture):
         client.post("/process", files=files)
 
-    mock_resolve.assert_not_called()
+    assert calls == []
     assert spoken == ["Không nhận được âm thanh, vui lòng nói lại."]
-
-
-def test_process_calls_router_normally_when_image_quality_is_fine(
-    stream_mode, tmp_path, monkeypatch
-):
-    """Ảnh không decode được (như 'fake img' ở test khác) hoặc đạt chuẩn vẫn đi tiếp bình thường."""
-    monkeypatch.setattr(config, "STORAGE_DIR", str(tmp_path))
-    rng = np.random.default_rng(0)
-    normal = np.clip(rng.normal(120, 60, (100, 100)), 0, 255).astype(np.uint8)
-    buf = io.BytesIO()
-    Image.fromarray(normal, mode="L").save(buf, format="JPEG")
-    files = {
-        "image": ("i.jpg", buf.getvalue(), "image/jpeg"),
-        "audio": ("a.wav", _wav_bytes(), "audio/wav"),
-    }
-
-    with patch(
-        "pipeline.router.resolve_speech", return_value=iter(["xin chào"])
-    ) as mock_resolve, patch("pipeline.tts.synthesize_text_stream", _fake_pcm_stream):
-        response = client.post("/process", files=files)
-
-    assert response.status_code == 200
-    mock_resolve.assert_called_once()

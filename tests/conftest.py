@@ -1,3 +1,6 @@
+from contextlib import contextmanager
+from unittest.mock import patch
+
 import pytest
 
 import config
@@ -13,22 +16,6 @@ def isolated_phrase_cache_dir(tmp_path, monkeypatch):
     đáng lẽ phát ngay — hỏng trong im lặng, không lỗi, không log. Đã dính rồi.
     """
     monkeypatch.setattr(config, "PHRASE_CACHE_DIR", str(tmp_path / "tts_phrases"))
-
-
-@pytest.fixture(autouse=True)
-def local_intent_disabled(monkeypatch):
-    """Mặc định TẮT bộ phân loại ý định cục bộ trong test.
-
-    Nó đứng trước Gemini và tự trả lời những câu nó chắc, nên bật mặc định thì
-    mọi test đang kiểm đường Gemini bỗng không còn gọi Gemini nữa — và chúng
-    thất bại ở một chỗ chẳng liên quan gì tới thứ chúng kiểm. Tệ hơn: kết quả
-    phụ thuộc việc máy chạy test có sẵn file model 278MB hay không, nên cùng một
-    commit sẽ xanh trên máy này và đỏ trên máy khác.
-
-    Test nào muốn đường cục bộ thì tự thay `intent_local.classify` bằng bản giả
-    (xem `tests/test_intent_local.py`) — không phụ thuộc model thật.
-    """
-    monkeypatch.setattr(config, "INTENT_LOCAL_ENABLED", False)
 
 
 @pytest.fixture(autouse=True)
@@ -86,3 +73,31 @@ def device_token(monkeypatch):
 @pytest.fixture
 def no_auto_token(monkeypatch):
     monkeypatch.setattr(__import__("tests.conftest", fromlist=["x"]), "AUTO_TOKEN", False)
+
+
+@contextmanager
+def fake_turn(speech=("xin chào",), cues=(), error=None, reply=None):
+    """Thay `turn.run` bằng lượt giả: `/process` giờ chạy pipeline v2 (Task 12).
+
+    `speech`: list các mảnh text, hoặc hàm không đối số trả generator (để mô phỏng
+    mảnh text nổ giữa chừng / kéo lười). `error`: ngoại lệ ném ra từ `turn.run`.
+    Trả danh sách các lần gọi (device, turn_id, content_type, body đã gom, state, kwargs).
+    """
+    from pipeline.reply import Reply
+    from pipeline.turn import TurnResult
+
+    calls = []
+
+    async def run(device, turn_id, content_type, body, state, **kwargs):
+        data = b"".join([chunk async for chunk in body])
+        calls.append({"device": device, "turn_id": turn_id, "content_type": content_type,
+                      "body": data, "state": state, **kwargs})
+        if error is not None:
+            raise error
+        if reply is not None:
+            return TurnResult(reply)
+        pieces = speech() if callable(speech) else list(speech)
+        return TurnResult(Reply(cues=list(cues), speech=pieces))
+
+    with patch("pipeline.turn.run", run):
+        yield calls

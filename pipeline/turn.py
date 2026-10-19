@@ -121,6 +121,7 @@ async def run(
     device: str, turn_id: str, content_type: str | None, body: AsyncIterator[bytes],
     device_state: dict, gen: int | None = None, on_cancel: Callable[[], None] | None = None,
     transport: str = "post", glasses: dict | None = None,
+    single_shot: bool = False,
 ) -> TurnResult:
     """`glasses`: dict mốc kính (t_press_ms/t_release_ms) do phiên điền; đọc lúc ghi metrics."""
     device_ctx.turn.set(turn_id)  # mọi log của lượt (kể cả thread nền copy context) mang turn id
@@ -144,6 +145,9 @@ async def run(
     early = EarlyIntent(device_state, on_guess=prewarmer.on_guess)
     stop = asyncio.Event()
     ctx = TurnContext(device, turn_id, prewarmer, loop)
+    # `/process` (firmware cũ): toàn bộ lượt trong một request HTTP, không mở live.
+    ctx.single_shot = single_shot
+    prewarmer.live_ok = not single_shot
     ctx.gen = pending_action.generation(device) if gen is None else gen
     ef = _EarlyFinal() if segmenter is not None and config.VAD_EARLY_FINAL else None
     partials = loop.create_task(_partial_loop(transcriber, early, stop, ctx, ef))

@@ -25,6 +25,7 @@ logger = logging.getLogger("blind_assist")
 class Prewarmer:
     def __init__(self, device: str, turn_id: str) -> None:
         self.device, self.turn_id = device, turn_id
+        self.live_ok = True  # False ở `/process`: không có WS nên không tạo phiên live
         self.live: dict[str, LiveSession] = {}  # "ocr"|"nav" -> phiên đã tạo sẵn
         self.ocr_assessment: asyncio.Task | None = None
         self._done: set[str] = set()
@@ -66,12 +67,14 @@ class Prewarmer:
         if lane == "A" and not (intent == "ocr" and mode == "reread"):
             self._spawn(self._warm_llm_vision(intent))
         elif lane == "B" and intent == "ocr":
-            self.session("ocr")
-            self.assess_buffer()
+            if self.live_ok:
+                self.session("ocr")
+                self.assess_buffer()
         elif lane == "B" and intent in ("money", "find"):
             self._spawn(self._warm_llm_vision(intent))
         elif lane == "C" and intent in ("nav_start", "alert_on"):
-            self.session("nav")
+            if self.live_ok:
+                self.session("nav")
         if intent in phone.SLOT:
             self._spawn(llm.prewarm(phone.extraction_prefix()))
 

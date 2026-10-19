@@ -47,10 +47,10 @@ máy này. **Chưa commit gì** (cả phần có từ trước phiên này lẫn
   `await request.body()` không giới hạn; `/v2/turn` không giới hạn độ dài audio (`StreamingTranscriber` cứ tích luỹ)
   nên một kết nối treo là tốn RAM mãi. Tunnel công khai làm việc này thành rủi ro thật. Sửa: token thiết bị
   (`VISIONCARE_DEVICE_CLIENT_TOKEN` đã có trong `.env.example`), trần ~30 s audio, trần ~2 MB ảnh, rate limit.
-- **P2 · `/process` (firmware cũ) chưa chuyển sang pipeline v2** (spec §5.4; đã xác nhận): vẫn chạy Gemini cũ mà
-  `.env` không có `GEMINI_API_KEY`, và `models/intent_encoder` không tồn tại, nên có thể đang hỏng (chưa chạy thử).
-  Spec cũng muốn bỏ `models/vlm`, `pipeline/intent_local.py`, `handlers/waiting.py` — chưa bỏ (còn được `/process` và
-  `pipeline/phrases.py` dùng).
+- **Đã xong (Task 12) · `/process` (firmware cũ) chạy pipeline v2**: câu mở đầu -> `turn.run(single_shot=True)`
+  (ảnh qua Image Buffer, turn id `process-<n>`; làn B đọc thẳng ảnh, làn C chỉ gửi lệnh điện thoại, không WS).
+  Đã xoá `pipeline/router.py`, `pipeline/intent.py`, `pipeline/intent_local.py` và test/tool của chúng. `models/vlm`
+  và `handlers/waiting.py` CÒN vì vẫn có import sống (`handlers/chat.py`, `models/ocr`, `handlers/action_flow.py`).
 - **P2 · OCR mất chế độ "nguyên văn"/"chuyên ngành"** (đã xác nhận): `handlers/ocr.py` cũ có RAW/SPECIALIZED;
   `lanes/ocr_live.py::_prompt` chỉ có read(dịch)/summarize/money, và schema Clef/Gemma chỉ có `read|summarize|reread`.
   Sửa: thêm `raw`, `specialized` vào `ocr_mode` (`models/clef/client.py`, `pipeline/intent_classifier.py`) và ánh xạ sang `prompts.Mode`.

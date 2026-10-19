@@ -2,6 +2,7 @@
 import onnxruntime  # noqa: F401, I001
 
 import asyncio
+import concurrent.futures
 import glob
 import io
 import logging
@@ -20,8 +21,7 @@ from starlette.concurrency import run_in_threadpool
 
 import config
 from handlers import chat
-from models import vlm
-from pipeline import adpcm, cues, device_ctx, guard, intent_local, phrases, router, stt, tts
+from pipeline import adpcm, cues, device_ctx, final_router, guard, phrases, stt, tts
 from pipeline import metrics
 from pipeline import turn as turn_v2
 from pipeline.image_buffer import image_buffer
@@ -145,6 +145,7 @@ STATIC_SPEECH: tuple[str, ...] = (
     _RECEIVED_MESSAGE,
     _ERROR_MESSAGE,
     _MISSING_AUDIO_MESSAGE,
+    *final_router.STATIC_SPEECH,
 )
 
 
@@ -214,20 +215,13 @@ def preload_models() -> None:
     đây để request thật đầu tiên của người dùng không phải gánh thêm warm-up
     này — bấm gửi post là có kết quả ngay.
 
-    Không còn model cục bộ nào cho ảnh: cả 4 handler đều đọc ảnh qua Gemini.
+    Không còn model cục bộ nào cho ảnh. Gemini cũng không còn trên đường chạy:
+    `/process` đi chung pipeline v2 (Gemma) với `/v2/turn`, nên không warm client
+    Gemini hay bộ phân loại ý định cục bộ nữa (Task 12).
     """
     guard.log_startup()
     stt._load_asr()
     stt.transcribe(_dummy_wav())
-    intent_local.warm()
-
-    # Dựng sẵn client Gemini + bắt tay TLS. Đo trong tiến trình sạch:
-    #   lượt 1 (client lạnh)  3.58s
-    #   lượt 2-5 (ấm)         0.50 - 0.62s
-    #   sau 30s idle          0.68s     <- kết nối sống, không cần keepalive
-    # Tức request THẬT đầu tiên của người dùng vốn phải gánh thêm ~3 giây chỉ để
-    # dựng client và bắt tay. Trả trước ở đây, giống cách STT/TTS đã làm.
-    vlm.warm()
 
     # Vị trí điện thoại: lấy ở nền, không bao giờ trên đường request. Một vòng
     # `location/get` là poll xuống điện thoại tới 12s — đặt nó trong request là
@@ -302,7 +296,7 @@ def _stream_audio(
     speech_pieces: Iterable[str],
     idx: int,
     started: float,
-    processing: float,
+    processing: float | Callable[[], float],
     encode: Callable[[Iterator[bytes]], Iterator[bytes]] | None = None,
     byte_rate: float | None = None,
     prelude: bytes = b"",
@@ -314,6 +308,8 @@ def _stream_audio(
 
     `started` là mốc lúc request vào, `processing` là số giây STT/Gemini đã
     tiêu trước khi tới đây — cả hai chỉ dùng để ghi log đo thời gian.
+    `processing` có thể là hàm không đối số: `/process` chỉ biết con số này sau
+    khi lượt v2 chạy xong (lúc đó câu mở đầu đã đang phát), nên log lấy lúc ghi.
 
     `encode` (vd. `tts.encode_adpcm`) bọc thêm quanh PCM để nén trước khi gửi;
     bỏ trống thì gửi PCM trần như cũ. `byte_rate` phải khớp định dạng đã chọn
@@ -402,7 +398,7 @@ def _stream_audio(
     logger.info(
         "request%d | xử lý=%.2fs ttfb=%.2fs tổng=%.2fs audio=%.2fs",
         idx,
-        processing,
+        processing() if callable(processing) else processing,
         first_chunk_at if first_chunk_at is not None else 0.0,
         time.monotonic() - started,
         len(payload) / rate,
@@ -470,94 +466,140 @@ def _plan_for(response_format: str, idx: int) -> _Plan:
     )
 
 
+_process_seq: tuple[str, int] | None = None
+
+
+def _next_process_index() -> int:
+    """Số thứ tự request `/process`: quét STORAGE_DIR một lần (mỗi thư mục), sau đó chỉ đếm tiếp.
+
+    Quét `request*.wav` mỗi request thì tốn tỉ lệ thuận số file debug đã tích tụ,
+    mà hàm này chạy trên event loop.
+    """
+    global _process_seq
+    if _process_seq is None or _process_seq[0] != config.STORAGE_DIR:
+        _process_seq = (config.STORAGE_DIR, _next_debug_index())
+    else:
+        _process_seq = (_process_seq[0], _process_seq[1] + 1)
+    return _process_seq[1]
+
+
+async def _once(data: bytes):
+    """Body một mảnh: `/process` đã có trọn audio nên đưa cho `turn.run` như luồng 1 mảnh."""
+    yield data
+
+
+def _save_debug_inputs(idx: int, audio_bytes: bytes, content_type: str | None, image_bytes: bytes) -> None:
+    try:
+        _save_debug_audio(f"request{idx}.wav", adpcm.ensure_wav(audio_bytes, content_type))
+        if image_bytes:
+            _save_debug_image(idx, image_bytes)
+    except Exception:  # noqa: BLE001 - file debug hỏng không được kéo lượt hỏng
+        logger.exception("process() request%d: ghi file debug lỗi", idx)
+
+
 @app.post("/process", dependencies=[Depends(guard.turn_guard)])
-def process(
+async def process(
     request: Request,
     image: UploadFile | None = File(None),
     audio: UploadFile | None = File(None),
 ):
-    """Xử lý một lệnh ảnh+audio, trả lời bằng audio stream phát dần được.
+    """Firmware cũ (multipart `audio` + `image` tuỳ chọn) chạy chung pipeline v2.
 
-    Toàn bộ STT/OCR/Gemini chạy xong trước khi byte audio đầu tiên rời server,
-    nên lỗi ở các bước đó vẫn đổi được thành câu báo lỗi bình thường. Chỉ bước
-    TTS được stream — đó cũng là bước tốn giây, và là lý do người dùng phải
-    đứng chờ trước khi nghe được gì.
+    Hợp đồng HTTP giữ nguyên: câu mở đầu, luôn trả audio (lỗi cũng thành câu
+    nói), định dạng theo `Accept`/`RESPONSE_FORMAT`, token theo Task 9. Bên trong:
+    ảnh vào Image Buffer với turn id `process-<n>`, audio là body một mảnh của
+    `turn.run(single_shot=True)` (làn B đọc thẳng ảnh, làn C chỉ gửi lệnh điện
+    thoại — không có WS để mở live).
 
-    Sync def (không async): FastAPI chạy nó trong threadpool riêng thay vì
-    trên event loop chính, nên STT/OCR/gọi Gemini/TTS của một request không
-    chặn các request khác đang xử lý song song.
+    Câu mở đầu phát NGAY trong lúc lượt v2 chạy ở task riêng: generator tiếng nói
+    (chạy ở thread TTS) nói câu chào rồi mới chờ kết quả lượt. Chờ ở thread chứ
+    không ở event loop, và không thêm await nào trên đường nóng.
     """
-    device_ctx.current.set(_device_id(request.headers))
+    device = _device_id(request.headers)
+    device_ctx.current.set(device)
     started = time.monotonic()
-    idx = _next_debug_index()
+    idx = _next_process_index()
     response_format = config.RESPONSE_FORMAT
     if response_format == "auto":
         response_format = _negotiate(request.headers.get("accept", ""))
     plan = _plan_for(response_format, idx)
-    encode, byte_rate = plan.encode, plan.byte_rate
+    turn_done: list[float] = []
 
     try:
         if audio is None:
-            pieces: Iterable[str] = [_MISSING_AUDIO_MESSAGE]
+            speech: Iterable[str] = [_MISSING_AUDIO_MESSAGE]
         else:
-            # Ảnh không bắt buộc: `resolve_speech` nhận `None` và chỉ than phiền
-            # khi intent thật sự cần ảnh.
-            image_bytes = image.file.read() if image is not None else None
-            # Board gửi ADPCM thô để đẩy được ngay trong lúc còn đang thu;
-            # `ensure_wav` dựng lại header. File WAV thật vẫn đi qua nguyên vẹn.
-            audio_bytes = adpcm.ensure_wav(
-                audio.file.read(), audio.content_type,
-            )
-            _save_debug_audio(f"request{idx}.wav", audio_bytes)
+            from handlers.action_flow import device_state
+            from live.session import sessions
+            from pipeline import pending_action
+
+            # Ảnh không bắt buộc: lượt chỉ than phiền khi intent thật sự cần ảnh.
+            image_bytes = await image.read() if image is not None else b""
+            audio_bytes = await audio.read()
+            turn_id = f"process-{idx}"
             if image_bytes:
-                _save_debug_image(idx, image_bytes)
+                image_buffer.put(device, turn_id, image_bytes)
 
-            # Câu chào đi TRƯỚC, và `chain` giữ nó lười: `resolve_speech`
-            # (kéo theo STT) chỉ chạy khi TTS đã lấy xong câu chào, nên
-            # người dùng nghe thấy tiếng trong lúc STT còn đang chạy.
-            # Xuống dòng ở cuối là dấu "câu trọn vẹn, đọc ngay" cho
-            # `tts._sentences()`; thiếu nó thì câu chào nằm chờ mảnh text
-            # sau, tức là chờ đúng STT mà nó sinh ra để khỏi phải chờ.
-            # Câu chào này CŨNG là câu trấn an đầu tiên, nên câu kế tiếp phải
-            # đếm từ lúc nó đọc xong. Đo chính xác vì audio của nó đã dựng sẵn.
-            pieces = chain(
-                [_RECEIVED_MESSAGE + "\n"],
-                router.resolve_speech(
-                    image_bytes, audio_bytes,
-                    opening_seconds=tts.speaking_seconds(_RECEIVED_MESSAGE),
-                ),
-            )
+            loop = asyncio.get_running_loop()
+            turn_gen = pending_action.begin_turn(device)
+            state = {**device_state(), "alerting": sessions.active(device) is not None}
+            task = loop.create_task(turn_v2.run(
+                device, turn_id, audio.content_type, _once(audio_bytes), state,
+                gen=turn_gen, transport="process", single_shot=True,
+            ))
+            done: concurrent.futures.Future = concurrent.futures.Future()
 
-        # Kéo tới MẢNH ĐẦU TIÊN ở đây, còn trong try. Mọi thứ trên đường tới
-        # đó — gọi Gemini, mất mạng giữa luồng text, TTS/encode lỗi — vẫn đổi
-        # được thành câu báo lỗi nghe được. Sau mảnh này thì header 200 đã
-        # gửi, không rút lại được nữa.
-        #
-        # Định dạng có `prelude` (ADPCM WAV) thì mảnh đầu chính là 60 byte
-        # header và nó ra ngay lập tức — đúng yêu cầu của board, đổi lại lỗi
-        # phía sau do `_stream_audio` tự nối câu báo lỗi vào luồng.
-        audio_stream = _stream_audio(
-            pieces, idx, started, time.monotonic() - started,
-            encode=encode, byte_rate=byte_rate, prelude=plan.prelude,
-            debug_name=plan.debug_name, debug_wrap=plan.debug_wrap,
-        )
-        body: Iterator[bytes] = chain([next(audio_stream)], audio_stream)
+            def relay(t: asyncio.Task) -> None:
+                if t.cancelled():
+                    done.cancel()
+                elif t.exception() is not None:
+                    done.set_exception(t.exception())
+                else:
+                    done.set_result(t.result())
+
+            task.add_done_callback(relay)
+
+            def speech_gen() -> Iterator[str]:
+                try:
+                    # Xuống dòng ở cuối là dấu "câu trọn vẹn, đọc ngay" cho
+                    # `tts._sentences()`; audio của câu này dựng sẵn nên ra tiếng
+                    # trước khi STT/Clef/Gemma xong.
+                    yield _RECEIVED_MESSAGE + "\n"
+                    _save_debug_inputs(idx, audio_bytes, audio.content_type, image_bytes)
+                    result = done.result()
+                    turn_done.append(time.monotonic())
+                    reply = result.reply
+                    # Kính cũ không có clip cue trong flash: cue đổi thành câu nói.
+                    for cue in reply.cues:
+                        text = cues.fallback_text(cue)
+                        if text:
+                            yield text + "\n"
+                    if reply.speech:
+                        yield from reply.speech
+                finally:
+                    if not task.done():  # kính ngắt giữa chừng: huỷ lượt đang chạy
+                        loop.call_soon_threadsafe(task.cancel)
+
+            speech = speech_gen()
+        reply = Reply(speech=speech)
     except Exception:  # noqa: BLE001 - MCU must receive audio, never a JSON error.
         logger.exception("process() request%d thất bại", idx)
-        body = _stream_audio(
-            [_ERROR_MESSAGE], idx, started, time.monotonic() - started,
-            encode=encode, byte_rate=byte_rate, prelude=plan.prelude,
-            debug_name=plan.debug_name, debug_wrap=plan.debug_wrap,
-        )
+        reply = Reply(speech=[_ERROR_MESSAGE])
+
+    # Kéo tới mảnh audio đầu ở đây: lỗi trước byte đầu vẫn đổi được thành câu báo lỗi.
+    _, body = await _reply_audio(
+        reply, False, response_format, started, legacy_idx=idx,
+        processing=lambda: (turn_done[0] if turn_done else time.monotonic()) - started,
+    )
+    if body is None:
+        return Response(content=b"", media_type=plan.media_type)
 
     if response_format == "wav":
         # Gom trọn rồi mới gửi: mất thời gian chờ, đổi lại MCU nhận một file
         # hoàn chỉnh có Content-Length, không phụ thuộc việc đường truyền có
         # giữ đều 32 KB/s hay không.
-        return Response(
-            content=_pcm_to_wav(b"".join(body)),
-            media_type="audio/wav",
-        )
+        payload = await run_in_threadpool(lambda: b"".join(body))
+        return Response(content=_pcm_to_wav(payload), media_type="audio/wav")
 
     return StreamingResponse(
         body,
@@ -634,12 +676,17 @@ def _has_speech(speech) -> bool:
 
 
 async def _reply_audio(
-    reply: Reply, cue_ok: bool, response_format: str, released: float
+    reply: Reply, cue_ok: bool, response_format: str, released: float,
+    legacy_idx: int | None = None, processing: Callable[[], float] | None = None,
 ) -> tuple[dict[str, str], Iterator[bytes] | None]:
     """Phần dùng chung của `/v2/turn` (HTTP) và `WS /v2/session`: Reply -> (header cue/live, audio).
 
     Trả `(headers, None)` khi chỉ có cue. Mảnh audio đầu đã được kéo sẵn ở đây
     nên lỗi trước byte đầu vẫn đổi được thành câu báo lỗi.
+
+    `legacy_idx` (chỉ `/process`, firmware cũ): dùng số thứ tự file debug của request,
+    đệm `AUDIO_PREROLL_SECONDS` (khớp header `X-Audio-Preroll-Seconds` đã khai) và
+    ghi `response<idx>.*` như trước; `processing` là giờ-xử-lý cho dòng log.
     """
     global _v2_counter
     headers: dict[str, str] = {}
@@ -657,16 +704,21 @@ async def _reply_audio(
     if not lead and not _has_speech(reply.speech):
         return headers, None
 
-    _v2_counter += 1
-    idx = _v2_counter
+    if legacy_idx is None:
+        _v2_counter += 1
+        idx = _v2_counter
+    else:
+        idx = legacy_idx
     plan = _plan_for(response_format, idx)
     pieces = chain(lead, reply.speech if _has_speech(reply.speech) else [])
+    preroll = config.V2_AUDIO_PREROLL_SECONDS if legacy_idx is None else config.AUDIO_PREROLL_SECONDS
+    debug = {} if legacy_idx is None else {"debug_name": plan.debug_name, "debug_wrap": plan.debug_wrap}
 
     def stream(text: Iterable[str]) -> Iterator[bytes]:
         return _stream_audio(
-            text, idx, released, time.monotonic() - released,
+            text, idx, released, processing or (time.monotonic() - released),
             encode=plan.encode, byte_rate=plan.byte_rate, prelude=plan.prelude,
-            preroll_seconds=config.V2_AUDIO_PREROLL_SECONDS,
+            preroll_seconds=preroll, **debug,
         )
 
     audio_stream = stream(pieces)

@@ -19,6 +19,7 @@ from fastapi.testclient import TestClient
 import app as app_module
 import config
 from app import app
+from tests.conftest import fake_turn
 from pipeline import adpcm, stt, tts
 
 client = TestClient(app)
@@ -202,7 +203,7 @@ def fake_speech(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "STORAGE_DIR", str(tmp_path))
     monkeypatch.setattr(config, "AUDIO_PREROLL_SECONDS", 0.0)
     pcm = _tone(1.0).tobytes()
-    with patch("pipeline.router.resolve_speech", return_value=iter(["xin chào"])), patch(
+    with fake_turn(["xin chào"]), patch(
         "pipeline.tts.synthesize_text_stream", lambda chunks: iter([pcm])
     ):
         yield

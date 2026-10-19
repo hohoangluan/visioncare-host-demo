@@ -51,13 +51,13 @@ def _speech_modules() -> tuple:
     không kéo theo cả tầng handler (test TTS chạy độc lập, và handler kéo theo
     client HTTP).
     """
-    from handlers import action_flow, music, navigation, phone, result_speech, ride, waiting
-    from pipeline import cues, router
+    from handlers import action_flow, music, navigation, phone, result_speech, ride
+    from pipeline import cues, final_router
 
     return (
-        waiting, action_flow, result_speech,
+        action_flow, result_speech,
         music, navigation, phone, ride,
-        router, image_quality, cues,
+        final_router, image_quality, cues,
     )
 
 

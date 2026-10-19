@@ -10,8 +10,6 @@ scipy
 # STT giờ là sherpa-onnx, TTS chạy backend ONNX của vieneu (torch chỉ nằm trong
 # extra "legacy" của nó) — không dòng code nào trong repo còn import torch.
 sherpa-onnx
-# Chỉ để nạp tokenizer cho pipeline/intent_local.py (không cần torch).
-transformers
 pillow
 google-genai
 python-dotenv

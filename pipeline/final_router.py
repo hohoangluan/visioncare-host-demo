@@ -1,7 +1,8 @@
 """Final Router (§8): intent cuối -> 4 làn A–D.
 
-`pipeline/router.py` vẫn phục vụ `/process` (firmware cũ, đường Gemini); router
-này chỉ phục vụ `/v2/turn`.
+Phục vụ cả `/v2/turn` lẫn `WS /v2/session` và `/process` (firmware cũ, Task 12).
+Với `/process` thì `ctx.single_shot = True`: không có WebSocket nào để mở nên làn B
+đọc thẳng ảnh buffer và làn C chỉ gửi lệnh điện thoại + câu xác nhận.
 """
 
 import asyncio
@@ -71,12 +72,16 @@ class TurnContext:
         self.device, self.turn_id = device, turn_id
         self.prewarmer = prewarmer
         self.loop = loop
+        # `/process` (firmware cũ): một lần HTTP, không WS -> làn B/C không mở live.
+        self.single_shot = False
         self.gen: int | None = None  # thế hệ lượt (pending_action.begin_turn)
         self.spec_answer: Speculation | None = None
         # (intent, text) -> task trích tham số chạy song song với Clef.
         self.spec_params: tuple[tuple, asyncio.Task] | None = None
 
     async def image(self):
+        if self.single_shot:  # ảnh đi cùng request, tới rồi hoặc không bao giờ tới: khỏi chờ
+            return image_buffer.get(self.device, self.turn_id)
         return await asyncio.to_thread(
             image_buffer.wait, self.device, self.turn_id, config.IMAGE_WAIT_S,
         )
@@ -88,6 +93,11 @@ class TurnContext:
             self.spec_params[1].cancel()
 
 FILLER_SEARCHING = "Để tôi tra cứu."
+
+# Chỉ gặp ở `/process` (firmware cũ, không có WS): bật cảnh báo vật cản liên tục
+# cần kênh realtime nên nói thẳng là chưa làm được, thay vì nói "đã bật" rồi im.
+NO_LIVE_MESSAGE = "Kính bản này chưa hỗ trợ cảnh báo liên tục."
+STATIC_SPEECH: tuple[str, ...] = (NO_LIVE_MESSAGE,)
 
 
 def _sync(ctx: TurnContext, agen: AsyncIterator[str]):
@@ -161,6 +171,9 @@ async def _lane_b(ctx: TurnContext, d: Decision, text: str) -> Reply:
                      intent="money", lane="B")
 
     mode = d.ocr_mode if d.ocr_mode in ("summarize", "raw", "specialized") else "read"
+    if ctx.single_shot:  # không có WS để hướng dẫn căn khung: đọc thẳng ảnh đã có
+        return Reply(speech=_sync(ctx, ocr_live.spoken(entry.jpeg, mode, ctx.device)),
+                     intent="ocr", lane="B")
     if config.OCR_ACCEPT_BUFFER:
         task = ctx.prewarmer.assess_buffer()
         problem, boxes = await task if task is not None else ("look_around", [])
@@ -211,6 +224,8 @@ def _fire_after_readback(ctx: TurnContext, intent: str, text: str, params: dict,
 
 
 async def _lane_c(ctx: TurnContext, d: Decision, text: str, params: dict | None = None) -> Reply:
+    if ctx.single_shot and d.intent == "alert_on":
+        return Reply(speech=[NO_LIVE_MESSAGE], intent=d.intent, lane="C")
     if d.intent == "alert_off":
         sessions.close_device(ctx.device, "nav")
         return Reply(cues=["nav_alert_off"], intent=d.intent, lane="C")
@@ -225,6 +240,11 @@ async def _lane_c(ctx: TurnContext, d: Decision, text: str, params: dict | None 
             return Reply(cues=["ask_destination"], intent=d.intent, lane="D")
         if not _trusted(d):
             return _ask_back(ctx, d, params, "C+D")
+        if ctx.single_shot:
+            # Không WS: chỉ gửi lệnh mở chỉ đường tới điện thoại (kết quả không đọc
+            # lại được), nói câu xác nhận.
+            line = _fire_after_readback(ctx, "nav_start", text, params)
+            return Reply(speech=[line] if line else [], intent=d.intent, lane="C+D")
         session = ctx.prewarmer.session("nav")
         # Cảnh báo làn C bật ngay; mở lộ trình (làn D) chờ đọc lại điểm đến xong,
         # kết quả đọc qua WS của làn C.

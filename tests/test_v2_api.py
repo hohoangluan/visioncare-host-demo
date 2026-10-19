@@ -481,3 +481,44 @@ def test_client_disconnect_cancels_llm(world, monkeypatch):
     assert seen["cancelled"] is not None and seen["cancelled"] - t0 <= 0.5
     assert not pending_action.cancel("dc-dev", "kiểm")  # đã bị huỷ lúc ngắt
     assert fired == []
+
+# ── /process (firmware cũ) chạy pipeline v2 — Task 12 ─────────────────────
+
+def _process(files_audio=True, image=None, headers=None):
+    pcm = (np.random.default_rng(0).standard_normal(16000) * 2000).astype("<i2").tobytes()
+    files = {"audio": ("a.adpcm", adpcm.encode_blocks(pcm),
+                       "audio/x-adpcm-ima; rate=16000; channels=1; block=256")}
+    if image is not None:
+        files["image"] = ("i.jpg", image, "image/jpeg")
+    return client.post("/process", files=files, headers={"Accept": "audio/wav;codec=ima_adpcm", **(headers or {})})
+
+
+def test_process_routes_through_v2(world):
+    """Firmware cũ: STT -> Clef -> Gemma của v2 (không còn Gemini), ảnh qua Image Buffer."""
+    rec, labels, calls = world
+    rec.text = "TRƯỚC MẶT TÔI CÓ GÌ"
+    labels["trước mặt tôi có gì"] = clef.ClefResult("space", 0.9)
+    r = _process(image=_scene())
+    assert r.status_code == 200
+    assert r.content[:4] == b"RIFF" and len(r.content) > 1000
+    assert r.headers["x-audio-encoding"] == "ima_adpcm"
+    assert "x-live" not in r.headers
+    assert [t.lower() for t in calls["clef"]] == ["trước mặt tôi có gì"]
+    assert calls["llm"][-1][1]["content"][0]["type"] == "image_url"  # ảnh /process tới được Gemma
+
+
+def test_process_nav_no_live(world):
+    """Làn C trên /process: chỉ gửi lệnh điện thoại + câu xác nhận, không mở phiên live."""
+    rec, labels, calls = world
+    rec.text = "DẪN TÔI TỚI CHỢ BẾN THÀNH"
+    labels["dẫn tôi tới chợ bến thành"] = _gemma("nav_start")
+    r = _process()
+    assert r.status_code == 200 and len(r.content) > 1000
+    assert "x-live" not in r.headers and "x-live-token" not in r.headers
+    assert sessions.active(config.VISIONCARE_DEVICE_ID) is None
+    import time
+    for _ in range(150):
+        if calls["actions"]:
+            break
+        time.sleep(0.02)
+    assert calls["actions"] == [("nav_start", {"destination": "chợ Bến Thành"})]
