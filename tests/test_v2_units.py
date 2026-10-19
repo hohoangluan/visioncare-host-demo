@@ -500,3 +500,50 @@ def test_devices_independent():
     assert b.fired.wait(0.3)
     time.sleep(0.1)
     assert ran == [2] and not a.fired.is_set()
+
+
+def test_serpapi_answer_box_first():
+    from models.search import client
+
+    rows = client.parse({
+        "answer_box": {"type": "weather_result", "location": "Hà Nội", "temperature": "30", "unit": "C",
+                       "weather": "Nắng"},
+        "organic_results": [{"title": "A", "snippet": "a"}, {"title": "B", "snippet": "b"}],
+    })
+    assert rows[0]["title"] == "Thời tiết" and "30" in rows[0]["snippet"] and len(rows) == 3
+
+
+def _web_turn(monkeypatch, *, available, found):
+    from models import llm, search
+    from pipeline import final_router
+
+    seen = {}
+
+    async def fake_search(query, num=5):
+        return found
+
+    async def fake_stream(messages):
+        seen["messages"] = messages
+        yield "Xin chào bạn."
+
+    monkeypatch.setattr(search, "available", lambda: available)
+    monkeypatch.setattr(search, "search", fake_search)
+    monkeypatch.setattr(llm, "stream_chat", fake_stream)
+
+    async def run():
+        d = intent_early.Decision("chat", "read", needs_web=True)
+        return [p async for p in final_router._web_answer(d, "thời tiết hôm nay")]
+
+    return asyncio.run(run()), seen["messages"]
+
+
+def test_search_ok_answer_uses_results(monkeypatch):
+    pieces, msgs = _web_turn(monkeypatch, available=True, found=[{"title": "Hà Nội", "snippet": "30 độ"}])
+    assert pieces[0].startswith("Để tôi tra cứu") and "30 độ" in msgs[-1]["content"]
+    assert "KHÔNG tra cứu được" not in msgs[0]["content"]
+
+
+@pytest.mark.parametrize("available,found", [(False, None), (True, None)])
+def test_search_unavailable_or_failed_injects_warning(monkeypatch, available, found):
+    pieces, msgs = _web_turn(monkeypatch, available=available, found=found)
+    assert "KHÔNG tra cứu được" in msgs[0]["content"] and pieces[-1]

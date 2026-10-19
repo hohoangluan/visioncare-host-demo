@@ -284,10 +284,12 @@ CLEF_TIMEOUT_S = float(get("CLEF_TIMEOUT_S", "1"))
 # Dưới ngưỡng này nhãn Clef coi như không chắc -> dùng luật từ khoá nếu khớp.
 CLEF_MIN_CONFIDENCE = float(get("CLEF_MIN_CONFIDENCE", "0.15"))
 
-# Google Programmable Search cho làn A. Trống key thì Gemma trả lời thẳng.
-GOOGLE_SEARCH_API_KEY = get("GOOGLE_SEARCH_API_KEY", "")
-GOOGLE_SEARCH_CX = get("GOOGLE_SEARCH_CX", "")
-SEARCH_TIMEOUT_S = float(get("SEARCH_TIMEOUT_S", "3"))
+# SerpAPI cho làn A. Trống key (hoặc tra hỏng) thì Gemma nói thẳng là chưa tra được.
+SERPAPI_API_KEY = get("SERPAPI_API_KEY", "")
+# Trần cứng: quá hạn là bỏ, không để làn A kẹt cả lượt.
+SEARCH_TIMEOUT_S = float(get("SEARCH_TIMEOUT_S", "2.5"))
+# Phát "Để tôi tra cứu." ngay trong lúc chờ SerpAPI (chưa đo trên bench_live: chưa có khoá).
+SEARCH_FILLER = get("SEARCH_FILLER", "1") != "0"
 
 # Image Buffer (§6): ảnh chỉ nằm trong RAM, hạn 30 s.
 IMAGE_BUFFER_TTL_S = float(get("IMAGE_BUFFER_TTL_S", "30"))

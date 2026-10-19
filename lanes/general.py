@@ -40,9 +40,10 @@ def _vision_task(intent: str, text: str) -> str:
     return find_object._PROMPT.format(command_text=text)
 
 
-def _chat_system() -> str:
+def _chat_system(search_failed: bool = False) -> str:
     return chat._SYSTEM_PROMPT.format(
-        now=chat._now_text(), search="", location=chat._location_text(),
+        now=chat._now_text(), search=chat._search_instruction(False, search_failed),
+        location=chat._location_text(),
     )
 
 
@@ -61,7 +62,7 @@ def prefix_messages(intent: str, image: bytes | None) -> list[dict]:
 
 
 def messages(intent: str, text: str, image: bytes | None = None,
-             search: list[dict] | None = None) -> list[dict]:
+             search: list[dict] | None = None, search_failed: bool = False) -> list[dict]:
     if intent in VISION_INTENTS and image is not None:
         return [
             {"role": "system", "content": _VISION_SYSTEM},
@@ -71,7 +72,8 @@ def messages(intent: str, text: str, image: bytes | None = None,
     if search is not None:
         results = "\n".join(f"- {r['title']}: {r['snippet']}" for r in search) or "(không có kết quả)"
         user = _SEARCH_BLOCK.format(results=results) + f'Người dùng hỏi: "{text}"'
-    return [{"role": "system", "content": _chat_system()}, *_history(), {"role": "user", "content": user}]
+    return [{"role": "system", "content": _chat_system(search_failed)}, *_history(),
+            {"role": "user", "content": user}]
 
 
 _MARKUP = re.compile(r"[*#`_]+")
@@ -112,10 +114,10 @@ async def short_first_sentence(chunks: AsyncIterator[str], max_words: int | None
 
 
 async def answer(intent: str, text: str, image: bytes | None = None,
-                 search: list[dict] | None = None) -> AsyncIterator[str]:
+                 search: list[dict] | None = None, search_failed: bool = False) -> AsyncIterator[str]:
     started = time.monotonic()
     reply: list[str] = []
-    stream = llm.stream_chat(messages(intent, text, image, search))
+    stream = llm.stream_chat(messages(intent, text, image, search, search_failed))
     async for piece in short_first_sentence(stream):
         reply.append(piece)
         yield piece

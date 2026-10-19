@@ -77,6 +77,7 @@ def collect(extra: Iterable[str] = ()) -> tuple[str, ...]:
     for module in _speech_modules():
         sources.extend(getattr(module, "STATIC_SPEECH", ()))
     sources.extend(extra)
+    sources.append("Để tôi tra cứu.")  # câu đệm làn A (final_router.FILLER_SEARCHING)
 
     seen: dict[str, None] = {}
     for text in sources:

@@ -86,6 +86,8 @@ class TurnContext:
         if self.spec_params is not None and not keep_params:
             self.spec_params[1].cancel()
 
+FILLER_SEARCHING = "Để tôi tra cứu."
+
 
 def _sync(ctx: TurnContext, agen: AsyncIterator[str]):
     return speech.sync_iter(agen, ctx.loop)
@@ -108,19 +110,41 @@ async def _lane_a(ctx: TurnContext, d: Decision, text: str) -> Reply:
             return Reply(speech=[reason], intent=d.intent, lane="A")
         image = await asyncio.to_thread(entry.llm_jpeg)
 
-    results = None
-    if d.intent == "chat" and d.needs_web and search.available():
-        results = await search.search(text)
+    if d.intent == "chat" and d.needs_web:
+        # Câu chạy trước (speculation) sinh khi chưa có kết quả tra -> không dùng.
+        if ctx.spec_answer is not None:
+            ctx.spec_answer.cancel()
+            ctx.spec_answer = None
+        return Reply(speech=_sync(ctx, _web_answer(d, text)), intent=d.intent, lane="A")
 
     spec = ctx.spec_answer
-    if spec is not None and spec.key == (d.intent, text) and results is None:
+    if spec is not None and spec.key == (d.intent, text):
         ctx.spec_answer = None
         logger.info("làn A: dùng câu trả lời đã sinh song song với Clef")
         return Reply(speech=_sync(ctx, spec.replay()), intent=d.intent, lane="A")
     if spec is not None:
         spec.cancel()
         ctx.spec_answer = None
-    return Reply(speech=_sync(ctx, general.answer(d.intent, text, image, results)), intent=d.intent, lane="A")
+    return Reply(speech=_sync(ctx, general.answer(d.intent, text, image)), intent=d.intent, lane="A")
+
+
+async def _web_answer(d: Decision, text: str) -> AsyncIterator[str]:
+    """Câu cần tra web: câu đệm phát NGAY, tra (trần `SEARCH_TIMEOUT_S`) chạy dưới câu đệm.
+
+    Không khoá hoặc tra hỏng -> `search_failed`: Gemma nói thẳng là chưa tra được.
+    """
+    if not search.available():
+        results = None
+    else:
+        task = asyncio.ensure_future(search.search(text))
+        try:
+            if config.SEARCH_FILLER:
+                yield FILLER_SEARCHING + "\n"
+            results = await task
+        finally:
+            task.cancel()
+    async for piece in general.answer(d.intent, text, None, results, search_failed=results is None):
+        yield piece
 
 
 async def _lane_b(ctx: TurnContext, d: Decision, text: str) -> Reply:
