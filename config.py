@@ -312,6 +312,8 @@ SPECULATIVE_FINAL = get("SPECULATIVE_FINAL", "1") != "0"
 # (localhost). Mỗi 0,1 s đệm là ~0,08 s chờ thêm trước tiếng đầu; người dùng
 # chọn 0,2 s (ưu tiên tốc độ). Đo lại cột `starve` trên đường WiFi/Cloudflare thật.
 V2_AUDIO_PREROLL_SECONDS = float(get("V2_AUDIO_PREROLL_SECONDS", "0.2"))
+# Biên thêm sau khi đọc lại lệnh làn D xong, trước khi thi hành (pending_action).
+ACTION_READBACK_MARGIN_S = float(get("ACTION_READBACK_MARGIN_S", "0.15"))
 # Câu TTS đầu của làn A cắt ở ngần này từ để tiếng ra sớm (§9).
 FIRST_SENTENCE_MAX_WORDS = int(get("FIRST_SENTENCE_MAX_WORDS", "8"))
 

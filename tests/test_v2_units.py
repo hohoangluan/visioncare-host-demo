@@ -469,3 +469,34 @@ def test_ocr_speech_starts_with_a_short_first_sentence(monkeypatch):
     out = _collect(ocr_live.spoken(b"", "read", "d"))
     assert out[0] == "Chương một.\n"
     assert "".join(out[1:]).startswith("Hành trình bắt đầu")
+
+
+def test_cancel_before_fire():
+    from pipeline import pending_action as pa
+    ran = []
+    act = pa.schedule("dev-c", 0.15, lambda: ran.append(1), "gọi điện")
+    assert pa.cancel("dev-c", "lượt mới") is True
+    time.sleep(0.25)
+    assert not ran and act.cancelled.is_set() and not act.fired.is_set()
+    assert pa.cancel("dev-c", "lần hai") is False
+
+
+def test_new_schedule_replaces_old():
+    from pipeline import pending_action as pa
+    ran = []
+    a = pa.schedule("dev-r", 0.1, lambda: ran.append("a"), "a")
+    b = pa.schedule("dev-r", 0.1, lambda: ran.append("b"), "b")
+    assert b.fired.wait(0.3)
+    assert a.cancelled.is_set() and ran == ["b"]
+    assert pa.cancel("dev-r", "sau khi chạy") is False
+
+
+def test_devices_independent():
+    from pipeline import pending_action as pa
+    ran = []
+    a = pa.schedule("dev-1", 0.1, lambda: ran.append(1), "a")
+    b = pa.schedule("dev-2", 0.1, lambda: ran.append(2), "b")
+    assert pa.cancel("dev-1", "ngắt kết nối") is True
+    assert b.fired.wait(0.3)
+    time.sleep(0.1)
+    assert ran == [2] and not a.fired.is_set()
