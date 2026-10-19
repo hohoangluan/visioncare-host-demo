@@ -51,15 +51,18 @@ ASK_CUE = {
 }
 
 _SLOT_DESC = {
-    "contact_name": "tên người cần gọi, đúng như người dùng nói (vd. \"mẹ\", \"anh Nam\")",
-    "destination": "tên/địa chỉ điểm đến, đúng như người dùng nói",
-    "song": "tên bài hát và/hoặc ca sĩ, đúng như người dùng nói",
+    "contact_name": "người cần gọi, đúng như người dùng nói: tên hoặc từ chỉ quan hệ (vd. "
+                    "\"mẹ\", \"anh Nam\", \"người thân\", \"bác sĩ\")",
+    "destination": "tên/địa chỉ điểm đến, đúng như người dùng nói, kể cả khi chung chung "
+                   "(vd. \"địa chỉ này\", \"nhà\")",
+    "song": "tên bài hát, ca sĩ hoặc thể loại nhạc, đúng như người dùng nói (vd. \"nhạc trữ tình\")",
 }
 
 _EXTRACT_PROMPT = (
     "Trích tham số từ câu lệnh thoại tiếng Việt của người khiếm thị.\n"
     "Trường cần trích: {slot} = {desc}.\n"
-    "Câu không nói ra thì để chuỗi rỗng, KHÔNG đoán.\n"
+    "Chỉ để chuỗi rỗng khi câu hoàn toàn không nhắc tới; cụm chung chung vẫn trích nguyên văn, "
+    "KHÔNG tự bịa thêm.\n"
     "Câu lệnh: \"{text}\"\n"
     "Trả JSON."
 )

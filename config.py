@@ -320,8 +320,10 @@ ACTION_READBACK_MARGIN_S = float(get("ACTION_READBACK_MARGIN_S", "0.15"))
 # đồng hồ chờ để cửa sổ huỷ không bị TTS ăn mất.
 ACTION_TTS_LEAD_S = float(get("ACTION_TTS_LEAD_S", "0.4"))
 # Làn D chỉ chạy khi Gemma gán nhãn với độ tin cậy >= ngưỡng này; dưới ngưỡng thì
-# hỏi lại. Task 4 sẽ đặt giá trị từ số đo trên tập gold (0,85 là tạm thời).
-ACTION_MIN_CONFIDENCE = float(get("ACTION_MIN_CONFIDENCE", "0.85"))
+# hỏi lại. Đo 2026-10-19 (Task 4): 0,999 là ngưỡng nhỏ nhất cho action_fp = 0 trên gold_dev
+# (ask_rate 9,1%) và gold_test (FP 0, ask 5%); 0,85 còn FP 1. Lưu ý: dev chỉ có MỘT
+# FP (câu STT méo, conf 0,9987) quyết định ngưỡng — khớp một điểm, không phải biên chắc.
+ACTION_MIN_CONFIDENCE = float(get("ACTION_MIN_CONFIDENCE", "0.999"))
 # Câu TTS đầu của làn A cắt ở ngần này từ để tiếng ra sớm (§9).
 FIRST_SENTENCE_MAX_WORDS = int(get("FIRST_SENTENCE_MAX_WORDS", "8"))
 

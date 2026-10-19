@@ -20,15 +20,18 @@ logger = logging.getLogger("blind_assist")
 # Nhãn của Final Router (§8). `alert_on`/`alert_off` là "bật/tắt cảnh báo" làn C.
 LABELS: dict[str, str] = {
     "chat": "hỏi đáp, trò chuyện, hỏi giờ, thời tiết, tin tức, hỏi mình đang ở đâu, "
-            "hoặc câu không thuộc nhóm nào khác",
+            "hỏi một nơi nào đó Ở ĐÂU/chỗ nào (chỉ hỏi vị trí, không nhờ dẫn), "
+            "nói chuyện về việc gọi cho ai đó mà không ra lệnh gọi, hoặc câu không thuộc nhóm nào khác",
     "space": "hỏi phía trước/xung quanh CÓ GÌ, tả khung cảnh",
-    "hazard": "hỏi một lần phía trước có AN TOÀN không, có vật cản không",
+    "hazard": "hỏi/kiểm tra MỘT LẦN phía trước có AN TOÀN không, có vật cản/chướng ngại vật không "
+              "(không phải bật chế độ cảnh báo liên tục)",
     "ocr": "đọc chữ, đọc sách/giấy tờ/nhãn, tóm tắt nội dung văn bản, đọc lại nội dung vừa đọc",
     "money": "hỏi mệnh giá tờ tiền đang cầm",
     "find": "tìm một đồ vật cụ thể trong tầm tay",
-    "nav_start": "nhờ dẫn đường / chỉ đường đi bộ tới một địa điểm",
+    "nav_start": "nhờ dẫn đường / chỉ đường đi bộ tới một địa điểm CỤ THỂ (phải có điểm đến; "
+                 "chỉ hỏi 'X ở đâu' thì là chat)",
     "nav_stop": "dừng chỉ đường",
-    "alert_on": "bật cảnh báo vật cản khi đi đường (không có điểm đến)",
+    "alert_on": "bật chế độ cảnh báo vật cản liên tục khi đi đường (câu có 'bật'/'mở', không có điểm đến)",
     "alert_off": "tắt cảnh báo vật cản",
     "contact_call": "gọi điện cho một người trong danh bạ",
     "emergency_call": "gọi cấp cứu, khẩn cấp, SOS, cứu tôi",

@@ -35,11 +35,11 @@ _RULES: tuple[tuple[re.Pattern, str, str], ...] = tuple(
     (re.compile(rf"(?<!\w)(?:{pattern})(?!\w)"), intent, mode)
     for pattern, intent, mode in (
         (r"cấp cứu|khẩn cấp|cứu tôi|cứu với|sos", "emergency_call", ""),
-        (r"tắt cảnh báo|dừng cảnh báo", "alert_off", ""),
+        (r"tắt(?: chức năng)? cảnh báo|dừng cảnh báo|ngừng cảnh báo|ngừng nhắc vật cản|đừng (?:báo|nhắc) (?:vật cản|chướng ngại)", "alert_off", ""),
         (r"bật cảnh báo|mở cảnh báo", "alert_on", ""),
         (r"dừng chỉ đường|tắt chỉ đường|dừng dẫn đường|tắt dẫn đường", "nav_stop", ""),
-        (r"dẫn đường|chỉ đường|dẫn tôi|đưa tôi tới|đưa tôi đến|đi tới|đi đến", "nav_start", ""),
-        (r"tắt nhạc|dừng nhạc|ngừng nhạc", "music_stop", ""),
+        (r"dẫn đường|chỉ đường|dẫn tôi|đưa tôi tới|đưa tôi đến|tìm đường|^(?:hãy )?đi (?:tới|đến)", "nav_start", ""),
+        (r"tắt nhạc|dừng nhạc|ngừng nhạc|dừng nghe nhạc|ngừng nghe nhạc", "music_stop", ""),
         (r"âm lượng|to lên|nhỏ lại|vặn to|vặn nhỏ", "music_volume", ""),
         (r"nghe nhạc|phát nhạc|mở nhạc|bài hát|mở bài", "music_play", ""),
         (r"đặt xe|gọi xe|grab|taxi", "ride_quote", ""),
@@ -47,12 +47,11 @@ _RULES: tuple[tuple[re.Pattern, str, str], ...] = tuple(
         (r"gọi cho|gọi điện|gọi điện thoại", "contact_call", ""),
         (r"đọc lại", "ocr", "reread"),
         (r"tóm tắt", "ocr", "summarize"),
-        (r"mệnh giá|tờ tiền|bao nhiêu tiền|tiền gì", "money", ""),
-        (r"đọc", "ocr", "read"),
-        (r"có an toàn|vật cản|nguy hiểm", "hazard", ""),
+        (r"mệnh giá|tờ tiền|số tiền|bao nhiêu tiền|tiền gì", "money", ""),
+        (r"^(?:hãy |xin |làm ơn )?đọc", "ocr", "read"),
+        (r"có an toàn|vật cản|chướng ngại|có nguy hiểm không", "hazard", ""),
         (r"trước mặt|có gì|xung quanh|khung cảnh", "space", ""),
         (r"tìm|ở đâu rồi|để đâu", "find", ""),
-        (r"gọi", "contact_call", ""),
     )
 )
 

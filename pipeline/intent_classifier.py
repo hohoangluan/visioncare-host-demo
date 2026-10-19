@@ -6,6 +6,9 @@
 Clef chậm vì MẠNG: riêng một lượt tới api.cloudflare.com không chạy model đã
 423 ms, còn Gemma UIT cách 15 ms.
 
+Đo lại 2026-10-19 trên gold (concurrency 1), sau chỉnh prompt (Task 4): dev acc 0,894 -> 0,956,
+p50 263 -> 265 ms, p90 269 -> 273 ms; test 0,888 -> 0,963, p50 264 -> 267 ms (docs/benchmarks/INTENT_GOLD.md).
+
 Confidence của đường Gemma = xác suất nhãn từ logprobs (UIT trả logprobs cả khi
 dùng structured output, kiểm 2026-10-19), không còn hằng 1.0.
 
@@ -27,7 +30,7 @@ _SCHEMA = {
     "type": "object",
     "properties": {
         "intent": {"type": "string", "enum": list(LABELS)},
-        "ocr_mode": {"type": "string", "enum": ["read", "summarize", "reread"]},
+        "ocr_mode": {"type": "string", "enum": ["read", "summarize", "reread", "raw", "specialized"]},
         "needs_web": {"type": "boolean"},
     },
     "required": ["intent", "ocr_mode", "needs_web"],
@@ -38,10 +41,17 @@ _PREFIX = (
     + "\n".join(f"{k}: {v}" for k, v in LABELS.items())
     + "\n\nThêm hai trường:\n"
     "ocr_mode: với yêu cầu về chữ — read (đọc), summarize (tóm tắt), reread (đọc lại "
-    "nội dung vừa đọc); câu khác để read.\n"
+    "nội dung vừa đọc), raw (đọc nguyên văn từng chữ, không chỉnh), specialized (giấy tờ "
+    "chuyên ngành: đơn thuốc, hoá đơn, hợp đồng); câu khác để read.\n"
     "needs_web: true nếu trả lời cần tra thông tin MỚI (thời tiết, tin tức, giá cả, tỉ "
     "số, giờ mở cửa, sự kiện).\n"
-    "Câu tắt/dừng nói trống không (\"tắt đi\", \"dừng lại\") thì dựa vào bối cảnh thiết bị.\n"
+    "Câu tắt/dừng nói trống không (\"tắt đi\", \"dừng lại\", \"tắt ngay\") thì dựa vào bối cảnh "
+    "thiết bị: đang chỉ đường -> nav_stop, đang phát nhạc -> music_stop, đang cảnh báo -> alert_off.\n"
+    "Ví dụ:\n"
+    "\"Siêu thị gần nhất ở đâu\" -> chat (chỉ hỏi vị trí). \"Chỉ đường tới siêu thị\" -> nav_start.\n"
+    "\"Quét xem phía trước có vật cản không\" -> hazard. \"Bật cảnh báo vật cản\" -> alert_on.\n"
+    "\"Gọi nhanh cho bố\" -> contact_call. \"Tìm giúp cái thẻ xe\" -> find.\n"
+    "\"Kể nghe chuyện ma\" -> chat.\n"
 )
 
 
@@ -54,10 +64,18 @@ def _context(device: dict | None) -> str:
     def on(key: str) -> str:
         return "có" if d.get(key) else "không"
 
+    # Câu tắt/dừng trống không: nói thẳng đích theo trạng thái (đo 2026-10-19: chỉ ghi "đang
+    # chỉ đường=có" thì "Tắt ngay" vẫn bị đoán music_stop dù không có nhạc).
+    stops = [
+        label for key, label in (
+            ("navigating", "nav_stop"), ("music_playing", "music_stop"), ("alerting", "alert_off"),
+        ) if d.get(key)
+    ]
+    hint = f"Câu tắt/dừng trống không ở đây = {stops[0]}.\n" if len(stops) == 1 else ""
     return (
         f"\nBối cảnh thiết bị: đang phát nhạc={on('music_playing')}, đang chỉ đường="
         f"{on('navigating')}, đang bật cảnh báo vật cản={on('alerting')}, chuyến xe chờ "
-        f"xác nhận={on('ride_quote_pending')}.\n"
+        f"xác nhận={on('ride_quote_pending')}.\n{hint}"
     )
 
 
@@ -96,7 +114,7 @@ async def _gemma(text: str, device: dict | None) -> ClefResult | None:
         prob = 1.0
     result = ClefResult(
         intent=intent, confidence=prob,
-        ocr_mode=mode if mode in ("read", "summarize", "reread") else "read",
+        ocr_mode=mode if mode in ("read", "summarize", "reread", "raw", "specialized") else "read",
         needs_web=bool(reply.get("needs_web")), seconds=time.monotonic() - started,
         source="gemma",
     )
