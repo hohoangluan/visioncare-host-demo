@@ -124,4 +124,4 @@ async def answer(intent: str, text: str, image: bytes | None = None,
     full = "".join(reply).strip()
     logger.info("làn A %s xong %.2fs: %s", intent, time.monotonic() - started, full[:120])
     if intent == "chat" and full:
-        chat._HISTORY.append((text, full, time.monotonic()))
+        chat.history().append((text, full, time.monotonic()))

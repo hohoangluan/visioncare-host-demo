@@ -171,3 +171,40 @@ def test_router_fast_bypass_navigation(monkeypatch):
     res = list(router.resolve_speech(None, b"dummy"))
     assert not stt_called
     assert any("Đang dừng chỉ đường" in s for s in res)
+
+
+# --- Task 8: hai kính cùng lúc không lẫn trạng thái ---------------------------
+
+def test_history_isolated_per_device():
+    from handlers import chat
+    from pipeline import device_ctx
+    chat.reset_history()
+    with device_ctx.use("kinh-A"):
+        chat._HISTORY.append(("hỏi A", "đáp A", 1e12))
+    with device_ctx.use("kinh-B"):
+        assert chat._recent_turns() == []
+    with device_ctx.use("kinh-A"):
+        assert chat._recent_turns() == [("hỏi A", "đáp A")]
+    chat.reset_history()
+
+
+def test_device_state_isolated():
+    from pipeline import device_ctx
+    with device_ctx.use("kinh-A"):
+        action_flow.note_result("music_play", {"request_state": "succeeded"})
+        action_flow.remember("quote_id", "q1")
+        assert action_flow.device_state()["music_playing"] is True
+    with device_ctx.use("kinh-B"):
+        state = action_flow.device_state()
+        assert state["music_playing"] is False
+        assert state["most_recent"] is None
+        assert action_flow.recall("quote_id") is None
+
+
+def test_background_thread_keeps_device():
+    from pipeline import device_ctx
+    seen = []
+    with device_ctx.use("kinh-A"):
+        t = device_ctx.run_in_thread(lambda: seen.append(device_ctx.current.get()))
+    t.join(2)
+    assert seen == ["kinh-A"]

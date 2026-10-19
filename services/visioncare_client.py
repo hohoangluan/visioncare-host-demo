@@ -7,6 +7,7 @@ import uuid
 import httpx
 
 import config
+from pipeline import device_ctx
 
 logger = logging.getLogger("blind_assist")
 
@@ -78,7 +79,7 @@ def call_service_api(endpoint_path: str, payload: dict) -> dict:
 
     request_payload = dict(payload)
     if "device_id" not in request_payload:
-        request_payload["device_id"] = config.VISIONCARE_DEVICE_ID
+        request_payload["device_id"] = device_ctx.current.get()
     if "request_id" not in request_payload:
         request_payload["request_id"] = str(uuid.uuid4())
 

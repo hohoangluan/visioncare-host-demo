@@ -7,7 +7,7 @@ import time
 import uuid
 
 import config
-from pipeline import tts
+from pipeline import device_ctx, tts
 from handlers.result_speech import speak_result
 from handlers.waiting import wait_for
 from services.visioncare_client import (
@@ -58,7 +58,10 @@ def _utterance(text: str) -> str:
 #
 # Dict trong bộ nhớ tiến trình là đủ cho demo một kính một máy; nhiều kính thì
 # phải khoá theo `device_id`.
-_LAST_IDS: dict[str, str] = {}
+#
+# Mỗi kính một kho: `_LAST_IDS`/`_ACTIVE` là dict[device, dict], khoá đọc từ
+# `device_ctx.current`. Truy cập qua `_ids()`/`_active()`.
+_LAST_IDS: dict[str, dict[str, str]] = {}
 
 # Kết quả nào của action nào cần nhớ lại cho lệnh sau.
 _REMEMBER_KEYS = {
@@ -85,7 +88,7 @@ _REMEMBER_KEYS = {
 # dùng đang muốn tắt nhạc — mới là cái phải tránh. Sửa được khi host đẩy sự kiện
 # "hết bài" về; đừng thay bằng TTL đoán mò, vì không có con số nào đúng cho mọi
 # bài hát.
-_ACTIVE: dict[str, float] = {}
+_ACTIVE: dict[str, dict[str, float]] = {}
 
 # Action nào bật/tắt việc gì. Chỉ tính khi điện thoại báo `succeeded` — lệnh gửi
 # đi mà máy báo hỏng thì nhạc không hề chạy, đánh dấu là chạy sẽ khiến "tắt đi"
@@ -94,19 +97,27 @@ _STARTS = {"music_play": "music_playing", "navigation_start": "navigating"}
 _ENDS = {"music_stop": "music_playing", "navigation_stop": "navigating"}
 
 
+def _ids() -> dict[str, str]:
+    return _LAST_IDS.setdefault(device_ctx.current.get(), {})
+
+
+def _active() -> dict[str, float]:
+    return _ACTIVE.setdefault(device_ctx.current.get(), {})
+
+
 def remember(key: str, value: str) -> None:
     """Ghi lại một giá trị cho lượt nói tiếp theo (điểm đến đang chờ xác nhận)."""
-    _LAST_IDS[key] = value
+    _ids()[key] = value
 
 
 def recall(key: str) -> str | None:
     """Id gần nhất đã nhận được cho `key` (`navigation_id`, `quote_id`)."""
-    return _LAST_IDS.get(key)
+    return _ids().get(key)
 
 
 def forget(key: str) -> None:
     """Xoá id sau khi nó đã được dùng xong (chuyến đã hủy, lộ trình đã dừng)."""
-    _LAST_IDS.pop(key, None)
+    _ids().pop(key, None)
 
 
 def device_state() -> dict:
@@ -116,11 +127,12 @@ def device_state() -> dict:
     việc vừa bật gần đây nhất trong số đang chạy — chỗ dựa duy nhất khi cả nhạc
     lẫn chỉ đường cùng chạy và người dùng chỉ nói "tắt đi".
     """
-    running = sorted(_ACTIVE.items(), key=lambda kv: kv[1])
+    active = _active()
+    running = sorted(active.items(), key=lambda kv: kv[1])
     return {
-        "music_playing": "music_playing" in _ACTIVE,
-        "navigating": "navigating" in _ACTIVE,
-        "ride_quote_pending": "quote_id" in _LAST_IDS,
+        "music_playing": "music_playing" in active,
+        "navigating": "navigating" in active,
+        "ride_quote_pending": "quote_id" in _ids(),
         "most_recent": running[-1][0] if running else None,
     }
 
@@ -133,16 +145,17 @@ def reset_state() -> None:
 
 def mark_active(task: str) -> None:
     """Đánh dấu tác vụ `task` ('music_playing' hoặc 'navigating') đang hoạt động duy nhất."""
-    _ACTIVE.clear()
-    _ACTIVE[task] = time.monotonic()
+    active = _active()
+    active.clear()
+    active[task] = time.monotonic()
 
 
 def mark_inactive(task: str | None = None) -> None:
     """Xóa tác vụ đang hoạt động."""
     if task:
-        _ACTIVE.pop(task, None)
+        _active().pop(task, None)
     else:
-        _ACTIVE.clear()
+        _active().clear()
 
 
 def note_result(operation: str, data: dict | None) -> None:
@@ -154,7 +167,7 @@ def note_result(operation: str, data: dict | None) -> None:
     if key:
         value = (data.get("result") or {}).get(key)
         if value:
-            _LAST_IDS[key] = value
+            _ids()[key] = value
             logger.info("Nhớ %s=%s từ %s", key, value, operation)
 
     started = _STARTS.get(operation)
@@ -162,7 +175,7 @@ def note_result(operation: str, data: dict | None) -> None:
         mark_active(started)
         logger.info("Bắt đầu: %s", started)
     ended = _ENDS.get(operation)
-    if ended and _ACTIVE.pop(ended, None) is not None:
+    if ended and _active().pop(ended, None) is not None:
         logger.info("Kết thúc: %s", ended)
 
 
@@ -231,10 +244,17 @@ def run_action(
     started = time.monotonic()
     generated_request_id = str(uuid.uuid4())
     request_payload = {**payload, "request_id": generated_request_id}
+    device = device_ctx.current.get()
+
+    def on_result(data: dict) -> None:
+        # Callback tới từ luồng của app server: phải cập nhật đúng kính đã gọi.
+        with device_ctx.use(device):
+            note_result(operation, data)
+
     action_callbacks.register(
         generated_request_id,
         operation,
-        lambda data: note_result(operation, data),
+        on_result,
         registered_at=started,
     )
     try:
@@ -286,9 +306,5 @@ def run_action(
                 return
             time.sleep(config.VISIONCARE_RESULT_POLL_SECONDS)
 
-    threading.Thread(
-        target=reconcile_late,
-        name=f"action-reconcile-{request_id[:8]}",
-        daemon=True,
-    ).start()
+    device_ctx.run_in_thread(reconcile_late, name=f"action-reconcile-{request_id[:8]}")
     yield _utterance("Điện thoại vẫn đang thực hiện, tôi sẽ cập nhật khi có kết quả.")

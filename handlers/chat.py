@@ -7,6 +7,7 @@ from datetime import UTC, datetime
 
 import config
 from models import vlm
+from pipeline import device_ctx
 from services import visioncare_client
 
 logger = logging.getLogger("blind_assist")
@@ -223,11 +224,41 @@ _WEEKDAYS = [
 
 # (câu người dùng, câu trả lời, mốc thời gian). deque có maxlen tự bỏ lượt cũ
 # nhất, nên lịch sử không phình vô hạn theo thời gian chạy của server.
-_HISTORY: deque[tuple[str, str, float]] = deque(maxlen=config.CHAT_HISTORY_TURNS)
+_HISTORIES: dict[str, deque[tuple[str, str, float]]] = {}
+
+
+def history() -> deque[tuple[str, str, float]]:
+    """Lịch sử chat của kính đang phục vụ (mỗi kính một deque riêng)."""
+    return _HISTORIES.setdefault(
+        device_ctx.current.get(), deque(maxlen=config.CHAT_HISTORY_TURNS)
+    )
+
+
+class _HistoryProxy:
+    """`chat._HISTORY` giữ nguyên giao diện deque cho code/test cũ, nhưng trỏ vào
+    lịch sử của kính hiện tại."""
+
+    def __getattr__(self, name):
+        return getattr(history(), name)
+
+    def __len__(self):
+        return len(history())
+
+    def __iter__(self):
+        return iter(history())
+
+    def __getitem__(self, index):
+        return history()[index]
+
+    def __bool__(self):
+        return bool(history())
+
+
+_HISTORY = _HistoryProxy()
 
 
 def reset_history() -> None:
-    _HISTORY.clear()
+    _HISTORIES.clear()
 
 
 def _now_text() -> str:
@@ -249,9 +280,10 @@ def _recent_turns() -> list[tuple[str, str]]:
     Người dùng bỏ máy rồi quay lại sau vài giờ là một cuộc trò chuyện khác;
     kéo theo lượt cũ chỉ khiến model trả lời lạc đề.
     """
-    if _HISTORY and time.monotonic() - _HISTORY[-1][2] > config.CHAT_HISTORY_TTL_SECONDS:
-        _HISTORY.clear()
-    return [(user, reply) for user, reply, _ in _HISTORY]
+    hist = history()
+    if hist and time.monotonic() - hist[-1][2] > config.CHAT_HISTORY_TTL_SECONDS:
+        hist.clear()
+    return [(user, reply) for user, reply, _ in hist]
 
 
 def _location_text() -> str:
@@ -309,7 +341,7 @@ def _remember(command_text: str, pieces: Iterator[str]) -> Iterator[str]:
 
     text = "".join(reply).strip()
     if text:
-        _HISTORY.append((command_text, text, time.monotonic()))
+        history().append((command_text, text, time.monotonic()))
 
 
 def handle(image: bytes, command_text: str, params: dict | None = None) -> Iterator[str]:

@@ -9,7 +9,7 @@ from queue import Full, Queue
 import numpy as np
 
 import config
-from pipeline import adpcm
+from pipeline import adpcm, device_ctx
 
 # VieNeu-TTS v3 Turbo outputs 48 kHz mono float32 audio.
 SAMPLE_RATE = 48000
@@ -347,8 +347,7 @@ def synthesize_text_stream(text_chunks: Iterable[str]) -> Iterator[bytes]:
         finally:
             queue.put(done)
 
-    thread = threading.Thread(target=worker, name="tts-pipeline", daemon=True)
-    thread.start()
+    thread = device_ctx.run_in_thread(worker, name="tts-pipeline")
 
     try:
         while True:

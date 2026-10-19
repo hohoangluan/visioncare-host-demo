@@ -9,7 +9,7 @@ import asyncio
 import threading
 from collections.abc import AsyncIterator, Iterable, Iterator
 
-from pipeline import tts
+from pipeline import device_ctx, tts
 
 _DONE = object()
 
@@ -49,8 +49,7 @@ async def adpcm_stream(text: Iterable[str]) -> AsyncIterator[bytes]:
         finally:
             loop.call_soon_threadsafe(queue.put_nowait, _DONE)
 
-    thread = threading.Thread(target=worker, name="ws-tts", daemon=True)
-    thread.start()
+    thread = device_ctx.run_in_thread(worker, name="ws-tts")
     try:
         while True:
             item = await queue.get()

@@ -10,6 +10,7 @@ import queue
 import threading
 
 import config
+from pipeline import device_ctx
 
 
 def notice_delays(opening_seconds: float = 0.0) -> Iterator[float]:
@@ -98,7 +99,7 @@ def wait_for(
         except BaseException as exc:  # noqa: BLE001 - trả lỗi về luồng chính nguyên vẹn
             channel.put(exc)
 
-    threading.Thread(target=run, daemon=True, name="waiting").start()
+    device_ctx.run_in_thread(run, name="waiting")
 
     delays = notice_delays(opening_seconds)
     index = 0

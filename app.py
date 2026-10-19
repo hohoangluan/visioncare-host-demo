@@ -21,7 +21,7 @@ from starlette.concurrency import run_in_threadpool
 import config
 from handlers import chat
 from models import vlm
-from pipeline import adpcm, cues, intent_local, phrases, router, stt, tts
+from pipeline import adpcm, cues, device_ctx, intent_local, phrases, router, stt, tts
 from pipeline import turn as turn_v2
 from pipeline.image_buffer import image_buffer
 from pipeline.reply import Reply
@@ -477,6 +477,7 @@ def process(
     trên event loop chính, nên STT/OCR/gọi Gemini/TTS của một request không
     chặn các request khác đang xử lý song song.
     """
+    device_ctx.current.set(_device_id(request.headers))
     started = time.monotonic()
     idx = _next_debug_index()
     response_format = config.RESPONSE_FORMAT
@@ -663,6 +664,7 @@ async def turn_lane(request: Request) -> Response:
     from live.session import sessions
 
     device = _device_id(request.headers)
+    device_ctx.current.set(device)
     turn_id = request.headers.get("x-turn-id", "")
     cue_ok = cues.supported(request.headers.get("x-cue-version"))
     response_format = config.RESPONSE_FORMAT

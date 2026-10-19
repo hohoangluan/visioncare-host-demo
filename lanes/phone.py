@@ -17,6 +17,7 @@ import threading
 import time
 from collections.abc import Iterator
 
+from pipeline import device_ctx
 from handlers import music, navigation, phone, ride
 from models import llm
 
@@ -165,6 +166,4 @@ def run_background(intent: str, text: str, params: dict, deliver=None) -> thread
         except Exception:  # noqa: BLE001
             logger.exception("làn D nền %s lỗi", intent)
 
-    thread = threading.Thread(target=worker, name=f"lane-d-{intent}", daemon=True)
-    thread.start()
-    return thread
+    return device_ctx.run_in_thread(worker, name=f"lane-d-{intent}")
