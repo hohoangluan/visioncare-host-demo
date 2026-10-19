@@ -18,11 +18,23 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
-$BackendRoot = 'D:\Study\innostar\app_demo_backend'
-$GlassesRoot = 'D:\Study\innostar\Sever_test'
+# Đường dẫn máy bạn đặt trong .env (xem .env.example); mặc định là thư mục
+# anh em của repo này. Biến đã có trong môi trường thì không bị .env ghi đè.
+$GlassesRoot = $PSScriptRoot
+$EnvFile = Join-Path $GlassesRoot '.env'
+if (Test-Path $EnvFile) {
+    foreach ($line in Get-Content $EnvFile) {
+        if ($line -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*?)\s*$' -and -not $line.TrimStart().StartsWith('#')) {
+            if (-not [Environment]::GetEnvironmentVariable($Matches[1])) {
+                [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2].Trim('"'))
+            }
+        }
+    }
+}
+$BackendRoot = if ($env:VISIONCARE_BACKEND_ROOT) { $env:VISIONCARE_BACKEND_ROOT } else { Join-Path (Split-Path $GlassesRoot -Parent) 'app-demo-backend' }
 $AppServerUrl = 'http://127.0.0.1:8001'
 $LogDir      = Join-Path $GlassesRoot 'logs'
-$Adb         = 'D:\tmp\app-demo-android-toolchain\android-sdk\platform-tools\adb.exe'
+$Adb         = if ($env:ADB_PATH) { $env:ADB_PATH } else { 'adb' }
 $AppPackage  = 'com.youreyes.app'
 
 # One ephemeral secret is inherited by both child processes. It is never
@@ -99,10 +111,11 @@ if ($SkipGlasses) {
 
 # Pairing is idempotent, so re-asserting it every start costs nothing and
 # removes "did anyone unlink the glasses?" from the list of demo-day unknowns.
+if (-not $env:VISIONCARE_DEVICE_CLIENT_TOKEN) { throw 'Thiếu VISIONCARE_DEVICE_CLIENT_TOKEN trong .env' }
 Write-Host "`n[pairing] glasses-123 -> user-100" -ForegroundColor Cyan
 $pair = Invoke-RestMethod -Method Post -Uri "$AppServerUrl/api/v1/device/glasses/link" `
     -Headers @{
-        Authorization = 'Bearer _W7kNZRwdQC9jawhJr7ji_TJ6JzUI5igkHQrE6oAQKE'
+        Authorization = "Bearer $($env:VISIONCARE_DEVICE_CLIENT_TOKEN)"
         'User-Agent'  = 'VisionCare-Glasses/1.0'
     } `
     -ContentType 'application/json' `

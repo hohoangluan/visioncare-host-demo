@@ -9,6 +9,8 @@ if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
 import httpx
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import config
 from pipeline import tts
 from services import visioncare_client
@@ -16,8 +18,6 @@ from handlers import navigation, phone, ride, music
 
 logging.basicConfig(level=logging.WARNING)
 
-config.VISIONCARE_CLIENT_TOKEN = "f23ChvjGZt_WYrY-A8eJAyxO5LVEF_TGujmE7F_gRAY"
-config.VISIONCARE_DEVICE_ID = "glasses-123"
 visioncare_client.reset_client()
 
 

@@ -118,9 +118,6 @@ def _load():
     Trả `None` chứ không raise: máy chưa chạy `train_intent_setfit.py` vẫn phải
     khởi động được server và đi đường Gemini, thay vì chết lúc import.
     """
-    import onnxruntime as ort
-    from transformers import AutoTokenizer
-
     model_dir = Path(config.INTENT_LOCAL_DIR)
     onnx_path = model_dir / "model_quantized.onnx"
     head_path = model_dir / "head.npz"
@@ -131,6 +128,10 @@ def _load():
             model_dir,
         )
         return None
+
+    # Import sau khi đã chắc có model, để máy chưa có model không cần cài transformers.
+    import onnxruntime as ort
+    from transformers import AutoTokenizer
 
     opts = ort.SessionOptions()
     opts.intra_op_num_threads = config.INTENT_LOCAL_NUM_THREADS

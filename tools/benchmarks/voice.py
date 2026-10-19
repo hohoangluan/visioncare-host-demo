@@ -1,6 +1,7 @@
 import sys, time, os, httpx
 if hasattr(sys.stdout, 'reconfigure'): sys.stdout.reconfigure(encoding='utf-8')
 from pathlib import Path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from pipeline import tts
 
 test_suite = {
@@ -99,4 +100,4 @@ for category, cases in test_suite.items():
 
 print(f'\nDONE! Passed: {total_passed}, Failed: {total_failed}')
 content = '\n'.join(results_md)
-Path('VOICE_LATENCY_BENCHMARK.md').write_text(content, encoding='utf-8')
+Path('docs/benchmarks/VOICE_LATENCY_BENCHMARK.md').write_text(content, encoding='utf-8')

@@ -641,7 +641,7 @@ def test_auto_is_the_default_response_format():
 @pytest.mark.parametrize(
     "accept,expected",
     [
-        # Đúng chuỗi board ESP32 gửi lên (`HUONG_DAN_SERVER.md` §1).
+        # Đúng chuỗi board ESP32 gửi lên (`docs/HUONG_DAN_SERVER.md` §1).
         ("audio/wav;codec=ima_adpcm, audio/mpeg, audio/wav", "adpcm_wav"),
         ("audio/mpeg", "mp3_stream"),
         ("audio/wav", "wav"),

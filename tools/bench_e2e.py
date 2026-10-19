@@ -1,6 +1,6 @@
 """Đo tốc độ end-to-end của /process, mô phỏng đúng cách board ESP32 gọi lên.
 
-Dựng gói multipart y như firmware (`HUONG_DAN_SERVER.md` §1), gửi qua socket
+Dựng gói multipart y như firmware (`docs/HUONG_DAN_SERVER.md` §1), gửi qua socket
 trần rồi đóng dấu thời gian từng mảnh nhận về. Đo qua `requests`/`httpx` không
 được: chúng gom body nên che mất chính thứ cần đo.
 
@@ -273,7 +273,7 @@ def _ratio(r: Result) -> float:
     """Tỉ lệ nhả, đúng phép chia board làm.
 
     Giây tiếng nhận được / giây đồng hồ kể từ BYTE ĐẦU TIÊN — kể cả byte đó là
-    header chứ chưa phải tiếng. Board bắt đầu đếm từ đó (`HUONG_DAN_SERVER.md`
+    header chứ chưa phải tiếng. Board bắt đầu đếm từ đó (`docs/HUONG_DAN_SERVER.md`
     §3), nên đo từ byte audio đầu tiên là tự cho mình điểm cao hơn thực tế.
     """
     window = max(r.t_total - r.t_first_byte, 1e-6)

@@ -52,12 +52,12 @@ def _speech_modules() -> tuple:
     client HTTP).
     """
     from handlers import action_flow, music, navigation, phone, result_speech, ride, waiting
-    from pipeline import router
+    from pipeline import cues, router
 
     return (
         waiting, action_flow, result_speech,
         music, navigation, phone, ride,
-        router, image_quality,
+        router, image_quality, cues,
     )
 
 
@@ -159,7 +159,7 @@ def generate_chime_pcm(duration: float = 1.5, sample_rate: int = 16000) -> bytes
 
 def generate_warm_melodic_pcm() -> bytes:
     """Đọc warm_melodic.wav và resample về 16kHz PCM mono."""
-    wav_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "warm_melodic.wav")
+    wav_path = os.path.join(os.path.dirname(os.path.dirname(__file__)), "assets", "audio", "warm_melodic.wav")
     if not os.path.exists(wav_path):
         return generate_chime_pcm()
     try:

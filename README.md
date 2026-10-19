@@ -237,7 +237,7 @@ gì và không biết vì sao.
 Sau mảnh PCM đầu thì header 200 đã gửi, không rút lại được: server dừng stream
 và ghi log, người dùng nghe cụt câu.
 
-Muốn nghe bằng máy tính: dùng `test.py` (nó bọc PCM nhận được vào WAV rồi lưu
+Muốn nghe bằng máy tính: dùng `tools/manual/call_process.py` (nó bọc PCM nhận được vào WAV rồi lưu
 ra file), hoặc lấy `storage/response*.wav` mà server tự ghi lại để debug.
 
 ### Đo thời gian
@@ -328,7 +328,7 @@ nhanh gấp ~2.5 lần).
 
 **Nhưng đệm không cứu được thiếu băng thông.** Đường truyền phải giữ được
 `X-Audio-Byte-Rate` = **32 KB/s** liên tục; dưới mức đó thì thiếu hụt tích luỹ
-theo độ dài bài và không preroll nào đủ. `test.py` in tốc độ tải thật để kiểm.
+theo độ dài bài và không preroll nào đủ. `tools/manual/call_process.py` in tốc độ tải thật để kiểm.
 Nếu link không đạt, hạ `OUTPUT_SAMPLE_RATE` xuống 8000 (16 KB/s, chất lượng
 điện thoại, giọng nói vẫn rõ).
 

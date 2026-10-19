@@ -1,6 +1,6 @@
 """IMA ADPCM 4-bit (`WAVE_FORMAT_DVI_ADPCM`, fmt tag 0x0011), khối 256 byte.
 
-Đây là định dạng board ESP32 dùng cho CẢ hai chiều (xem `HUONG_DAN_SERVER.md`):
+Đây là định dạng board ESP32 dùng cho CẢ hai chiều (xem `docs/HUONG_DAN_SERVER.md`):
 board gửi lên `record.wav` nén ADPCM, và board đọc được ADPCM trả về.
 
 🔴 KHÔNG dùng `audioop.lin2adpcm()` / `adpcm2lin()` của Python cho việc này.

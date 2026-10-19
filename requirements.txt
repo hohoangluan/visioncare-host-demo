@@ -3,14 +3,20 @@ fastapi
 uvicorn[standard]
 python-multipart
 numpy
-# torch/torchaudio/transformers đã bỏ: chúng chỉ có ở đây để chạy PhoWhisper.
+# pipeline/phrases.py resample warm_melodic.wav (44,1 kHz) về 16 kHz bằng scipy; thiếu
+# thì nó im lặng rơi về tiếng chime tổng hợp.
+scipy
+# torch/torchaudio đã bỏ: chúng chỉ có ở đây để chạy PhoWhisper (transformers giữ lại bên dưới, chỉ cho tokenizer).
 # STT giờ là sherpa-onnx, TTS chạy backend ONNX của vieneu (torch chỉ nằm trong
 # extra "legacy" của nó) — không dòng code nào trong repo còn import torch.
 sherpa-onnx
+# Chỉ để nạp tokenizer cho pipeline/intent_local.py (không cần torch).
+transformers
 pillow
 google-genai
 python-dotenv
-vieneu
+# >=3.8: code dùng API v3 (`Vieneu(device=...)`, voice/style); bản 1.x làm server chết lúc khởi động.
+vieneu>=3.8.3
 lameenc
 # `services/visioncare_client.py` dùng httpx.Client để TÁI DÙNG kết nối tới
 # host. Với urllib thì mỗi lượt poll dựng TLS mới (đo: 133 ms bắt tay, 252 ms
@@ -19,3 +25,13 @@ lameenc
 httpx
 # dev / test
 pytest
+# ── voice server v2 ──
+# WebSocket cho `/v2/live` (uvicorn[standard] đã kéo theo, ghi rõ cho chắc).
+websockets
+# Text detector (PP-OCR det) + hazard YOLO chạy ONNX trên GPU. KHÔNG cài kèm gói
+# `onnxruntime` CPU: hai gói cùng tên module, gói cài sau đè gói trước. `vieneu`
+# kéo `onnxruntime` CPU vào, nên sau `pip install -r requirements.txt` chạy:
+#   uv pip uninstall onnxruntime onnxruntime-gpu
+#   uv pip install --reinstall "onnxruntime-gpu[cuda,cudnn]"
+onnxruntime-gpu[cuda,cudnn]
+opencv-python-headless

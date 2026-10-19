@@ -8,6 +8,8 @@ import urllib.error
 if hasattr(sys.stdout, "reconfigure"):
     sys.stdout.reconfigure(encoding="utf-8")
 
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 import config
 from services import visioncare_client
 from handlers import navigation, phone, ride, music
@@ -15,12 +17,10 @@ from handlers import navigation, phone, ride, music
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("test_live")
 
-# Live server credentials
-config.VISIONCARE_CLIENT_TOKEN = "f23ChvjGZt_WYrY-A8eJAyxO5LVEF_TGujmE7F_gRAY"
-config.VISIONCARE_DEVICE_ID = "glasses-123"
+# Token/device lấy từ .env (config); bắt client dựng lại với giá trị đó.
 visioncare_client.reset_client()
 
-DEVICE_CLIENT_TOKEN = "_W7kNZRwdQC9jawhJr7ji_TJ6JzUI5igkHQrE6oAQKE"
+DEVICE_CLIENT_TOKEN = config.get("VISIONCARE_DEVICE_CLIENT_TOKEN")
 
 
 def test_health():

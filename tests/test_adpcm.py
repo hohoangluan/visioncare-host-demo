@@ -1,4 +1,4 @@
-"""Hợp đồng ADPCM với board ESP32 (xem `HUONG_DAN_SERVER.md`).
+"""Hợp đồng ADPCM với board ESP32 (xem `docs/HUONG_DAN_SERVER.md`).
 
 Các con số ở đây (60, 20, 0x0011, 256, 505, 8110) là hợp đồng với firmware, không
 phải chi tiết cài đặt. Đổi một cái là board giải ra nhiễu trắng, mà nhiễu trắng

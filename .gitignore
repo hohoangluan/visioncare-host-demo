@@ -1,22 +1,43 @@
+# Python
 __pycache__/
 *.pyc
 .venv/
+.pytest_cache/
+
+# Bí mật / cấu hình máy — mẫu nằm ở .env.example
+.env
+.env.*
+!.env.example
+
+# Dữ liệu sinh ra khi chạy
 storage/*
 !storage/.gitkeep
-node_modules/
-.superpowers/
-checkpoints/
+logs/
+certs/
+
+# Model: chỉ giữ code (models/ocr, models/vlm), bỏ trọng số và cache
 models/*
 !models/.gitkeep
 !models/ocr/
 !models/vlm/
-storage/
-docs/
-logs/
+!models/llm/
+!models/clef/
+!models/search/
+!models/net.py
+!models/onnx_session.py
+checkpoints/
+# Ảnh checkpoint 1.5GB, không thuộc mã nguồn.
+checkpoints.zip
+
 # Ảnh thật (chứa mặt người) dùng cho test_bang_am_thanh.py — không commit.
 tests/fixtures/*
 !tests/fixtures/.gitkeep
 # Audio thử do `tools/make_board_audio.py` dựng lại được bất cứ lúc nào.
 tools/board_audio/
-# Ảnh checkpoint 1.5GB, không thuộc mã nguồn.
-checkpoints.zip
+
+# Công cụ / editor
+node_modules/
+.superpowers/
+.vscode/
+.idea/
+.DS_Store

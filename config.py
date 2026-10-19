@@ -2,7 +2,11 @@ import os
 
 from dotenv import load_dotenv
 
-load_dotenv(os.path.join(os.path.dirname(__file__), "models", ".env"))
+# `.env` ở gốc dự án là chỗ chính (mẫu: .env.example); `models/.env` giữ lại cho
+# cấu hình cũ. load_dotenv không ghi đè biến đã có, nên file nạp trước thắng.
+_ROOT = os.path.dirname(__file__)
+load_dotenv(os.path.join(_ROOT, ".env"))
+load_dotenv(os.path.join(_ROOT, "models", ".env"))
 
 
 def get(name: str, default: str = "") -> str:
@@ -196,7 +200,7 @@ TTS_STYLE = get("TTS_STYLE", "tu_nhien")
 
 # VisionCare Host API configuration (app server running on localhost:8001)
 VISIONCARE_HOST_URL = get("VISIONCARE_HOST_URL", "http://127.0.0.1:8001")
-VISIONCARE_CLIENT_TOKEN = get("VISIONCARE_CLIENT_TOKEN", "f23ChvjGZt_WYrY-A8eJAyxO5LVEF_TGujmE7F_gRAY")
+VISIONCARE_CLIENT_TOKEN = get("VISIONCARE_CLIENT_TOKEN", "")
 VISIONCARE_DEVICE_ID = get("VISIONCARE_DEVICE_ID", "glasses-123")
 
 # Số giây chờ kết quả thật của một action sau khi host trả `202 Accepted`.
@@ -231,7 +235,13 @@ VISIONCARE_MUSIC_RESULT_TIMEOUT_SECONDS = float(
     get("VISIONCARE_MUSIC_RESULT_TIMEOUT_SECONDS", "40")
 )
 VISIONCARE_FAST_ACTION_SECONDS = float(get("VISIONCARE_FAST_ACTION_SECONDS", "2.0"))
-VISIONCARE_CALLBACK_TOKEN = get("VISIONCARE_CALLBACK_TOKEN", "visioncare-secret-token")
+VISIONCARE_CALLBACK_TOKEN = get("VISIONCARE_CALLBACK_TOKEN", "")
+# Mạng được phép gọi `/internal/action-results`. Mặc định chỉ loopback (chạy cả
+# hai server trên cùng máy). Chạy Docker thì backend nằm ở container khác nên
+# phải liệt kê dải mạng của Docker (xem docker-compose.yml); vẫn cần bearer token.
+CALLBACK_ALLOWED_NETWORKS = tuple(
+    n.strip() for n in get("CALLBACK_ALLOWED_NETWORKS", "127.0.0.0/8,::1/128").split(",") if n.strip()
+)
 
 CHAT_LOCATION_REFRESH_SECONDS = float(get("CHAT_LOCATION_REFRESH_SECONDS", "240.0"))
 CHAT_LOCATION_MAX_FIX_AGE_SECONDS = float(get("CHAT_LOCATION_MAX_FIX_AGE_SECONDS", "600.0"))
@@ -239,3 +249,109 @@ CHAT_LOCATION_TTL_SECONDS = float(get("CHAT_LOCATION_TTL_SECONDS", "600.0"))
 CHAT_ALWAYS_SEARCH = get("CHAT_ALWAYS_SEARCH", "1") != "0"
 
 
+
+# ── Voice server v2 (docs/superpowers/specs/2026-10-19-voice-server-architecture-design.md) ──
+
+# Gemma 4 26B-A4B qua API tương thích OpenAI (UIT). Đường LAN 192.168.20.150:8899
+# đã bỏ: 2026-10-19 nó nhận TCP rồi trả "Empty reply" ở mọi đường dẫn. Vẫn nhận
+# danh sách nhiều URL (cách nhau dấu phẩy): khởi động đo cả hai, dùng đường nhanh
+# nhất, lỗi giữa chừng thì chuyển đường kế tiếp.
+LLM_BASE_URLS = tuple(
+    u.strip().rstrip("/") for u in get(
+        "LLM_BASE_URLS", get("AGENT_BASE_URL", "https://llm.uit.edu.vn/gemma/v1"),
+    ).split(",") if u.strip()
+)
+LLM_API_KEY = get("LLM_API_KEY", get("AGENT_API_KEY", ""))
+LLM_MODEL = get("LLM_MODEL", get("AGENT_MODEL", "gemma-4-26b"))
+# llm.uit.edu.vn cần thêm cross-sign Sectigo E46 (docs/LLM_PROVIDER.md).
+LLM_CA_BUNDLE = get("LLM_CA_BUNDLE", os.path.join(_ROOT, "certs", "uit-ca-bundle.pem"))
+# Bắt tay TCP tới một host chết phải hỏng NHANH để kịp chuyển đường dự phòng.
+LLM_CONNECT_TIMEOUT_S = float(get("LLM_CONNECT_TIMEOUT_S", "0.5"))
+LLM_TIMEOUT_S = float(get("LLM_TIMEOUT_S", "30"))
+LLM_MAX_TOKENS = int(get("LLM_MAX_TOKENS", "400"))
+# Cạnh dài ảnh gửi cho Gemma. Ảnh UXGA 1600px gửi nguyên là nhiều token ảnh hơn
+# và upload lâu hơn mà Gemma vẫn thu về độ phân giải nội bộ của nó.
+LLM_IMAGE_MAX_SIDE = int(get("LLM_IMAGE_MAX_SIDE", "896"))
+# OCR cần giữ chi tiết chữ nhỏ nên ảnh chụp high-res gửi lớn hơn.
+LLM_OCR_IMAGE_MAX_SIDE = int(get("LLM_OCR_IMAGE_MAX_SIDE", "1600"))
+
+# Clef (Cloudflare Workers AI) — phân loại intent cuối và trên partial.
+CLOUDFLARE_API_TOKEN = get("CLOUDFLARE_API_TOKEN", "")
+CLOUDFLARE_ACCOUNT_ID = get("CLOUDFLARE_ACCOUNT_ID", "")
+CLEF_MODEL = get("CLEF_MODEL", "clef-flash")
+CLEF_MODEL_ID = get("CLEF_MODEL_ID", "@cf/cloudflare/clef-flash")
+CLEF_TIMEOUT_S = float(get("CLEF_TIMEOUT_S", "1"))
+# Dưới ngưỡng này nhãn Clef coi như không chắc -> dùng luật từ khoá nếu khớp.
+CLEF_MIN_CONFIDENCE = float(get("CLEF_MIN_CONFIDENCE", "0.15"))
+
+# Google Programmable Search cho làn A. Trống key thì Gemma trả lời thẳng.
+GOOGLE_SEARCH_API_KEY = get("GOOGLE_SEARCH_API_KEY", "")
+GOOGLE_SEARCH_CX = get("GOOGLE_SEARCH_CX", "")
+SEARCH_TIMEOUT_S = float(get("SEARCH_TIMEOUT_S", "3"))
+
+# Image Buffer (§6): ảnh chỉ nằm trong RAM, hạn 30 s.
+IMAGE_BUFFER_TTL_S = float(get("IMAGE_BUFFER_TTL_S", "30"))
+# Âm thanh tới trước ảnh (kính không mở được 2 kết nối): chờ ảnh tối đa ngần này
+# trước khi coi như không có ảnh.
+IMAGE_WAIT_S = float(get("IMAGE_WAIT_S", "1.5"))
+
+# Pseudo-streaming STT (§7.1): giải lại cả buffer mỗi ngần này giây.
+STT_PARTIAL_INTERVAL_S = float(get("STT_PARTIAL_INTERVAL_S", "0.3"))
+# Early intent (§7.2): Clef trên partial khi đủ từ và đã đứng yên ngần này giây.
+EARLY_CLASSIFY_MIN_WORDS = int(get("EARLY_CLASSIFY_MIN_WORDS", "3"))
+EARLY_CLASSIFY_STABLE_S = float(get("EARLY_CLASSIFY_STABLE_S", "0.3"))
+EARLY_CLASSIFY_MAX_CALLS = int(get("EARLY_CLASSIFY_MAX_CALLS", "2"))
+# Sau bản ghi cuối, chạy SONG SONG với Clef cuối những việc không có tác dụng
+# phụ (Gemma sinh câu trả lời làn A, Gemma trích tham số làn D) theo nhãn đoán
+# sớm. Clef xác nhận thì dùng luôn, khác nhãn thì huỷ. Không phát tiếng, không
+# gửi lệnh điện thoại nào trước khi có nhãn cuối (§1 nguyên tắc 3).
+SPECULATIVE_FINAL = get("SPECULATIVE_FINAL", "1") != "0"
+
+# Đệm audio trước byte đầu cho /v2/turn. Đo 2026-10-19 (TTS GPU, RTF 0,76),
+# `tools/bench_live.py` cột `starve`, 15 lượt với đệm 0: loa đói tối đa 177 ms
+# (localhost). Mỗi 0,1 s đệm là ~0,08 s chờ thêm trước tiếng đầu; người dùng
+# chọn 0,2 s (ưu tiên tốc độ). Đo lại cột `starve` trên đường WiFi/Cloudflare thật.
+V2_AUDIO_PREROLL_SECONDS = float(get("V2_AUDIO_PREROLL_SECONDS", "0.2"))
+# Câu TTS đầu của làn A cắt ở ngần này từ để tiếng ra sớm (§9).
+FIRST_SENTENCE_MAX_WORDS = int(get("FIRST_SENTENCE_MAX_WORDS", "8"))
+
+# WebSocket realtime (§5.3).
+LIVE_TOKEN_TTL_S = float(get("LIVE_TOKEN_TTL_S", "10"))
+OCR_ALIGN_TIMEOUT_S = float(get("OCR_ALIGN_TIMEOUT_S", "20"))
+OCR_CUE_MIN_GAP_S = float(get("OCR_CUE_MIN_GAP_S", "1.5"))
+OCR_LOOK_AROUND_GAP_S = float(get("OCR_LOOK_AROUND_GAP_S", "3"))
+OCR_GOOD_FRAMES = int(get("OCR_GOOD_FRAMES", "3"))
+# Chiều cao dòng tối thiểu tính trên ảnh UXGA (spec OCR: ~28 px/dòng).
+OCR_MIN_LINE_PX = float(get("OCR_MIN_LINE_PX", "28"))
+OCR_CAPTURE_WIDTH = int(get("OCR_CAPTURE_WIDTH", "1600"))
+# Ảnh buffer UXGA đã đạt chuẩn căn khung thì đọc luôn, khỏi mở WebSocket.
+OCR_ACCEPT_BUFFER = get("OCR_ACCEPT_BUFFER", "1") != "0"
+LAST_TEXT_TTL_S = float(get("LAST_TEXT_TTL_S", "300"))
+# "auto" = PP-OCR det (ONNX, `TEXT_DET_MODEL_PATH`) nếu có file, không thì bộ dò hình thái OpenCV.
+TEXT_DETECTOR = get("TEXT_DETECTOR", "auto")
+
+# Hazard (§11). File ONNX YOLO; trống/thiếu file thì làn C không có detector.
+HAZARD_MODEL_PATH = get("HAZARD_MODEL_PATH", os.path.join(_ROOT, "models", "hazard", "yolo11n.onnx"))
+HAZARD_IMGSZ = int(get("HAZARD_IMGSZ", "320"))
+HAZARD_MIN_SCORE = float(get("HAZARD_MIN_SCORE", "0.35"))
+HAZARD_NUM_THREADS = int(get("HAZARD_NUM_THREADS", "4"))
+HAZARD_REPEAT_S = float(get("HAZARD_REPEAT_S", "2"))
+HAZARD_LEVEL1_GAP_S = float(get("HAZARD_LEVEL1_GAP_S", "5"))
+# Tắt bước warm mạng/detector lúc khởi động (test đặt 0).
+V2_WARM = get("V2_WARM", "1") != "0"
+# Model ONNX của server (hazard, text detector): "auto" = CUDA nếu có, "cpu", "cuda".
+ONNX_DEVICE = get("ONNX_DEVICE", "auto")
+ONNX_GPU_ID = int(get("ONNX_GPU_ID", "0"))
+TEXT_DET_MODEL_PATH = get(
+    "TEXT_DET_MODEL_PATH", os.path.join(_ROOT, "models", "text_det", "ch_PP-OCRv4_det_infer.onnx")
+)
+# TTS: "auto" = CUDA (PyTorch) nếu có GPU, không thì ONNX/CPU. Số đo trong pipeline/tts.py.
+TTS_DEVICE = get("TTS_DEVICE", "auto")
+# Spec §7.2: bỏ lượt Clef trên partial nếu còn lượt đang chạy. 0 = vẫn gọi (thử nghiệm độ trễ).
+EARLY_CLASSIFY_SKIP_INFLIGHT = get("EARLY_CLASSIFY_SKIP_INFLIGHT", "1") != "0"
+# Bộ phân loại intent (`pipeline/intent_classifier.py`): "auto" = Gemma rồi Clef
+# dự phòng, "gemma", "clef". Số đo so sánh nằm trong module đó.
+INTENT_BACKEND = get("INTENT_BACKEND", "auto")
+INTENT_LLM_TIMEOUT_S = float(get("INTENT_LLM_TIMEOUT_S", "0.8"))
+# Trần chờ intent cuối (cả lượt dự phòng); quá trần thì luật từ khoá / làn chat.
+INTENT_DECIDE_TIMEOUT_S = float(get("INTENT_DECIDE_TIMEOUT_S", "1.5"))

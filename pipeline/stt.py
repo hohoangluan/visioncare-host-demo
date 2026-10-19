@@ -15,6 +15,10 @@ def _load_asr():
     CPU đã nhanh hơn thời gian thực nhiều lần, mà đổi lại GPU 4GB được để trọn
     cho OCR/TTS thay vì phải chia ba.
     """
+    # PHẢI nạp onnxruntime (gói GPU) TRƯỚC sherpa_onnx: sherpa mang theo bản
+    # libonnxruntime.so riêng, nạp nó trước thì lúc vieneu (TTS GPU) import
+    # onnxruntime sẽ dính nhầm thư viện -> segfault mỗi lần (đo 2026-10-19).
+    import onnxruntime  # noqa: F401
     from sherpa_onnx import OfflineRecognizer
 
     model_dir = config.STT_MODEL_DIR

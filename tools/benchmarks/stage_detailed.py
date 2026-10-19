@@ -1,12 +1,11 @@
 import sys, time, os, httpx, json
 if hasattr(sys.stdout, 'reconfigure'): sys.stdout.reconfigure(encoding='utf-8')
 from pathlib import Path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
 from pipeline import stt, intent, router, tts
 from services import visioncare_client
 import config
 
-config.VISIONCARE_CLIENT_TOKEN = 'f23ChvjGZt_WYrY-A8eJAyxO5LVEF_TGujmE7F_gRAY'
-config.VISIONCARE_DEVICE_ID = 'glasses-123'
 visioncare_client.reset_client()
 
 test_suite = {
@@ -137,5 +136,5 @@ for category, cases in test_suite.items():
     report_md.append('\n---\n')
 
 content = '\n'.join(report_md)
-Path('DETAILED_STAGE_LATENCY_BENCHMARK.md').write_text(content, encoding='utf-8')
-print('\nDONE! Wrote detailed benchmark to DETAILED_STAGE_LATENCY_BENCHMARK.md')
+Path('docs/benchmarks/DETAILED_STAGE_LATENCY_BENCHMARK.md').write_text(content, encoding='utf-8')
+print('\nDONE! Wrote detailed benchmark to docs/benchmarks/DETAILED_STAGE_LATENCY_BENCHMARK.md')

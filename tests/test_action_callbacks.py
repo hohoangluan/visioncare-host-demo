@@ -65,3 +65,15 @@ def test_callback_endpoint_requires_loopback_bearer_and_idempotency(monkeypatch)
     )
     assert accepted.status_code == 200
     assert accepted.json()["data"] == {"request_id": "req-1", "matched": True}
+
+
+def test_callback_endpoint_rejects_caller_outside_allowed_networks(monkeypatch) -> None:
+    monkeypatch.setattr(config, "VISIONCARE_CALLBACK_TOKEN", "test-callback-token")
+    payload = {"status": "ok", "data": {"request_id": "req-2"}}
+    headers = {"Authorization": "Bearer test-callback-token", "Idempotency-Key": "req-2"}
+
+    outsider = TestClient(server_app.app, client=("172.28.0.5", 12345))
+    assert outsider.post("/internal/action-results", json=payload, headers=headers).status_code == 403
+
+    monkeypatch.setattr(config, "CALLBACK_ALLOWED_NETWORKS", ("172.28.0.0/16",))
+    assert outsider.post("/internal/action-results", json=payload, headers=headers).status_code == 200

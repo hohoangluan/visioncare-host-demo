@@ -45,3 +45,9 @@ def no_prerendered_phrases():
     tts.clear_phrases()
     yield
     tts.clear_phrases()
+
+
+@pytest.fixture(autouse=True)
+def no_v2_network_warm(monkeypatch):
+    """`with TestClient(app)` chạy startup: không để nó bắt tay tới Clef/Gemma thật."""
+    monkeypatch.setattr(config, "V2_WARM", False)

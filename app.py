@@ -1,3 +1,7 @@
+# Phải đứng đầu, trước mọi thứ có thể kéo sherpa_onnx vào: xem `pipeline/stt.py`.
+import onnxruntime  # noqa: F401, I001
+
+import asyncio
 import glob
 import io
 import logging
@@ -10,13 +14,17 @@ import wave
 from collections.abc import Callable, Iterable, Iterator
 from itertools import chain
 
-from fastapi import FastAPI, File, HTTPException, Request, UploadFile
+from fastapi import FastAPI, File, HTTPException, Request, UploadFile, WebSocket
 from fastapi.responses import Response, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 import config
 from handlers import chat
 from models import vlm
-from pipeline import adpcm, intent_local, phrases, router, stt, tts
+from pipeline import adpcm, cues, intent_local, phrases, router, stt, tts
+from pipeline import turn as turn_v2
+from pipeline.image_buffer import image_buffer
+from pipeline.reply import Reply
 from services.action_callbacks import action_callbacks
 
 logger = logging.getLogger("blind_assist")
@@ -33,7 +41,7 @@ _BYTES_PER_SAMPLE = 2
 
 MP3_FORMAT = f"mp3;bitrate={tts.MP3_BITRATE_KBPS}kbps;rate={tts.OUTPUT_SAMPLE_RATE};channels=1"
 
-# Chuỗi board đọc để tự cấu hình decoder ADPCM (`HUONG_DAN_SERVER.md` §2B).
+# Chuỗi board đọc để tự cấu hình decoder ADPCM (`docs/HUONG_DAN_SERVER.md` §2B).
 ADPCM_FORMAT = (
     f"ima_adpcm;rate={adpcm.SAMPLE_RATE};channels=1;block={adpcm.BLOCK_ALIGN}"
 )
@@ -247,14 +255,18 @@ def health():
 
 @app.post("/internal/action-results")
 async def receive_action_result(request: Request) -> dict:
-    """Accept an idempotent backend callback on loopback only."""
+    """Accept an idempotent backend callback from `CALLBACK_ALLOWED_NETWORKS` only."""
     host = request.client.host if request.client else ""
     try:
-        is_loopback = ipaddress.ip_address(host).is_loopback
+        caller = ipaddress.ip_address(host)
+        is_allowed = any(
+            caller in ipaddress.ip_network(net, strict=False)
+            for net in config.CALLBACK_ALLOWED_NETWORKS
+        )
     except ValueError:
-        is_loopback = False
-    if not is_loopback:
-        raise HTTPException(status_code=403, detail="Loopback callback only")
+        is_allowed = False
+    if not is_allowed:
+        raise HTTPException(status_code=403, detail="Callback source not allowed")
 
     expected = config.VISIONCARE_CALLBACK_TOKEN
     supplied = request.headers.get("authorization", "")
@@ -286,6 +298,7 @@ def _stream_audio(
     prelude: bytes = b"",
     debug_name: str | None = None,
     debug_wrap: Callable[[bytes], bytes] | None = None,
+    preroll_seconds: float | None = None,
 ) -> Iterator[bytes]:
     """Đọc các mảnh text thành từng mảnh audio, vừa gửi vừa gom lại để ghi debug.
 
@@ -315,7 +328,9 @@ def _stream_audio(
     # Gom sẵn `AUDIO_PREROLL_SECONDS` giây audio rồi mới gửi byte đầu. Nhờ vậy
     # server luôn đi trước người nghe một quãng và MCU cứ đọc socket là có dữ
     # liệu — không cần ring buffer lớn phía thiết bị.
-    preroll_bytes = int(config.AUDIO_PREROLL_SECONDS * rate)
+    if preroll_seconds is None:
+        preroll_seconds = config.AUDIO_PREROLL_SECONDS
+    preroll_bytes = int(preroll_seconds * rate)
     holding: list[bytes] = []
     held = 0
 
@@ -538,3 +553,148 @@ def process(
         media_type=plan.media_type,
         headers=_stream_headers(response_format),
     )
+
+
+# ── Voice server v2 (docs/superpowers/specs/2026-10-19-voice-server-architecture-design.md) ──
+#
+# Ba đường cùng host (§5): `/v2/image` (ảnh lúc bấm nút), `/v2/turn` (audio
+# chunked trong lúc nói), `/v2/live` (WebSocket realtime cho làn B/C). Cả ba là
+# async: `/v2/turn` phải đọc body THEO MẢNH trong lúc người dùng còn nói, và
+# chạy song song partial STT, Clef, prewarm trên cùng event loop. Việc nặng CPU
+# (STT, detector, TTS) đi thread riêng nên không chặn loop.
+
+_v2_counter = 0
+
+
+def _device_id(headers) -> str:
+    return headers.get("x-device-id") or config.VISIONCARE_DEVICE_ID
+
+
+@app.on_event("startup")
+async def warm_v2() -> None:
+    """Bắt tay TLS tới Clef/Gemma, chọn đường Gemma nhanh nhất, nạp detector."""
+    if not config.V2_WARM:
+        return
+    from live import hazard, text_align
+    from models import clef, llm
+
+    started = time.monotonic()
+    from pipeline import intent_classifier
+
+    async def warm_gemma() -> None:
+        await llm.warm()
+        # Prefix danh sách nhãn vào KV cache: lượt phân loại đầu khỏi prefill lại.
+        await llm.prewarm(intent_classifier.prefix_messages())
+
+    results = await asyncio.gather(
+        clef.warm(), warm_gemma(),
+        asyncio.to_thread(text_align.detector), asyncio.to_thread(hazard.detector),
+        return_exceptions=True,
+    )
+    for name, result in zip(("clef", "gemma", "text-det", "hazard"), results):
+        if isinstance(result, BaseException):
+            logger.warning("warm %s lỗi: %r", name, result)
+    logger.info("warm v2 xong %.2fs", time.monotonic() - started)
+
+
+@app.post("/v2/image", status_code=204)
+async def image_lane(request: Request) -> Response:
+    """Làn ảnh (§5.1): JPEG lúc bấm nút -> Image Buffer trong RAM, trả 204 ngay."""
+    data = await request.body()
+    if data:
+        image_buffer.put(_device_id(request.headers), request.headers.get("x-turn-id", ""), data)
+    return Response(status_code=204)
+
+
+def _has_speech(speech) -> bool:
+    return speech is not None and not (isinstance(speech, (list, tuple)) and not speech)
+
+
+async def _v2_response(reply: Reply, cue_ok: bool, response_format: str, released: float) -> Response:
+    global _v2_counter
+    headers: dict[str, str] = {}
+    lead: list[str] = []
+    if cue_ok:
+        if reply.cues:
+            headers["X-Cue"] = ",".join(reply.cues)
+    else:
+        # Kính chưa có clip trong flash: cue đổi thành câu nói (đã dựng sẵn).
+        lead = [t + "\n" for t in map(cues.fallback_text, reply.cues) if t]
+    if reply.live:
+        headers["X-Live"] = reply.live
+        headers["X-Live-Token"] = reply.live_token or ""
+
+    if not lead and not _has_speech(reply.speech):
+        return Response(content=b"", headers=headers)
+
+    _v2_counter += 1
+    plan = _plan_for(response_format, _v2_counter)
+    pieces = chain(lead, reply.speech if _has_speech(reply.speech) else [])
+
+    def stream(text: Iterable[str]) -> Iterator[bytes]:
+        return _stream_audio(
+            text, _v2_counter, released, time.monotonic() - released,
+            encode=plan.encode, byte_rate=plan.byte_rate, prelude=plan.prelude,
+            preroll_seconds=config.V2_AUDIO_PREROLL_SECONDS,
+        )
+
+    audio_stream = stream(pieces)
+    try:
+        # Kéo mảnh đầu ở đây: lỗi trước byte đầu vẫn đổi được thành câu báo lỗi.
+        first = await run_in_threadpool(next, audio_stream, b"")
+        body: Iterator[bytes] = chain([first], audio_stream)
+    except Exception:  # noqa: BLE001
+        logger.exception("v2 turn: lỗi trước byte audio đầu")
+        body = stream([_ERROR_MESSAGE])
+
+    if response_format == "wav":
+        payload = await run_in_threadpool(lambda: b"".join(body))
+        return Response(content=_pcm_to_wav(payload), media_type="audio/wav", headers=headers)
+
+    audio_headers = _stream_headers(response_format)
+    audio_headers["X-Audio-Preroll-Seconds"] = str(config.V2_AUDIO_PREROLL_SECONDS)
+    return StreamingResponse(body, media_type=plan.media_type, headers={**audio_headers, **headers})
+
+
+@app.post("/v2/turn")
+async def turn_lane(request: Request) -> Response:
+    """Làn âm thanh (§5.2): ADPCM chunked trong lúc nói -> cue/live/audio. Luôn 200."""
+    from handlers.action_flow import device_state
+    from live.session import sessions
+
+    device = _device_id(request.headers)
+    turn_id = request.headers.get("x-turn-id", "")
+    cue_ok = cues.supported(request.headers.get("x-cue-version"))
+    response_format = config.RESPONSE_FORMAT
+    if response_format == "auto":
+        response_format = _negotiate(request.headers.get("accept", ""))
+
+    state = {**device_state(), "alerting": sessions.active(device) is not None}
+    try:
+        result = await turn_v2.run(
+            device, turn_id, request.headers.get("content-type"), request.stream(), state,
+        )
+        reply, released = result.reply, result.released_at
+    except Exception:  # noqa: BLE001 - kính luôn phải nghe được gì đó
+        logger.exception("v2 turn %s thất bại", turn_id)
+        reply, released = Reply(cues=["system_busy"]), time.monotonic()
+    return await _v2_response(reply, cue_ok, response_format, released)
+
+
+@app.websocket("/v2/live")
+async def live_lane(ws: WebSocket, token: str = "") -> None:
+    """Làn realtime B/C (§5.3). Token một lần, lấy từ `X-Live-Token`."""
+    from lanes import nav_live, ocr_live
+    from live.session import sessions
+
+    session = sessions.claim(token)
+    if session is None:
+        await ws.close(code=4401)
+        return
+    await ws.accept()
+    runner = ocr_live.run if session.mode == "ocr" else nav_live.run
+    await runner(ws, session)
+    try:
+        await ws.close()
+    except RuntimeError:
+        pass

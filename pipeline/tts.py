@@ -164,14 +164,63 @@ def phrase_count() -> int:
     return len(_PHRASE_PCM)
 
 
+def _materialized_fetch(original):
+    """Bọc `OnnxV3LiteEngine._fetch`: trả thư mục THẬT thay vì snapshot HF toàn symlink.
+
+    onnxruntime >= 1.31 từ chối file `.data` (external data) nằm ngoài thư mục
+    thật của file `.onnx` ("External data path escapes model directory"). Cache
+    HF lưu mỗi file là symlink vào `blobs/<hash>`, nên `.onnx` và `.data` của
+    cùng một model trỏ về hai thư mục khác nhau -> server chết lúc khởi động.
+    Hard link vào một thư mục chung: không tốn thêm đĩa, không còn symlink.
+    """
+    import os
+    from pathlib import Path
+
+    def fetch(repo, files, subfolder):
+        snapshot = Path(original(repo, files, subfolder))
+        target = Path(config._CACHE_ROOT) / "onnx_materialized" / repo.replace("/", "__") / (subfolder or "_root")
+        target.mkdir(parents=True, exist_ok=True)
+        for entry in snapshot.iterdir():
+            if not entry.is_file():
+                continue
+            real, dest = entry.resolve(), target / entry.name
+            if dest.exists() and dest.stat().st_ino == real.stat().st_ino:
+                continue
+            dest.unlink(missing_ok=True)
+            try:
+                os.link(real, dest)
+            except OSError:
+                import shutil
+                shutil.copyfile(real, dest)
+        return target
+
+    return staticmethod(fetch)
+
+
 @lru_cache(maxsize=1)
 def _load_tts():
     from vieneu import Vieneu
+    from vieneu._v3_turbo_engine.onnx_runtime_lite import OnnxV3LiteEngine
 
-    # ONNX/CPU backend của TTS đã đủ nhanh (~1-3s/câu) và nhẹ. Ép device="cpu"
-    # để không tranh VRAM/CUDA context với STT (GPU 4GB, chỉ đủ chỗ thoải mái
-    # cho một model torch lớn chạy GPU cùng lúc).
-    return Vieneu(device="cpu")
+    if not getattr(OnnxV3LiteEngine, "_seevia_materialized", False):
+        OnnxV3LiteEngine._fetch = _materialized_fetch(OnnxV3LiteEngine._fetch)
+        OnnxV3LiteEngine._seevia_materialized = True
+
+    # GPU khi có. Đo 2026-10-19 (RTX 2080 Ti, máy chủ dùng chung), 4 câu x 2 lượt:
+    #   ONNX/CPU      chunk đầu p50 1220 ms, RTF 3,20 (chậm hơn thời gian thực)
+    #   PyTorch/CUDA  chunk đầu p50  126 ms, RTF 0,76
+    # TTS nằm thẳng trên đường "nhả nút -> tiếng đầu", nên chênh 1,1 s này là
+    # chênh người dùng nghe thấy. vieneu chỉ có đồ thị ONNX cho đường CPU, nên
+    # GPU đi backend PyTorch. `TTS_DEVICE=cpu` để quay về ONNX/CPU.
+    device = config.TTS_DEVICE
+    if device == "auto":
+        try:
+            import torch
+
+            device = "cuda" if torch.cuda.is_available() else "cpu"
+        except ImportError:
+            device = "cpu"
+    return Vieneu(device=device)
 
 
 def synthesize(text: str) -> bytes:

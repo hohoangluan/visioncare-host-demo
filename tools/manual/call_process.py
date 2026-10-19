@@ -4,16 +4,22 @@ In cả tốc độ tải thật (KB/s). Đây là con số quyết định MCU 
 khi bật chế độ stream hay không: PCM 16 kHz 16-bit cần **32 KB/s liên tục**.
 Dưới mức đó thì stream chắc chắn ngắt quãng, phải dùng WAV trọn gói.
 """
+import os
+import sys
 import time
 import wave
 from pathlib import Path
 
 import httpx
 
-BASE_URL = "https://api.visioncare-host.uk/process"
-IMAGE_PATH = "Screenshot 2026-05-28 202503.png"
-AUDIO_PATH = "Recording2.wav"
-OUTPUT_WAV = "saved_response3.wav"
+# Dùng: python tools/manual/call_process.py <ảnh> <audio.wav> [out.wav]
+# URL mặc định là server thật; trỏ về máy mình bằng VISIONCARE_PROCESS_URL.
+BASE_URL = os.environ.get("VISIONCARE_PROCESS_URL", "https://api.visioncare-host.uk/process")
+if len(sys.argv) < 3:
+    sys.exit(__doc__ or "Dùng: call_process.py <ảnh> <audio.wav> [out.wav]")
+IMAGE_PATH = sys.argv[1]
+AUDIO_PATH = sys.argv[2]
+OUTPUT_WAV = sys.argv[3] if len(sys.argv) > 3 else "saved_response.wav"
 SAMPLE_RATE = 16000
 
 files = {
