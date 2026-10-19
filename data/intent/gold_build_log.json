@@ -1,0 +1,196 @@
+{
+  "stages": {
+    "relabel": {
+      "asked": 8,
+      "missing": 0,
+      "sources": {
+        "eval": {
+          "rows": 358,
+          "duplicates": 0
+        },
+        "train": {
+          "rows": 1075,
+          "duplicates": 0
+        },
+        "suspect": {
+          "rows": 15,
+          "duplicates": 15
+        },
+        "rejected": {
+          "rows": 20,
+          "duplicates": 20
+        },
+        "bare_stop_expanded_to": 8,
+        "unique_source_items": 1441
+      },
+      "selected": {
+        "suspect": 25,
+        "train": 6,
+        "rejected": 20,
+        "eval": 121,
+        "sol_gen": 42
+      },
+      "seconds": 9.2,
+      "sol_calls": 1
+    },
+    "generate": {
+      "cells_done": 9,
+      "cells_total": 9,
+      "cells_failed": 0,
+      "built": {
+        "items": 42,
+        "per_cell": {
+          "pair_chat_ocr": 4,
+          "pair_chat_space": 4,
+          "pair_chat_hazard": 4,
+          "pair_chat_nav_start": 4,
+          "pair_chat_music_play": 4,
+          "notcmd_call": 4,
+          "notcmd_goto_read": 4,
+          "device_context": 6,
+          "alert_cmds": 8
+        },
+        "dropped_duplicate": 0,
+        "dropped_invalid": 0
+      },
+      "seconds": 14.6,
+      "sol_calls": 1
+    },
+    "adjudicate": {
+      "gemma": {
+        "asked": 214,
+        "failed": 0
+      },
+      "by_status": {
+        "agree": 193,
+        "sol_adjudicated": 18,
+        "uncertain": 3
+      },
+      "no_sol_label": 0,
+      "seconds": 28.3,
+      "sol_calls": 21
+    },
+    "variants": {
+      "workers": 1,
+      "gpus": [
+        "1"
+      ],
+      "sentences": 49,
+      "seconds": 38.5,
+      "sol_calls": 0
+    }
+  },
+  "aborted_full_run": {
+    "relabel": {
+      "asked": 597,
+      "missing": 0,
+      "sources": {
+        "eval": {
+          "rows": 358,
+          "duplicates": 0
+        },
+        "train": {
+          "rows": 1075,
+          "duplicates": 0
+        },
+        "suspect": {
+          "rows": 15,
+          "duplicates": 15
+        },
+        "rejected": {
+          "rows": 20,
+          "duplicates": 20
+        },
+        "bare_stop_expanded_to": 8,
+        "unique_source_items": 1441
+      },
+      "seconds": 426.1,
+      "sol_calls": 256
+    },
+    "generate": {
+      "cells_done": 20,
+      "cells_total": 20,
+      "cells_failed": 0,
+      "built": {
+        "items": 597,
+        "per_cell": {
+          "pair_chat_ocr": 30,
+          "pair_chat_space": 30,
+          "pair_chat_hazard": 30,
+          "pair_chat_nav_start": 30,
+          "pair_chat_music_play": 30,
+          "notcmd_call": 30,
+          "notcmd_goto_read": 30,
+          "dialect_bac": 30,
+          "dialect_trung": 30,
+          "dialect_nam": 30,
+          "truncated_a": 28,
+          "truncated_b": 30,
+          "outofscope": 30,
+          "outofscope_b": 30,
+          "filler_a": 30,
+          "filler_b": 30,
+          "web_chat": 30,
+          "web_chat_b": 30,
+          "device_context": 30,
+          "lane_d_params": 29
+        },
+        "dropped_duplicate": 3,
+        "dropped_invalid": 0
+      },
+      "seconds": 143.5,
+      "sol_calls": 20
+    }
+  },
+  "rows": {
+    "dev": 160,
+    "test": 107,
+    "total": 267,
+    "clean_groups": 211,
+    "by_variant": {
+      "clean": 211,
+      "stt_snr20": 0,
+      "stt_snr10": 56,
+      "stt_snr5": 0
+    },
+    "by_origin_clean": {
+      "suspect": 25,
+      "train": 6,
+      "rejected": 20,
+      "eval": 118,
+      "sol_gen": 42
+    },
+    "by_label_source_clean": {
+      "agree": 193,
+      "sol_adjudicated": 18
+    },
+    "groups_per_label": {
+      "alert_off": 10,
+      "alert_on": 4,
+      "chat": 45,
+      "contact_call": 10,
+      "emergency_call": 9,
+      "find": 9,
+      "hazard": 8,
+      "money": 9,
+      "music_play": 10,
+      "music_stop": 16,
+      "music_volume": 10,
+      "nav_start": 12,
+      "nav_stop": 16,
+      "ocr": 11,
+      "ride_confirm": 11,
+      "ride_quote": 9,
+      "space": 12
+    },
+    "stt_variants_dropped_empty": 0
+  },
+  "review": {
+    "uncertain": 3,
+    "kept": 3,
+    "dropped": 0,
+    "kept_lane_d": 1
+  },
+  "sol_calls_total": 23,
+  "seconds_total": 90.6
+}

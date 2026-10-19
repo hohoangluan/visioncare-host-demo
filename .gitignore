@@ -41,3 +41,6 @@ node_modules/
 .vscode/
 .idea/
 .DS_Store
+
+# Cache trung gian của tools/intent_gold (dựng lại được, có thể lớn)
+data/intent/gold_work/
