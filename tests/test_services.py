@@ -162,56 +162,47 @@ def test_emergency_call_speaks_whether_the_sms_went_out(monkeypatch):
     assert "đã gửi tin nhắn vị trí" in out
 
 
-def test_ride_quote_reads_the_destination_back_and_books_nothing_yet(monkeypatch):
-    calls = _stub_flow(monkeypatch)
+_QUOTE = {"quote_id": "quote-9", "product_type": "GrabCar", "eta_minutes": 6}
+
+
+def test_ride_quote_is_sent_at_the_first_turn(monkeypatch):
+    action_flow.forget("quote_id")
+    calls = _stub_flow(monkeypatch, _QUOTE)
 
     out = "".join(ride.handle_quote(b"", "", {"destination": "Sân bay"}))
 
-    # Speech-to-text mishears place names, and a wrong one sends a blind person
-    # to the wrong address, so the first turn only confirms what was heard.
-    assert calls == []
-    assert "Sân bay" in out
-    assert "đúng không" in out
-
-
-def test_ride_confirm_books_the_destination_that_was_read_back(monkeypatch):
-    calls = _stub_flow(
-        monkeypatch,
-        {
-            "quote_id": "quote-9",
-            "product_type": "GrabCar",
-            "price_estimate": {"currency": "VND", "amount": 85000},
-            "eta_minutes": 6,
-        },
-    )
-    "".join(ride.handle_quote(b"", "", {"destination": "Sân bay"}))
-
-    out = "".join(ride.handle_confirm(b"", "", {"confirm": True}))
-
+    # Làn D đã đọc lại điểm đến + có cửa sổ huỷ, nên lệnh đi ngay ở lượt này (không chờ lượt "xác nhận").
     assert calls[0][0] == "api/v1/service/ride/quote"
     assert calls[0][1]["destination"]["address"] == "Sân bay"
-    # No price, product type or ETA: Grab only quotes after the rider confirms
-    # the pickup point, which this flow cannot reach, so any number here would
-    # be the backend's guess presented as a fare.
-    assert "85" not in out
-    assert "nghìn" not in out
-    assert "phút" not in out
-    assert "điểm đón" in out and "xác nhận" in out
+    assert "xác nhận" in out and "hủy" in out
+    assert action_flow.recall("quote_id") == "quote-9"
 
 
-def test_ride_confirm_cancels_without_calling_anything(monkeypatch):
-    calls = _stub_flow(monkeypatch)
+def test_ride_confirm_sends_ride_confirm_with_the_quote_id(monkeypatch):
+    action_flow.forget("quote_id")
+    calls = _stub_flow(monkeypatch, _QUOTE)
     "".join(ride.handle_quote(b"", "", {"destination": "Sân bay"}))
 
-    out = "".join(ride.handle_confirm(b"", "", {"confirm": False}))
+    "".join(ride.handle_confirm(b"", "", {"confirm": True}))
 
-    assert calls == []
-    assert "hủy" in out.lower()
+    assert calls[1][0] == "api/v1/service/ride/confirm"
+    assert calls[1][1]["quote_id"] == "quote-9" and calls[1][1]["confirm"] is True
+    assert action_flow.recall("quote_id") is None  # dùng một lần
+
+
+def test_ride_cancel_sends_confirm_false(monkeypatch):
+    action_flow.forget("quote_id")
+    calls = _stub_flow(monkeypatch, _QUOTE)
+    "".join(ride.handle_quote(b"", "", {"destination": "Sân bay"}))
+
+    "".join(ride.handle_confirm(b"", "", {"confirm": False}))
+
+    assert calls[1][0] == "api/v1/service/ride/confirm"
+    assert calls[1][1]["quote_id"] == "quote-9" and calls[1][1]["confirm"] is False
 
 
 def test_ride_confirm_refuses_when_nothing_was_asked_for(monkeypatch):
     action_flow.forget("quote_id")
-    action_flow.forget("pending_ride_destination")
     calls = _stub_flow(monkeypatch)
 
     out = "".join(ride.handle_confirm(b"", "", {"confirm": True}))
@@ -221,22 +212,14 @@ def test_ride_confirm_refuses_when_nothing_was_asked_for(monkeypatch):
 
 
 def test_ride_destination_not_found_is_reported_not_guessed(monkeypatch):
-    _stub_flow(monkeypatch)
-    monkeypatch.setattr(
-        action_flow,
-        "get_request_status",
-        lambda request_id: {
-            "request_state": "failed",
-            "result": None,
-            "error": {"code": "INVALID_DESTINATION"},
-        },
-    )
-    "".join(ride.handle_quote(b"", "", {"destination": "Chỗ Không Có Thật"}))
+    action_flow.forget("quote_id")
+    calls = _stub_flow(monkeypatch, state="failed", error={"code": "INVALID_DESTINATION"})
 
-    out = "".join(ride.handle_confirm(b"", "", {"confirm": True}))
+    out = "".join(ride.handle_quote(b"", "", {"destination": "Chỗ Không Có Thật"}))
 
     assert "Không tìm thấy địa điểm" in out
     assert "nói lại tên địa điểm" in out
+    assert len(calls) == 1 and action_flow.recall("quote_id") is None
 
 
 def test_music_play_asks_which_artist_when_only_a_title_was_given(monkeypatch):

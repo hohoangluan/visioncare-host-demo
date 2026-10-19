@@ -158,12 +158,21 @@ def speech(intent: str, text: str, params: dict) -> Iterator[str]:
     return HANDLERS[intent](None, text, params=params)
 
 
-def run_background(intent: str, text: str, params: dict, deliver=None) -> threading.Thread:
-    """Chạy action ở nền; mỗi câu kết quả đưa cho `deliver` (vd. đọc qua WS)."""
+def run_background(intent: str, text: str, params: dict, deliver=None, skip_ack: bool = False) -> threading.Thread:
+    """Chạy action ở nền; mỗi câu kết quả đưa cho `deliver` (vd. đọc qua WS).
+
+    `skip_ack`: bỏ câu xác nhận đầu của `run_action` ("Đang gọi cho mẹ.") vì làn D đã đọc lại lệnh trước khi
+    chạy; chỉ đọc phần kết quả (hoặc lỗi). Câu xác nhận nhận ra qua dấu `\n` (`action_flow._utterance`).
+    """
 
     def worker() -> None:
         try:
+            first = True
             for piece in speech(intent, text, params):
+                is_ack = first and piece.endswith("\n")
+                first = False
+                if is_ack and skip_ack:
+                    continue
                 if deliver is not None and piece.strip():
                     deliver(piece.strip())
         except Exception:  # noqa: BLE001

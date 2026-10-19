@@ -261,6 +261,7 @@ def run_action(
         resp = call_service_api(endpoint, request_payload)
         request_id = resp.get("data", {}).get("request_id", "")
         action_callbacks.move(generated_request_id, request_id)
+        device_ctx.action_request.set(request_id)
         logger.info("%s requested, request_id=%s", operation, request_id)
     except VisionCareAPIError as exc:
         logger.error("%s error: %s", operation, exc)

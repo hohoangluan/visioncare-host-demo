@@ -43,47 +43,36 @@ bằng khung `cancel`, bằng lượt mới (`turn_start`), và bằng cách đ�
 sống qua lượt chat bằng cách reset chống-làm-phiền (khung trống) rồi cho đường phố lại và đòi hazard mới. OCR được kiểm cả đọc
 thẳng ảnh buffer lẫn live qua session (`cam` -> khung 0x04 -> `capture` UXGA -> audio -> `end`).
 
-## Kết quả (2026-10-19, GPU 0, voice-v2-hardening a1e7bbf, AB 393a02a)
+## Kết quả đợt sửa cuối (2026-10-19, GPU 6, nhánh wt-task-15B = voice-v2-hardening 5f8bb02 + commit "đợt sửa cuối plan 1")
 
-| Kịch bản | Kết quả | hỏi lại | nhả nút -> tiếng đầu (ms) | nhả nút -> lệnh ĐT (ms) | lệnh -> kết quả đọc (ms) | ghi chú |
-|---|---|---|---|---|---|---|
-| call_mom | FAIL | không | 496 | 2205 | - | lệnh đúng (`name`=mẹ, ĐT báo succeeded); kết quả KHÔNG được đọc (B1) |
-| call_nam | FAIL | không | 481 | 2137 | - | lệnh đúng, ĐT báo `MULTIPLE_CONTACTS_FOUND`; người dùng không nghe được (B1) |
-| call_cancel (khung cancel) | PASS | không | 489 | - | - | ĐT không nhận lệnh nào |
-| call_cancel_newturn | PASS | không | 492 | - | - | ĐT không nhận lệnh nào |
-| call_cancel_disconnect | PASS | không | 513 | - | - | ĐT không nhận lệnh nào |
-| ride (đặt xe -> xác nhận) | FAIL | không | 561 | 2346 | - | lượt 1 không gửi lệnh nào (đúng); lượt 2 gửi `ride_quote`; kết quả/câu hỏi không được đọc (B1, B4) |
-| music (âm lượng -> phát -> bấm nút dừng) | FAIL | không | 522 | 2770 | 611 | `music_volume`, `music_play`, `music_stop` đều tới ĐT và succeeded; kết quả `music_play` không được đọc (B1); kết quả dừng đọc sau 611 ms (số đo ở cột này là của bước dừng) |
-| nav (dẫn đường -> hazard -> bấm nút dừng) | FAIL | có (trả lời "Đúng.") | 584 | 2945 | 553 | `navigation_start` -> hazard -> `navigation_stop` đều đúng; nhưng sau khi dừng live nav KHÔNG đóng, hazard vẫn chạy (B2) |
-| alert (cảnh báo vật cản, lượt chat giữa chừng) | PASS | không | - | - | - | không `end`, không lệnh, hazard mới vẫn tới sau lượt chat |
-| emergency | FAIL | không | 485 | 3413 | - | lệnh `emergency_call` đúng, ĐT succeeded; kết quả không được đọc (B1) |
-| chat (không sinh lệnh) | PASS | không | 724 | - | - | 0 lệnh |
-| ocr_direct (ảnh buffer đạt) | PASS | không | 660 | - | - | đọc thẳng qua session |
-| ocr_live (ảnh mờ -> live OCR) | PASS | không | 1105 | - | - | `cam` -> khung 0x04 -> `capture` -> đọc 81 KB audio -> `end` (Task 10 chưa kiểm đường này: nay đã chạy) |
+Chỉ chạy lại các kịch bản từng FAIL + `call_cancel` (1 lượt mỗi kịch bản), theo brief đợt sửa cuối:
+`--only call_mom call_nam ride music nav emergency call_cancel`.
 
-Mọi FAIL đều do lỗi phía VH (dưới đây); phần luồng "kính -> VH -> AB -> điện thoại" và an toàn huỷ đều đúng.
+| Kịch bản | Kết quả | hỏi lại | nhả nút -> tiếng đầu (ms) | nhả nút -> lệnh ĐT (ms) | lệnh -> kết quả đọc (ms) | sửa ở commit | ghi chú |
+|---|---|---|---|---|---|---|---|
+| call_mom | PASS | không | 523 | 2524 | 858 | đợt sửa cuối (B1, C1) | `contact_call` name=mẹ, kết quả đọc qua `result-<id>` |
+| call_nam | PASS | không | 504 | 2415 | 483 | đợt sửa cuối (B1) | ĐT báo `MULTIPLE_CONTACTS_FOUND`, người dùng nghe được |
+| ride (đặt xe -> xác nhận) | PASS | không | 550 | 3018 | 842 | đợt sửa cuối (B4) | `ride_quote` gửi ngay; "xác nhận" gửi `ride_confirm {quote_id, confirm:true}` |
+| music (phát -> tăng âm lượng lúc đang phát -> bấm nút dừng) | PASS | không | 560 | 3076 | 992 | đợt sửa cuối (B1, B3) | volume có lời = `music_volume`; bấm nút không lời = `music_stop` |
+| nav (dẫn đường -> hazard -> chat giữa chừng -> bấm nút dừng) | PASS | không | 555 | 3355 | 873 | đợt sửa cuối (B2, B3, I4) | chat không tắt nav; bấm nút gửi `navigation_stop` + khung `end` |
+| emergency | PASS | không | 502 | 3712 | 823 | đợt sửa cuối (B1) | `emergency_call` đúng, kết quả đọc |
+| call_cancel (khung cancel) | PASS | không | 526 | - | - | đợt sửa cuối (C1) | ĐT không nhận lệnh nào |
 
-## Lỗi tìm thấy ở VH (chưa sửa, báo lại)
+`nhả nút -> lệnh ĐT` tăng ~0,3 s so với trước vì cửa sổ huỷ làn D giờ đếm từ lúc khối audio đọc lại đầu tiên tới kính (C1/I1),
+không phải từ lúc `route()` xong. `vh.log`: 0 traceback, 0 `aclose`, 0 dòng httpx/SerpAPI (I3).
 
-- **B1 (nặng): kết quả của hành động làn D chạy nền không bao giờ được đọc.** `pipeline/final_router.py::_fire_after_readback`
-  gọi `phone.run_background(..., deliver=None)` cho `contact_call`, `emergency_call`, `ride_quote/confirm`, `music_play`;
-  mỗi câu kết quả bị vứt. Người dùng nghe "Đang gọi cho mẹ." rồi im: không biết cuộc gọi có đổ chuông, danh bạ có hai "Nam"
-  (`MULTIPLE_CONTACTS_FOUND`), hay không tìm thấy tên. Chỉ `nav_start` có kênh (`session.outbox` của live) và các làn không-xác-nhận
-  (`music_stop`, `music_volume`, bấm nút dừng) nói kết quả trong chính luồng audio của lượt. Giao thức WS hiện không có khung
-  server -> kính "đọc câu này" ngoài lượt/ngoài live, nên sửa cần thêm khung (ví dụ `say` + audio) và đường đẩy từ `deliver`.
-- **B2: bấm nút để dừng chỉ đường (`pipeline/turn.py::_bypass`) gửi `navigation_stop` cho ĐT nhưng không đóng live nav.** Không có
-  khung `end`, cảnh báo vật cản vẫn chạy tiếp (đã xác nhận: reset chống-làm-phiền bằng khung trống, hazard mới vẫn tới). Cách sửa nhỏ:
-  gọi `sessions.close_device(device, "nav")` ở nhánh `navigating` của `_bypass` (như `_lane_c` làm với `nav_stop`).
-- **B3 (hành vi, cần quyết định): `_bypass` nuốt MỌI lần bấm khi đang phát nhạc / dẫn đường**: "tăng âm lượng" lúc nhạc đang phát
-  = dừng nhạc; một câu hỏi chat lúc đang dẫn đường = dừng dẫn đường trên ĐT. Quy tắc "nav live sống qua lượt chat mới" chỉ đúng với
-  chế độ chỉ-cảnh-báo (kịch bản `alert`), không đúng khi ĐT đang dẫn đường. Kịch bản `music`/`nav` được viết theo hành vi hiện tại
-  (bấm nút = dừng), `volume` chạy trước khi phát nhạc.
-- **B4 (nhỏ): lượt "đặt xe" đọc "Đang tìm xe đi X." nhưng chưa gửi gì** (`handlers/ride.py::handle_quote` chỉ nhớ điểm đến; câu hỏi
-  "đúng không? Nói xác nhận" bị vứt do B1). Lệnh `ride_quote` chỉ đi ở lượt xác nhận, `ride_confirm` (quote_id) không bao giờ được gửi:
-  người dùng xác nhận trong app Grab.
-- Ghi nhận một lần (không tái hiện ở lần chạy cuối): `ERROR Task exception was never retrieved ... aclose(): asynchronous generator
-  is already running` khi đóng socket giữa lúc câu chat dài còn đang phát.
+Ở lần chạy đầu (trước khi sửa, 71f2659 + e2e_full) bảng có 7 FAIL, đều do B1/B2; xem cột "trạng thái" dưới đây.
 
-Quan sát khác: Gemma >= 0,999 chạy thẳng ở hầu hết các lượt lệnh (chỉ lượt dẫn đường phải hỏi lại trong lần chạy cuối); đường hỏi lại ("...phải không?" -> "Đúng.") chạy đúng một lần (nav) và
-lệnh vẫn tới ĐT. Độ trễ nhả nút -> lệnh ĐT (2,1-3,4 s) chủ yếu là thời gian đọc lại + cửa sổ huỷ làn D (`readback_delay` +
-`ACTION_TTS_LEAD_S`), không phải độ trễ mạng/AB: lệnh từ VH tới ĐT giả mất < 0,1 s.
+## Lỗi tìm thấy ở VH
+
+| Mã | Lỗi | Trạng thái |
+|---|---|---|
+| B1 | Kết quả của hành động làn D chạy nền (`contact_call`, `emergency_call`, `ride_*`, `music_play`) không bao giờ được đọc (`_fire_after_readback` gọi `run_background(deliver=None)`); `MULTIPLE_CONTACTS_FOUND`/`CONTACT_NOT_FOUND`/lỗi cũng im. | Đã sửa ở commit "Task 15B fix": kính có phiên WS nhận khung `reply` `result-<request_id>` + 0x02 + `reply_end`, xếp hàng sau lượt đang phát (một kênh audio có thứ tự `DeviceSession._audio_lock`, I4); bỏ câu xác nhận đầu vì đã đọc lại. Kính POST/`/process` không đổi. Test `test_lane_d_result_is_pushed_as_server_reply`; mô tả khung ở `FIRMWARE_ENDPOINTS.md` §2.2. |
+| B2 | Bấm nút dừng chỉ đường gửi `navigation_stop` nhưng không đóng live nav (không `end`, hazard vẫn chạy). | Đã sửa ở cùng commit: `_bypass` gọi `sessions.close_device(device, "nav")`. Test `test_button_stop_navigation_also_closes_nav_live`. |
+| B3 | `_bypass` nuốt mọi lần bấm khi đang phát nhạc/dẫn đường ("tăng âm lượng" = dừng nhạc; chat = dừng dẫn đường). | Đã sửa ở cùng commit theo quyết định controller: chỉ áp khi lượt không có lời (no_speech); lượt có lời được phân loại bình thường. Test `test_button_press_without_speech_stops_music_but_speech_is_classified`. |
+| B4 | Lượt "đặt xe" đọc "Đang tìm xe" nhưng chưa gửi gì; `ride_confirm` không bao giờ được gửi. | Đã sửa ở cùng commit: `handle_quote` gửi `ride_quote` ngay; `handle_confirm` gửi `ride_confirm {quote_id, confirm}` (huỷ = `confirm:false`) bằng `quote_id` đã nhớ; `tests/test_services.py` viết lại. |
+| (nhỏ) | `Task exception was never retrieved: aclose(): asynchronous generator is already running` khi đóng socket giữa câu chat dài (thấy một lần ở e548c10). | Không tái hiện được, nhưng đợt sửa cuối chặn tận gốc: mọi chỗ lặp generator audio async (`_send_reply`, `_stream_until_disconnect`, outbox nav, OCR live, cue đọc thay clip) dùng `contextlib.aclosing`, nên bị huỷ giữa câu thì generator đóng ngay trong task đó, không để GC gọi `aclose()` lúc nó đang chạy. |
+
+Quan sát: Gemma >= 0,999 chạy thẳng ở hầu hết lượt lệnh (hỏi lại "phải không?" -> "Đúng." chạy đúng ở một lần chạy trước, lệnh vẫn tới ĐT).
+Nhả nút -> lệnh ĐT (2,1-3,4 s) chủ yếu là thời gian đọc lại + cửa sổ huỷ làn D (`readback_delay` + `ACTION_TTS_LEAD_S`), không phải
+mạng/AB: lệnh từ VH tới ĐT giả mất < 0,1 s. Kết quả được đọc 0,5-0,85 s sau khi ĐT báo.

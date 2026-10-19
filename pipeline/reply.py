@@ -1,6 +1,6 @@
 """Kết quả của Final Router cho một lượt `/v2/turn`."""
 
-from collections.abc import Iterable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass, field
 
 
@@ -17,3 +17,7 @@ class Reply:
     # Nhãn cuối, chỉ để log/bench.
     intent: str = ""
     lane: str = ""
+    # Làn D: gọi khi khối audio ĐỌC LẠI đầu tiên đã được giao cho kính (socket / StreamingResponse). Đối số là
+    # số giây audio đứng trước câu đọc lại phía transport (vd. "Đã tiếp nhận yêu cầu" + đệm của /process).
+    # Lệnh chờ chỉ bắt đầu đếm ngược từ đây (`pending_action.arm`), không phải từ lúc `route()`.
+    on_audio_start: Callable[[float], None] | None = None

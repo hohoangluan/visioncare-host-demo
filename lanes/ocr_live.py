@@ -6,6 +6,7 @@ WebSocket — bỏ hẳn vòng căn khung lẫn một lần chụp nữa.
 """
 
 import asyncio
+import contextlib
 import io
 import logging
 import threading
@@ -158,9 +159,15 @@ async def receive_frames(ws: WebSocket, box: _Mailbox, session: LiveSession) -> 
 
 
 async def speak_ws(ws: WebSocket, text) -> None:
-    """Text (iterable đồng bộ) -> TTS -> khung 0x02 ADPCM qua WS."""
-    async for chunk in speech.adpcm_stream(text):
-        await ws.send_bytes(protocol.audio(chunk))
+    """Text (iterable đồng bộ) -> TTS -> khung 0x02 ADPCM qua WS.
+
+    Trên `/v2/session` giữ khoá audio của phiên (`ws.audio_lock`) trọn câu: kết quả hành động / câu trả lời
+    lượt khác xếp hàng sau, không xen vào audio đọc chữ.
+    """
+    async with getattr(ws, "audio_lock", None) or contextlib.nullcontext():
+        async with contextlib.aclosing(speech.adpcm_stream(text)) as chunks:
+            async for chunk in chunks:
+                await ws.send_bytes(protocol.audio(chunk))
 
 
 async def run(ws: WebSocket, session: LiveSession) -> None:

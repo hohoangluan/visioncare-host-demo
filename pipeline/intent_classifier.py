@@ -158,13 +158,16 @@ async def _gemma(text: str, device: dict | None) -> ClefResult | None:
     mode = reply.get("ocr_mode")
     prob = reply.get("_label_prob")
     global _warned_no_logprobs
-    if prob is None:
+    known = prob is not None
+    if not known:
+        # Fail closed cho làn D: không có xác suất nhãn thì KHÔNG được coi là chắc chắn. Định tuyến làn vẫn
+        # dùng 1.0 (làn A/B/C chạy như thường), còn cổng làn D thấy `confidence_known=False` và hỏi lại.
         if not _warned_no_logprobs:
             _warned_no_logprobs = True
-            logger.warning("Gemma không trả logprobs: confidence giữ 1.0")
+            logger.warning("Gemma không trả logprobs: lệnh làn D sẽ hỏi lại (không đo được độ tin cậy)")
         prob = 1.0
     result = ClefResult(
-        intent=intent, confidence=prob,
+        intent=intent, confidence=prob, confidence_known=known,
         ocr_mode=mode if mode in _OCR_MODES else "read",
         needs_web=bool(reply.get("needs_web")), seconds=time.monotonic() - started,
         source="gemma",

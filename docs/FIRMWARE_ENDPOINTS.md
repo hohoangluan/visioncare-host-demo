@@ -56,7 +56,7 @@ Khung text sai JSON/thiếu `t`/loại lạ, binary rỗng/loại lạ, ảnh/au
 | text `reply` | `{"t":"reply","turn":"<id>","cues":["received"],"live":null,"audio":{...}}` | Gửi **ngay** khi có kết quả, trước audio. Kính phát `cues` từ flash trong lúc TTS dựng mảnh đầu. |
 | binary `0x02` + ADPCM | khối audio, bội số của 256 byte | Phát dần; dựng đệm `preroll_s` trước khi phát để loa không đói. |
 | text `reply_end` | `{"t":"reply_end","turn":"<id>"}` | Hết audio của lượt. |
-| text `cam` / `capture` / `cue` / `hazard` / `end` | khung live | Chỉ sau `reply_end` khi `live` khác `null` (§4). |
+| text `cam` / `capture` / `cue` / `hazard` / `end` | khung live | Mở sau `reply_end` của lượt có `live` khác `null` (§4). Khi nav live đang chạy (nó sống qua các lượt sau), **khung JSON `hazard`/`cue`/`end` có thể tới bất cứ lúc nào, kể cả giữa hai khối `0x02` của một `reply`**: kính phải xử lý chúng ngay, không chờ `reply_end`. |
 | text `pong` | `{"t":"pong"}` | |
 | text `error` | `{"t":"error","code":"rate_limited"\|"too_large"\|"bad_frame"}` | Kết nối giữ nguyên. |
 
@@ -66,6 +66,26 @@ Khung text sai JSON/thiếu `t`/loại lạ, binary rỗng/loại lạ, ảnh/au
 Nếu `hello.cue_version` thấp hơn `CUE_VERSION` của server thì `reply.cues` là `[]` và các cue được
 **đọc thành tiếng** trong audio (kính cũ vẫn nghe đủ). Vì vậy kính phải khai `cue_version` đúng với
 bộ clip đang có trong flash (§6).
+
+**Câu kết quả do server chủ động đẩy (`result-<request_id>`).** Hành động làn D chạy nền ("gọi mẹ", "đặt xe",
+"phát nhạc", "khẩn cấp") được đọc lại ngay, lệnh tới điện thoại sau cửa sổ huỷ; khi điện thoại báo kết quả
+(thành công, `MULTIPLE_CONTACTS_FOUND`, `CONTACT_NOT_FOUND`, lỗi quyền...) server đẩy **một lượt trả lời không do
+kính yêu cầu** xuống đúng socket của kính, cùng dạng với lượt thường:
+
+| Khung | Ghi chú |
+|---|---|
+| text `reply` | `{"t":"reply","turn":"result-<request_id>","cues":[],"live":null,"audio":{...}}`. `turn` bắt đầu bằng `result-`; kết quả có nhiều câu thì các lượt sau là `result-<request_id>.1`, `.2`... |
+| binary `0x02` ... + text `reply_end` | audio đọc kết quả, `reply_end.turn` trùng id trên |
+
+Kính xử lý như mọi `reply` (phát audio, có thể báo `played`) và không được coi là trả lời cho lượt bấm gần nhất.
+
+**Một kênh audio `0x02` có thứ tự.** Server giữ MỘT hàng đợi audio cho mỗi phiên: mỗi câu (lượt trả lời
+`reply`...`reply_end`, câu `result-*`, câu nói của chỉ đường live như kết quả mở lộ trình / "vẫn đang thực hiện...", cue
+đọc thay clip cho kính cũ, câu đọc chữ của OCR live) được gửi **trọn câu** rồi mới tới câu sau, theo thứ tự tới (FIFO).
+Hai câu không bao giờ xen khối `0x02` vào nhau, nên kính chỉ cần phát tuần tự theo thứ tự nhận. Chỉ **khung JSON** là
+không xếp hàng (hazard mức >= 2 vẫn tới ngay và ngắt câu của chỉ đường live; câu bị ngắt được đọc lại khi yên). `turn_start`, `cancel`, đóng socket hoặc phiên thay thế **bỏ** câu kết quả đang phát
+dở và các câu chưa đọc (người dùng đã chuyển sang việc khác). Kính không có phiên WS (đường POST `/v2/turn`, `/process`)
+không nhận kênh đẩy này.
 
 ### 2.3 Huỷ và lượt mới
 
@@ -77,8 +97,15 @@ bộ clip đang có trong flash (§6).
   (server gửi `end`), `cancel`, socket đóng, hoặc phiên mới của cùng kính thay thế.
 - `turn_start` mới **huỷ** phiên live **OCR** đang chạy (kính nên dừng gửi khung 0x04 khi nhận được
   `end` hoặc ngay khi bấm nút).
-- `cancel` huỷ tất cả (lượt, live nav và OCR, lệnh chờ). Hành vi nav ở trên là quy định hiện hành
-  (controller, Task 10 fix); nếu kính nhận hành vi khác thì đọc lại `live/device_session.py`.
+- Nhạc đang phát hoặc điện thoại đang dẫn đường: **chỉ khi lượt không có lời nói** (bấm nút rồi nhả, VAD không thấy
+  tiếng) server hiểu là "dừng" (dừng nhạc / dừng chỉ đường, kèm `end` nếu nav live đang chạy). Lượt có lời được phân loại
+  bình thường: "tăng âm lượng" lúc đang nghe nhạc là đổi âm lượng, câu hỏi thường lúc đang dẫn đường không tắt chỉ đường.
+- `cancel` huỷ lượt, live OCR và lệnh chờ; live **nav** vẫn chạy (như `turn_start`). Hành vi nav ở trên là quy định
+  hiện hành (controller, Task 10 fix); nếu kính nhận hành vi khác thì đọc lại `live/device_session.py`.
+- OCR live mở giữa lúc đang chỉ đường **tạm thay** nav live (kính chỉ có một phiên live). Khi OCR live kết thúc (xong,
+  bị lượt mới huỷ...) server tự dựng lại nav live: kính nhận lại `cam` của nav và cảnh báo vật cản chạy tiếp.
+- Mọi khung WS của kính (binary hay text) tối đa **~2,1 MB** (`uvicorn --ws-max-size 2100000`); quá thì server đóng
+  socket (1009) hoặc trả `error: too_large`.
 
 ## 3. Giữ kết nối và mở lại
 
@@ -120,6 +147,18 @@ server-> {"t":"reply","turn":"t42","cues":["received"],"live":null,
 server-> 0x02 <ADPCM 768 B> ... (nhiều khung 0x02)
 server-> {"t":"reply_end","turn":"t42"}
 kính  -> {"t":"played","turn":"t42","first_byte_ms":13050,"first_audio_ms":13120}
+```
+
+### 4.1b Chuỗi khung mẫu: gọi điện (lệnh làn D + kết quả do server đẩy)
+
+```
+kính  -> turn_start / 0x03... / turn_end                      ("gọi cho Nam")
+server-> {"t":"reply","turn":"t45","cues":[],"live":null,"audio":{...}}   (đọc lại "Đang gọi cho Nam.")
+server-> 0x02 ... ; {"t":"reply_end","turn":"t45"}
+          ... cửa sổ huỷ ~2 s (bấm nút/cancel/ngắt mạng lúc này thì lệnh KHÔNG được gửi) ...
+          server gửi lệnh tới điện thoại; điện thoại báo MULTIPLE_CONTACTS_FOUND
+server-> {"t":"reply","turn":"result-9f1c...","cues":[],"live":null,"audio":{...}}   (server chủ động)
+server-> 0x02 ... ; {"t":"reply_end","turn":"result-9f1c..."}   ("Có nhiều người trùng tên trong danh bạ...")
 ```
 
 ### 4.2 Chuỗi khung mẫu: OCR live

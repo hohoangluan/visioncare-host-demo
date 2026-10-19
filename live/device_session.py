@@ -17,6 +17,8 @@ khi kính đã rớt mạng hay bấm lại.
 """
 
 import asyncio
+import collections
+import contextlib
 import json
 import logging
 import secrets
@@ -93,7 +95,14 @@ class DeviceSession:
         self._shut = False
         self._replaced = False
         self._evloop = asyncio.get_running_loop()
-        self._unclaimed: str | None = None
+        # MỘT kênh audio 0x02 có thứ tự: mỗi câu (lượt trả lời reply..reply_end, câu kết quả `result-<id>`,
+        # câu của outbox nav live, cue đọc thay clip) giữ khoá này trọn câu rồi mới tới câu sau (FIFO).
+        # Khung JSON (hazard/cue/end/pong...) không qua khoá: hazard vẫn tới ngay giữa hai khối audio.
+        self._audio_lock = asyncio.Lock()
+        self._results: collections.deque[tuple[str, str]] = collections.deque()
+        self._result_task: asyncio.Task | None = None
+        self._nav_suspended = False  # OCR live đã thay nav live: dựng lại nav khi OCR xong
+        self._resume_task: asyncio.Task | None = None
 
     # ---------- gửi ----------
     async def send_json(self, obj: dict) -> None:
@@ -203,6 +212,11 @@ class DeviceSession:
         nav_stop, đóng socket hoặc phiên bị thay. OCR live thì vẫn bị lượt mới huỷ.
         """
         tasks = []
+        self._results.clear()  # bấm nút/huỷ/ngắt: người dùng đã chuyển sang việc khác, bỏ câu kết quả chưa đọc
+        if self._result_task is not None:
+            self._result_task.cancel()
+            tasks.append(self._result_task)
+            self._result_task = None
         turn, self._turn = self._turn, None
         if turn is not None and turn.task is not None:
             turn.task.cancel()
@@ -238,6 +252,10 @@ class DeviceSession:
             if msg["type"] == "websocket.disconnect":
                 return
             data = msg.get("bytes")
+            size = len(data) if data is not None else len(msg.get("text") or "")
+            if size > config.WS_MAX_FRAME_BYTES:  # uvicorn --ws-max-size đã chặn; đây là lớp thứ hai
+                await self.error("too_large")
+                continue
             if data is not None:
                 await self._on_binary(data)
             elif msg.get("text") is not None:
@@ -344,6 +362,16 @@ class DeviceSession:
             raise
 
     async def _send_reply(self, turn: _Turn, reply: Reply, released: float) -> None:
+        try:
+            async with self._audio_lock:  # không xen audio với lượt/kết quả/outbox khác
+                await self._send_reply_locked(turn, reply, released)
+            if reply.live:
+                await self._start_live(reply)
+        finally:
+            if reply.live:
+                sessions.discard(reply.live_token)  # bị huỷ trước khi nhận token live: bỏ luôn (đã claim thì no-op)
+
+    async def _send_reply_locked(self, turn: _Turn, reply: Reply, released: float) -> None:
         cue_ok = self.cue_version >= cues.CUE_VERSION
         has_audio = _audio_expected(reply, cue_ok)
         # `reply` đi NGAY (cue phát từ flash trong lúc TTS dựng mảnh đầu).
@@ -354,36 +382,90 @@ class DeviceSession:
                       "sample_rate": adpcm.SAMPLE_RATE, "preroll_s": config.V2_AUDIO_PREROLL_SECONDS}
             if has_audio else None,
         })
-        try:
-            self._unclaimed = reply.live_token if reply.live else None
-            _, body = await self._reply_audio(reply, cue_ok, RESPONSE_FORMAT, released)
-            if body is not None:
-                async for chunk in _iter_in_thread(body, getattr(reply.speech, "abort", None)):
+        _, body = await self._reply_audio(reply, cue_ok, RESPONSE_FORMAT, released)
+        if body is not None:
+            first = True
+            # aclosing: bị huỷ/ngắt giữa câu thì generator được đóng NGAY trong task này, không để GC
+            # lên lịch `aclose()` lúc nó còn đang chạy ("asynchronous generator is already running").
+            async with contextlib.aclosing(
+                _iter_in_thread(body, getattr(reply.speech, "abort", None))
+            ) as chunks:
+                async for chunk in chunks:
                     await self.send_bytes(protocol.audio(chunk))
-            await self.send_json({"t": "reply_end", "turn": turn.id})
-            if reply.live:
-                await self._start_live(reply)
-        finally:
-            sessions.discard(self._unclaimed)  # bị huỷ trước khi nhận token live: bỏ luôn
-            self._unclaimed = None
+                    if first:
+                        first = False
+                        if reply.on_audio_start is not None:
+                            reply.on_audio_start(0.0)  # câu đọc lại làn D: bắt đầu đếm cửa sổ huỷ
+        await self.send_json({"t": "reply_end", "turn": turn.id})
+
+    # ---------- kết quả hành động do server chủ động đẩy ----------
+    def _enqueue_result(self, request_id: str, text: str) -> None:
+        """Chạy trên event loop (gọi từ thread nền qua `push_result`)."""
+        if self._shut:
+            return
+        self._results.append((request_id, text))
+        if self._result_task is None or self._result_task.done():
+            self._result_task = asyncio.create_task(self._drain_results())
+
+    async def _drain_results(self) -> None:
+        device_ctx.current.set(self.device)
+        while self._results:
+            request_id, text = self._results.popleft()
+            try:
+                await self._send_reply(_Turn(f"result-{request_id}"), Reply(speech=[text], intent="result", lane="D"),
+                                       time.monotonic())
+            except (WebSocketDisconnect, RuntimeError) as exc:
+                logger.info("v2 session %s: socket đứt khi đọc kết quả (%r)", self.session_id, exc)
+                return
 
     async def _start_live(self, reply: Reply) -> None:
-        from lanes import nav_live, ocr_live
-
+        was_nav = (self._live_session is not None and self._live_session.mode == "nav"
+                   and not self._live_session.closed.is_set())
         old = self._stop_live()  # live mới thay live cũ (vd. nav còn chạy từ lượt trước)
         if old:
             await asyncio.gather(*old, return_exceptions=True)
         live = sessions.claim(reply.live_token or "")
-        self._unclaimed = None
         if live is None:
             logger.warning("v2 session %s: token live hết hạn", self.session_id)
             return
-        sock = LiveSocket(self.send_text, self.send_bytes, speak_cues=self.cue_version < cues.CUE_VERSION)
+        if live.mode == "nav":
+            self._nav_suspended = False
+        elif was_nav:
+            # OCR live thay nav live (kính chỉ có một phiên live): nav phải được dựng lại khi OCR xong,
+            # nếu không cảnh báo vật cản tắt âm thầm giữa đường trong khi người dùng tin là còn bật.
+            self._nav_suspended = True
+        self._launch_live(live)
+
+    def _launch_live(self, live) -> None:
+        from lanes import nav_live, ocr_live
+
+        sock = LiveSocket(self.send_text, self.send_bytes, speak_cues=self.cue_version < cues.CUE_VERSION,
+                          audio_lock=self._audio_lock)
         runner = ocr_live.run if live.mode == "ocr" else nav_live.run
         self._live_session, self._live_sock = live, sock
         # Chạy ở task riêng để vòng nhận (và turn_start/cancel) không bị chặn; task
         # `_run_turn` kết thúc ngay sau đây nên không tự huỷ chính live của mình.
-        self._live_task = asyncio.create_task(runner(sock, live))
+        self._live_task = asyncio.create_task(self._run_live(runner, sock, live))
+
+    async def _run_live(self, runner, sock: LiveSocket, live) -> None:
+        try:
+            await runner(sock, live)
+        finally:
+            if live.mode == "ocr" and self._nav_suspended and not self._shut:
+                self._resume_task = asyncio.get_running_loop().create_task(self._resume_nav(live))
+
+    async def _resume_nav(self, ended) -> None:
+        """Dựng lại nav live sau OCR live (I5). Bỏ qua nếu giữa chừng đã có live khác thay vào."""
+        if self._shut or not self._nav_suspended:
+            return
+        if self._live_session is not None and self._live_session is not ended:
+            return
+        self._nav_suspended = False
+        live = sessions.claim(sessions.create(self.device, "nav").token)
+        if live is None:
+            return
+        logger.info("v2 session %s: OCR live xong, dựng lại nav live (cảnh báo vật cản)", self.session_id)
+        self._launch_live(live)
 
 
 async def _iter_in_thread(body, abort: Callable[[], None] | None = None):
@@ -432,6 +514,19 @@ async def _iter_in_thread(body, abort: Callable[[], None] | None = None):
         stop.set()
         if not finished and abort is not None:
             abort()
+
+
+def push_result(device: str, text: str, request_id: str = "") -> bool:
+    """Đọc kết quả hành động làn D cho kính đang có phiên WS (gọi từ thread nền). False = không có phiên.
+
+    Khung đi xuống như một lượt: `reply` (turn = `result-<request_id>`) + 0x02 + `reply_end`, xếp hàng sau
+    lượt đang phát. Kính qua POST (`/v2/turn`, `/process`) không có phiên nên giữ nguyên hành vi cũ.
+    """
+    session = _registry.get(device)
+    if session is None or session._shut or not text.strip():
+        return False
+    session._evloop.call_soon_threadsafe(session._enqueue_result, request_id or secrets.token_hex(4), text.strip())
+    return True
 
 
 async def serve(ws: WebSocket, reply_audio: ReplyAudio) -> None:

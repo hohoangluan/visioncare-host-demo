@@ -59,6 +59,9 @@ class ClefResult:
     needs_web: bool = False
     seconds: float = 0.0
     source: str = "clef"  # "gemma" | "clef"
+    # False: không đo được xác suất nhãn (Gemma không trả logprobs). `confidence` khi đó chỉ để định tuyến
+    # làn; cổng làn D (`final_router._trusted`) coi như CHƯA đủ tin cậy -> hỏi lại.
+    confidence_known: bool = True
 
 
 _client = net.LoopClient(

@@ -7,13 +7,13 @@ Với `/process` thì `ctx.single_shot = True`: không có WebSocket nào để 
 
 import asyncio
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 
 import config
 from lanes import general, ocr_live, phone
 from live.session import sessions
 from models import search
-from pipeline import image_quality, pending_action, speech
+from pipeline import device_ctx, image_quality, pending_action, speech
 from pipeline.image_buffer import image_buffer
 from pipeline.intent_early import Decision
 from pipeline.reply import Reply
@@ -201,7 +201,7 @@ def _trusted(d: Decision) -> bool:
 
     Clef/không rõ nguồn/luật từ khoá -> hỏi lại. `backend` lạ KHÔNG mặc định là gemma.
     """
-    return d.backend == "gemma" and d.confidence >= config.ACTION_MIN_CONFIDENCE
+    return d.backend == "gemma" and d.confidence_known and d.confidence >= config.ACTION_MIN_CONFIDENCE
 
 
 def _ask_back(ctx: TurnContext, d: Decision, params: dict, lane: str) -> Reply:
@@ -210,17 +210,55 @@ def _ask_back(ctx: TurnContext, d: Decision, params: dict, lane: str) -> Reply:
     return Reply(speech=[phone.ask_confirm(d.intent, params)], intent=d.intent, lane=lane)
 
 
+def _session_deliver(device: str):
+    """Đọc kết quả hành động cho kính có phiên `WS /v2/session` (khung `reply` `result-<request_id>`).
+
+    Kính qua POST không có phiên: `push_result` trả False và hành vi giữ nguyên (không có kênh đẩy).
+    """
+    sent = 0
+
+    def deliver(text: str) -> None:
+        nonlocal sent
+        from live import device_session  # nhập muộn: device_session nhập pipeline.turn nhập module này
+
+        rid = device_ctx.action_request.get()
+        turn_id = rid if sent == 0 or not rid else f"{rid}.{sent}"
+        sent += 1
+        device_session.push_result(device, text, turn_id)
+
+    return deliver
+
+
 def _fire_after_readback(ctx: TurnContext, intent: str, text: str, params: dict,
-                         deliver=None) -> str | None:
-    """Đọc lại xong mới chạy; lượt mới / kính ngắt trong lúc đó sẽ huỷ (pending_action)."""
+                         deliver=None) -> tuple[str, Callable[[float], None]] | None:
+    """Xếp lệnh vào hàng chờ; nó chỉ đếm ngược khi audio đọc lại thật sự tới kính.
+
+    Trả `(câu đọc lại, arm)` — `arm(extra_s)` do transport gọi ngay khi khối audio đầu tiên của câu đọc lại
+    được giao cho kính (`Reply.on_audio_start`). Trước đây đồng hồ chạy từ lúc `route()` nên TTS chậm / câu
+    mở đầu của `/process` / RTT ăn mất cửa sổ huỷ và lệnh nổ trước khi người dùng nghe xong. Lượt mới / kính
+    ngắt trong lúc chờ sẽ huỷ (pending_action); chưa bao giờ armed thì lệnh không chạy (fail closed).
+
+    `deliver` None (mọi hành động trừ nav_start): câu kết quả/lỗi của điện thoại được đọc qua phiên WS
+    của kính (bỏ câu xác nhận đầu vì đã đọc lại). Trước đây bị vứt: người dùng nghe "Đang gọi cho mẹ." rồi im.
+    """
     line = phone.readback(intent, params)
     delay = pending_action.readback_delay(line) + config.ACTION_TTS_LEAD_S
+    skip_ack = deliver is None
+    if deliver is None:
+        deliver = _session_deliver(ctx.device)
     action = pending_action.schedule(
-        ctx.device, delay,
-        lambda: phone.run_background(intent, text, params, deliver=deliver), label=intent,
+        ctx.device, None,
+        lambda: phone.run_background(intent, text, params, deliver=deliver, skip_ack=skip_ack), label=intent,
         gen=ctx.gen,
     )
-    return line if action is not None else None  # None: lượt đã bị lượt mới thay
+    if action is None:
+        return None  # lượt đã bị lượt mới thay
+
+    def arm(extra_s: float = 0.0) -> None:
+        if action.arm(delay + max(0.0, extra_s)):
+            logger.info("làn D %s: audio đọc lại tới kính, đếm ngược %.2fs", intent, delay + max(0.0, extra_s))
+
+    return line, arm
 
 
 async def _lane_c(ctx: TurnContext, d: Decision, text: str, params: dict | None = None) -> Reply:
@@ -243,16 +281,18 @@ async def _lane_c(ctx: TurnContext, d: Decision, text: str, params: dict | None 
         if ctx.single_shot:
             # Không WS: chỉ gửi lệnh mở chỉ đường tới điện thoại (kết quả không đọc
             # lại được), nói câu xác nhận.
-            line = _fire_after_readback(ctx, "nav_start", text, params)
-            return Reply(speech=[line] if line else [], intent=d.intent, lane="C+D")
+            fired = _fire_after_readback(ctx, "nav_start", text, params)
+            if fired is None:
+                return Reply(intent=d.intent, lane="C+D")
+            return Reply(speech=[fired[0]], intent=d.intent, lane="C+D", on_audio_start=fired[1])
         session = ctx.prewarmer.session("nav")
         # Cảnh báo làn C bật ngay; mở lộ trình (làn D) chờ đọc lại điểm đến xong,
         # kết quả đọc qua WS của làn C.
-        line = _fire_after_readback(ctx, "nav_start", text, params, deliver=session.outbox.put)
-        if line is None:
+        fired = _fire_after_readback(ctx, "nav_start", text, params, deliver=session.outbox.put)
+        if fired is None:
             return Reply(intent=d.intent, lane="C+D")
-        return Reply(cues=["nav_alert_on"], speech=[line], live="nav", live_token=session.token,
-                     intent=d.intent, lane="C+D")
+        return Reply(cues=["nav_alert_on"], speech=[fired[0]], live="nav", live_token=session.token,
+                     intent=d.intent, lane="C+D", on_audio_start=fired[1])
 
     session = ctx.prewarmer.session("nav")  # alert_on
     return Reply(cues=["nav_alert_on"], live="nav", live_token=session.token, intent=d.intent, lane="C")
@@ -272,10 +312,10 @@ async def _lane_d(ctx: TurnContext, d: Decision, text: str, params: dict | None 
         return Reply(speech=phone.speech(intent, text, params), intent=intent, lane="D")
     if not _trusted(d):
         return _ask_back(ctx, d, params, "D")
-    line = _fire_after_readback(ctx, intent, text, params)
-    if line is None:
+    fired = _fire_after_readback(ctx, intent, text, params)
+    if fired is None:
         return Reply(intent=intent, lane="D")
-    return Reply(speech=[line], intent=intent, lane="D")
+    return Reply(speech=[fired[0]], intent=intent, lane="D", on_audio_start=fired[1])
 
 
 async def route(ctx: TurnContext, d: Decision, text: str) -> Reply:

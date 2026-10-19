@@ -120,7 +120,7 @@ nvidia-smi --query-gpu=index,memory.used,utilization.gpu --format=csv,noheader
 S=<thư mục tạm>; mkdir -p $S
 cd visioncare-host-demo
 CUDA_VISIBLE_DEVICES=<gpu A> STORAGE_DIR=$S/storage ONNX_DEVICE=cuda nohup ~/.venvs/seevia/bin/python \
-  -m uvicorn app:app --host 127.0.0.1 --port 18888 --loop uvloop --http httptools > $S/server.log 2>&1 &
+  -m uvicorn app:app --host 127.0.0.1 --port 18888 --loop uvloop --http httptools --ws-max-size 2100000 > $S/server.log 2>&1 &
 # đợi dòng "Application startup complete" (lần đầu ~3 phút dựng sẵn 113 câu TTS, sau đó ~25 s)
 curl -sL -o $S/bus.jpg https://ultralytics.com/images/bus.jpg      # ảnh đường phố có xe, cho đo làn C
 CUDA_VISIBLE_DEVICES=<gpu B> ~/.venvs/seevia/bin/python tools/bench_live.py \

@@ -334,6 +334,28 @@ def test_low_confidence_asks_back(world):
     assert phone.take_pending_confirm("aa:bb")[0] == "contact_call"
 
 
+def test_missing_logprobs_asks_back_on_lane_d_but_other_lanes_run(world):
+    """Gemma không trả logprobs (confidence_known=False): lệnh làn D hỏi lại, KHÔNG chạy; làn A vẫn trả lời."""
+    rec, labels, calls = world
+    rec.text = "GỌI CHO MẸ"
+    result = _gemma("contact_call", 1.0)
+    result.confidence_known = False
+    labels["gọi cho mẹ"] = result
+    r = _turn("nl1")
+    assert len(r.content) > 1000  # câu hỏi lại "... phải không?"
+    import time
+    time.sleep(0.5)
+    assert calls["actions"] == []
+    assert phone.take_pending_confirm("aa:bb")[0] == "contact_call"
+
+    rec.text = "KỂ CHUYỆN CƯỜI ĐI"
+    chat = _gemma("chat", 1.0)
+    chat.confidence_known = False
+    labels["kể chuyện cười đi"] = chat
+    r = _turn("nl2")
+    assert len(r.content) > 1000 and calls["llm"]  # làn A chạy như thường
+
+
 def test_clef_backend_asks_back(world):
     rec, labels, calls = world
     rec.text = "GỌI CHO MẸ"
@@ -517,7 +539,8 @@ def test_process_nav_no_live(world):
     assert "x-live" not in r.headers and "x-live-token" not in r.headers
     assert sessions.active(config.VISIONCARE_DEVICE_ID) is None
     import time
-    for _ in range(150):
+    # /process: cửa sổ huỷ = câu mở đầu + đệm 2 s + câu đọc lại (đếm từ byte đầu gửi đi), nên lệnh tới muộn hơn /v2.
+    for _ in range(600):
         if calls["actions"]:
             break
         time.sleep(0.02)

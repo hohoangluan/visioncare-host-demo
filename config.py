@@ -260,6 +260,9 @@ DEVICE_MAX_AUDIO_S = float(get("DEVICE_MAX_AUDIO_S", "30"))
 DEVICE_MAX_PROCESS_BYTES = int(get(
     "DEVICE_MAX_PROCESS_BYTES",
     str(DEVICE_MAX_IMAGE_BYTES + int(DEVICE_MAX_AUDIO_S * 32000) + 65536)))
+# Trần MỘT khung WS của kính (ảnh lượt + tiêu đề). Khớp `uvicorn --ws-max-size 2100000` (mặc định 16 MB là
+# bộ nhớ chưa xác thực mỗi socket); `device_session` cũng tự bỏ khung vượt trần này.
+WS_MAX_FRAME_BYTES = DEVICE_MAX_IMAGE_BYTES + 65536
 LIVE_MAX_FRAME_BYTES = int(get("LIVE_MAX_FRAME_BYTES", "300000"))
 DEVICE_TURNS_PER_MIN = float(get("DEVICE_TURNS_PER_MIN", "30"))
 DEVICE_IMAGES_PER_MIN = float(get("DEVICE_IMAGES_PER_MIN", "40"))

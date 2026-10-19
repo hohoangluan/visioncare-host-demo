@@ -67,13 +67,27 @@ class PendingAction:
             log.exception("làn D: lệnh chờ %s lỗi", self.label)
 
 
-def schedule(device: str, delay_s: float, fn: Callable[[], None],
+    def arm(self, delay_s: float) -> bool:
+        """Bắt đầu đếm ngược (lệnh đặt với `delay_s=None`). Gọi đúng lúc khối audio đọc lại ĐẦU TIÊN rời
+        server tới kính. Đã huỷ/đã chạy/đã armed rồi -> False và không làm gì."""
+        with _lock:
+            if self.cancelled.is_set() or self.fired.is_set() or self._timer is not None:
+                return False
+            timer = threading.Timer(max(0.0, delay_s), self._run)
+            timer.daemon = True
+            self._timer = timer
+            timer.start()
+            return True
+
+
+def schedule(device: str, delay_s: float | None, fn: Callable[[], None],
              label: str, gen: int | None = None) -> PendingAction | None:
-    """Đặt lệnh chờ. `gen` cũ (đã có lượt mới hơn) -> từ chối, trả None."""
+    """Đặt lệnh chờ. `gen` cũ (đã có lượt mới hơn) -> từ chối, trả None.
+
+    `delay_s=None`: lệnh nằm trong hàng chờ (huỷ được, bị lệnh mới thay) nhưng CHƯA đếm ngược; `arm()` mới
+    bắt đầu đếm. Không bao giờ armed (audio đọc lại không tới kính) thì lệnh không chạy — fail closed.
+    """
     action = PendingAction(device, fn, label)
-    timer = threading.Timer(max(0.0, delay_s), action._run)
-    timer.daemon = True
-    action._timer = timer
     with _lock:
         if gen is not None and gen != _generation.get(device, 0):
             log.info("làn D bỏ %s: lượt đã cũ", label)
@@ -82,7 +96,11 @@ def schedule(device: str, delay_s: float, fn: Callable[[], None],
         if old is not None:
             _cancel_locked(old, "lệnh mới thay thế")
         _pending[device] = action
-        timer.start()
+        if delay_s is not None:
+            timer = threading.Timer(max(0.0, delay_s), action._run)
+            timer.daemon = True
+            action._timer = timer
+            timer.start()
     return action
 
 

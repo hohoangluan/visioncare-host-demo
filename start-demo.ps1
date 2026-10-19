@@ -100,7 +100,7 @@ if ($SkipGlasses) {
         Write-Host "  skip  something already listening on 8000" -ForegroundColor Yellow
     } else {
         Start-Process -FilePath "$GlassesRoot\.venv\Scripts\python.exe" `
-            -ArgumentList '-m', 'uvicorn', 'app:app', '--host', '0.0.0.0', '--port', '8000' `
+            -ArgumentList '-m', 'uvicorn', 'app:app', '--host', '0.0.0.0', '--port', '8000', '--ws-max-size', '2100000' `
             -WorkingDirectory $GlassesRoot `
             -RedirectStandardOutput "$LogDir\glasses8000.log" `
             -RedirectStandardError  "$LogDir\glasses8000.err.log" `

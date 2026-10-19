@@ -21,6 +21,26 @@ from pipeline import adpcm, stt
 logger = logging.getLogger("blind_assist")
 
 _FORMAT_PCM = 0x0001
+# Tham số audio do client khai (Content-Type / header RIFF) chỉ được nằm trong khoảng hợp lý: trần audio và
+# trần byte tính theo rate x channels, nên con số tuỳ ý = vô hiệu hoá trần.
+_MIN_RATE, _MAX_RATE = 8000, 48000
+_MIN_CHANNELS, _MAX_CHANNELS = 1, 2
+
+
+def _sane_rate(value) -> int:
+    try:
+        rate = int(value)
+    except (TypeError, ValueError):
+        return adpcm.SAMPLE_RATE
+    return rate if _MIN_RATE <= rate <= _MAX_RATE else adpcm.SAMPLE_RATE
+
+
+def _sane_block(value) -> int:
+    try:
+        block = int(value)
+    except (TypeError, ValueError):
+        return adpcm.BLOCK_ALIGN
+    return block if 0 < block <= 8192 else adpcm.BLOCK_ALIGN
 
 
 def _content_params(content_type: str | None) -> dict[str, str]:
@@ -43,8 +63,8 @@ class StreamingTranscriber:
         # `vad`: pipeline.vad.Segmenter (hoặc None = giải cả buffer như trước).
         self._vad = vad
         params = _content_params(content_type)
-        self._block_align = int(params.get("block", adpcm.BLOCK_ALIGN) or adpcm.BLOCK_ALIGN)
-        self._rate = int(params.get("rate", adpcm.SAMPLE_RATE) or adpcm.SAMPLE_RATE)
+        self._block_align = _sane_block(params.get("block"))
+        self._rate = _sane_rate(params.get("rate"))
         self._format = adpcm.FORMAT_TAG
         self._channels = 1
         # Còn đang dò header RIFF thì `_header_done` False; ADPCM thô thì xong luôn.
@@ -84,8 +104,12 @@ class StreamingTranscriber:
             body = data[pos + 8:pos + 8 + size]
             if chunk_id == b"fmt ":
                 tag, channels, rate, _, block_align = struct.unpack_from("<HHIIH", body)
-                self._format, self._channels, self._rate = tag, channels, rate
-                self._block_align = block_align
+                self._format = tag
+                # Header do client khai: kẹp vào khoảng hợp lý, không thì trần audio (tính theo rate/channels)
+                # phồng theo con số tuỳ ý (rate=1e9 -> ~60 GB).
+                self._channels = channels if _MIN_CHANNELS <= channels <= _MAX_CHANNELS else 1
+                self._rate = _sane_rate(rate)
+                self._block_align = _sane_block(block_align)
             pos += 8 + size + (size & 1)
         return False
 

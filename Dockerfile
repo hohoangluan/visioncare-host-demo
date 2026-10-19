@@ -54,4 +54,4 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=240s --retries=5 \
     CMD curl -fsS http://127.0.0.1:18888/health || exit 1
 
 # Khởi động lần đầu ~3 phút (dựng sẵn 113 câu TTS), các lần sau ~25 s.
-CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "18888", "--loop", "uvloop", "--http", "httptools"]
+CMD ["uvicorn", "app:app", "--host", "0.0.0.0", "--port", "18888", "--loop", "uvloop", "--http", "httptools", "--ws-max-size", "2100000"]

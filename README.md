@@ -68,7 +68,8 @@ Triển khai Linux/GPU (voice server v2) chạy ở **cổng 18888** sau Cloudfl
 
 ```bash
 CUDA_VISIBLE_DEVICES=<gpu trống> ONNX_DEVICE=cuda ~/.venvs/seevia/bin/python \
-  -m uvicorn app:app --host 127.0.0.1 --port 18888 --loop uvloop --http httptools
+  -m uvicorn app:app --host 127.0.0.1 --port 18888 --loop uvloop --http httptools \
+  --ws-max-size 2100000   # trần khung WS ~= DEVICE_MAX_IMAGE_BYTES + 64 KB (mặc định uvicorn 16 MB)
 fuser -k 18888/tcp   # tắt (đừng dùng pkill -f có số cổng: khớp luôn shell)
 ```
 

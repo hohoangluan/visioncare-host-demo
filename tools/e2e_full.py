@@ -43,6 +43,7 @@ AB = SEEVIA / "app-demo-backend" / "server"
 PY = os.environ.get("E2E_PY", str(Path.home() / ".venvs" / "seevia" / "bin" / "python"))
 GLASSES = "e2e-glasses"
 BYTE_RATE = 8110.9
+SILENCE = "<bấm nút, không nói>"
 CHUNK = 512
 ASK_MARK = "hỏi lại"  # log VH: "làn D <intent>: hỏi lại (backend=...)"
 REQ_RE = re.compile(r"Calling VisionCare API: POST \S+/api/v1/service/(\w+)/(\w+) ")
@@ -169,7 +170,8 @@ class Stack:
                    VISIONCARE_CLIENT_TOKEN=public_token, VISIONCARE_DEVICE_ID="e2e-wrong-default",  # khác id kính: lệnh mất device_ctx sẽ rơi vào id này và hỏng
                    VISIONCARE_DEVICE_CLIENT_TOKEN=self.device_token, VISIONCARE_CALLBACK_TOKEN=cb_token)
         self.vh_log.unlink(missing_ok=True)
-        p = self._spawn([PY, "-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", str(a.vh_port)],
+        p = self._spawn([PY, "-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", str(a.vh_port),
+                         "--ws-max-size", "2100000"],
                         env, ROOT, self.vh_log, a.vh_port)
         wait_http(f"http://127.0.0.1:{a.vh_port}/health", 420, "VH", p)
 
@@ -356,6 +358,10 @@ def make_audio_fn(cache: Path):
     cache.mkdir(parents=True, exist_ok=True)
 
     def fn(text: str, tail_s=0.3) -> bytes:
+        if text == SILENCE:  # chỉ bấm nút rồi nhả: không có lời
+            from pipeline import adpcm
+
+            return adpcm.encode_blocks(b"\x00\x00" * 12000)
         key = re.sub(r"\W+", "_", text.lower()).strip("_")[:60] or "x"
         path = cache / f"{key}.adpcm"
         if path.exists() and path.stat().st_size > 0:
@@ -543,31 +549,50 @@ async def sc_cancel_disconnect(c):
 
 
 async def sc_ride(c):
-    """VH hỏi-rồi-mới-đặt: lượt 1 chỉ nhớ điểm đến (KHÔNG lệnh nào tới ĐT), lượt 2 "xác nhận" mới gửi `ride_quote`."""
-    mark, t1, t1b, asked1 = await fire(c, "Đặt xe đến chợ Bến Thành.")
-    early = [x["action"] for x in c.plog.commands(mark)]
-    await asyncio.sleep(5.0)
-    early = [x["action"] for x in c.plog.commands(mark)]
-    if early:
-        return result("ride", False, f"lượt 'đặt xe' đã gửi lệnh {early} trước khi người dùng xác nhận",
-                      asked_back=asked1, first_audio_ms=t1.ms("first_audio"))
-    r2 = await command_scenario(c, "ride", "Đồng ý, xác nhận đặt xe.", "ride_quote", prm("destination", "bến thành"),
+    """Lượt "đặt xe" gửi `ride_quote` ngay; lượt "xác nhận" gửi `ride_confirm {quote_id, confirm:true}`."""
+    r1 = await command_scenario(c, "ride_quote", "Đặt xe đến chợ Bến Thành.", "ride_quote", prm("destination", "bến thành"),
                                 expect_report="ok")
-    r2["asked_back"] = asked1 or r2["asked_back"]
-    r2["first_audio_ms"] = t1.ms("first_audio")
-    r2["notes"] = "lượt 1: không lệnh nào (đúng); lượt 2: " + r2["notes"]
+    if r1["cmd_ms"] is None:
+        r1["name"] = "ride"
+        return r1
+    await asyncio.sleep(1.0)  # quote_id về VH qua callback
+    r2 = await command_scenario(
+        c, "ride_confirm", "Đồng ý, xác nhận đặt xe.", "ride_confirm",
+        lambda cmd: (str(cmd["params"].get("quote_id", "")).startswith("quote-") and cmd["params"].get("confirm") is True,
+                     f"params={cmd['params']}"), expect_report="ok")
+    out = result("ride", r1["pass"] and r2["pass"], f"quote: {r1['notes']}; confirm: {r2['notes']}",
+                 first_audio_ms=r1["first_audio_ms"], cmd_ms=r1["cmd_ms"], result_ms=r1["result_ms"],
+                 asked_back=r1["asked_back"] or r2["asked_back"])
+    out["confirm_cmd_ms"], out["confirm_result_ms"] = r2["cmd_ms"], r2["result_ms"]
+    out["flag"] = r1.get("flag") or r2.get("flag")
+    return out
+
+
+async def sc_ride_cancel(c):
+    """Hủy sau báo giá: `ride_confirm {quote_id, confirm:false}` (hợp đồng: huỷ = confirm false)."""
+    r1 = await command_scenario(c, "ride_quote", "Đặt xe đến chợ Bến Thành.", "ride_quote", expect_report="ok")
+    if r1["cmd_ms"] is None:
+        r1["name"] = "ride_cancel"
+        return r1
+    await asyncio.sleep(1.0)
+    r2 = await command_scenario(
+        c, "ride_cancel", "Hủy chuyến xe.", "ride_confirm",
+        lambda cmd: (str(cmd["params"].get("quote_id", "")).startswith("quote-") and cmd["params"].get("confirm") is False,
+                     f"params={cmd['params']}"), expect_report="ok")
+    r2["notes"] = f"quote: {r1['notes']}; cancel: {r2['notes']}"
+    r2["pass"] = r2["pass"] and r1["pass"]
     return r2
 
 
 async def sc_music(c):
-    """volume (chưa phát) -> play -> bấm nút = dừng (`_bypass`: nhạc đang phát thì mọi lần bấm là dừng)."""
-    steps = [await command_scenario(c, "music_volume", "Tăng âm lượng lên.", "music_volume", expect_report="ok")]
-    steps.append(await command_scenario(c, "music_play", "Mở bài Lạc trôi của Sơn Tùng.", "music_play", expect_report="ok"))
-    if steps[-1]["cmd_ms"] is not None:  # lệnh đã tới ĐT (dù kết quả không được đọc) -> nhạc đang phát, phải dừng cho sạch
-        steps.append(await command_scenario(c, "music_stop(bấm nút)", "Dừng nhạc lại.", "music_stop", expect_report="ok"))
-    out = result("music_vol>play>stop", all(s["pass"] for s in steps) and len(steps) == 3,
+    """phát -> "tăng âm lượng" LÚC ĐANG PHÁT (có lời: music_volume, không phải dừng) -> chỉ bấm nút = dừng."""
+    steps = [await command_scenario(c, "music_play", "Mở bài Lạc trôi của Sơn Tùng.", "music_play", expect_report="ok")]
+    if steps[0]["cmd_ms"] is not None:
+        steps.append(await command_scenario(c, "music_volume(đang phát)", "Tăng âm lượng lên.", "music_volume", expect_report="ok"))
+        steps.append(await command_scenario(c, "music_stop(bấm nút)", SILENCE, "music_stop", expect_report="ok"))
+    out = result("music_play>volume>stop", all(s["pass"] for s in steps) and len(steps) == 3,
                  "; ".join(f"{s['name']}={'ok' if s['pass'] else s['notes']}" for s in steps),
-                 first_audio_ms=steps[1]["first_audio_ms"], cmd_ms=steps[1]["cmd_ms"], result_ms=steps[-1]["result_ms"],
+                 first_audio_ms=steps[0]["first_audio_ms"], cmd_ms=steps[0]["cmd_ms"], result_ms=steps[0]["result_ms"],
                  asked_back=any(s["asked_back"] for s in steps))
     out["sub"] = steps
     out["flag"] = next((s["flag"] for s in steps if s.get("flag")), None)
@@ -630,8 +655,16 @@ async def sc_nav(c):
         haz0 = await g.wait_for(lambda e: e["k"] == "json" and e["f"].get("t") == "hazard", 10, t2.base)
         if street and haz0 is None:
             problems.append("không có hazard từ khung đường phố")
+        # câu hỏi thường lúc đang dẫn đường: phân loại bình thường, KHÔNG tắt chỉ đường (nav live + ĐT)
+        n1 = len(g.events)
+        chat = await g.say("Kể cho tôi một câu chuyện cười ngắn.")
+        if g.frames("end", n1):
+            problems.append("câu chat giữa chừng làm live nav kết thúc")
+        extra = [x["action"] for x in c.plog.commands(mark) if x["action"] != "navigation_start"]
+        if extra:
+            problems.append(f"câu chat giữa chừng sinh lệnh {extra}")
         n2 = len(g.events)
-        stop_t = await g.say("Dừng chỉ đường.")
+        stop_t = await g.say(SILENCE)  # chỉ bấm nút = dừng chỉ đường
         stop_cmd = await wait_cmd(c, mark, "navigation_stop", 9.0)
         end_frame = await g.wait_for(lambda e: e["k"] == "json" and e["f"].get("t") == "end", 4, n2)
         if stop_cmd is None:
@@ -656,7 +689,7 @@ async def sc_nav(c):
         stop.set()
         await feeder
     r["pass"] = not problems
-    r["notes"] = "; ".join(problems) or "nav_start -> hazard -> bấm nút -> navigation_stop + end"
+    r["notes"] = "; ".join(problems) or "nav_start -> hazard -> chat giữa chừng (nav sống) -> bấm nút -> navigation_stop + end"
     return r
 
 
@@ -767,7 +800,7 @@ async def sc_ocr_live(c):
 SCENARIOS = {
     "call_mom": sc_call_mom, "call_nam": sc_call_nam, "call_cancel": sc_cancel_frame,
     "call_cancel_newturn": sc_cancel_newturn, "call_cancel_disconnect": sc_cancel_disconnect,
-    "ride": sc_ride, "music": sc_music, "nav": sc_nav, "alert": sc_alert, "emergency": sc_emergency, "chat": sc_chat,
+    "ride": sc_ride, "ride_cancel": sc_ride_cancel, "music": sc_music, "nav": sc_nav, "alert": sc_alert, "emergency": sc_emergency, "chat": sc_chat,
     "ocr_direct": sc_ocr_direct, "ocr_live": sc_ocr_live,
 }
 
@@ -795,7 +828,7 @@ async def run(args, stack: Stack):
     for text in [f"Gọi cho {NAMES['single']}.", f"Gọi cho {NAMES['multi']}.", "Đúng.", "Có.", "Đặt xe đến chợ Bến Thành.", "Đồng ý, xác nhận đặt xe.",
                  "Mở bài Lạc trôi của Sơn Tùng.", "Tăng âm lượng lên.", "Dừng nhạc lại.", "Dẫn tôi đến chợ Bến Thành.",
                  "Dừng chỉ đường.", "Cấp cứu, gọi người thân giúp tôi.", "Kể cho tôi một câu chuyện cười ngắn.",
-                 "Đọc giúp tôi trang sách này.", "Bật cảnh báo vật cản."]:
+                 "Đọc giúp tôi trang sách này.", "Bật cảnh báo vật cản.", "Hủy chuyến xe.", SILENCE]:
         audio_fn(text)
     plog = PhoneLog(stack.phone_log if not args.no_phone_sim else None, stack.vh_log)
     results = []

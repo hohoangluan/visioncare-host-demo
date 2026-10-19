@@ -576,7 +576,7 @@ def test_label_prob_from_logprobs(monkeypatch):
     assert out["intent"] == "music_play"
 
 
-def test_label_prob_missing_logprobs_is_one(monkeypatch):
+def test_missing_logprobs_keeps_routing_confidence_but_marks_it_unknown(monkeypatch):
     from models import llm
     from pipeline import intent_classifier
 
@@ -588,7 +588,8 @@ def test_label_prob_missing_logprobs_is_one(monkeypatch):
     monkeypatch.setattr(config, "INTENT_FORMAT", "json")
     monkeypatch.setattr(intent_classifier, "_warned_no_logprobs", False)
     res = asyncio.run(intent_classifier._gemma("tắt đi", None))
-    assert res.confidence == 1.0 and res.source == "gemma"
+    # Định tuyến làn vẫn chạy (1.0) nhưng độ tin cậy KHÔNG được coi là đã biết: cổng làn D sẽ hỏi lại.
+    assert res.confidence == 1.0 and res.source == "gemma" and res.confidence_known is False
     assert intent_classifier._warned_no_logprobs is True
 
 
@@ -979,3 +980,93 @@ def test_live_old_cue_version_speaks_cue(monkeypatch):
     assert asyncio.run(run(False)) == [("t", protocol.cue(cue_id))]  # kính mới: gửi mã cue
     old = asyncio.run(run(True))  # kính cũ: nói câu
     assert old == [("b", protocol.audio(b"aa"))] and spoken == [cues.fallback_text(cue_id)]
+
+
+# ── Đợt sửa cuối plan 1 ───────────────────────────────────────────────────────
+
+def test_pending_action_counts_down_only_after_arm():
+    """Lệnh làn D chưa armed thì không bao giờ chạy; arm() mới bắt đầu đếm; huỷ trước arm thì mãi không chạy."""
+    from pipeline import pending_action
+
+    fired = []
+    action = pending_action.schedule("arm-dev", None, lambda: fired.append("a"), "t")
+    time.sleep(0.3)
+    assert fired == []  # chưa armed: đứng yên
+    assert action.arm(0.15) is True and action.arm(0.0) is False  # armed một lần
+    time.sleep(0.05)
+    assert fired == []  # đang đếm ngược
+    time.sleep(0.4)
+    assert fired == ["a"]
+
+    cancelled = pending_action.schedule("arm-dev2", None, lambda: fired.append("b"), "t")
+    assert pending_action.cancel("arm-dev2", "kiểm") is True
+    assert cancelled.arm(0.0) is False
+    time.sleep(0.2)
+    assert fired == ["a"]
+
+
+def test_process_arm_waits_for_first_byte_and_adds_opening_line():
+    from app import _ProcessArm
+
+    got = []
+    a = _ProcessArm()
+    a.set(got.append)
+    assert got == []  # lượt xong nhưng chưa byte nào rời server
+    a.first_chunk()
+    assert len(got) == 1 and got[0] >= config.AUDIO_PREROLL_SECONDS  # câu mở đầu + đệm 2 s đứng trước câu đọc lại
+    a.first_chunk()
+    assert len(got) == 1  # chỉ một lần
+    b = _ProcessArm()
+    b.first_chunk()  # byte đầu đi trước khi lượt xong (đệm nhỏ)
+    got2 = []
+    b.set(got2.append)
+    assert len(got2) == 1
+
+
+def test_stream_until_disconnect_arms_on_first_chunk_and_cancels_on_drop():
+    from app import _stream_until_disconnect
+    from pipeline import pending_action
+    from pipeline.reply import Reply
+
+    async def go():
+        armed = []
+        action = pending_action.schedule("sud-dev", None, lambda: armed.append("fired"), "t")
+        body = iter([b"1", b"2", b"3"])
+        gen = _stream_until_disconnect(body, Reply(), "sud-dev", lambda: armed.append("arm"))
+        assert await gen.__anext__() == b"1"
+        assert armed == []  # callback chạy sau khi chunk đầu đã được giao đi
+        assert await gen.__anext__() == b"2"
+        assert armed == ["arm"]
+        await gen.aclose()  # client ngắt giữa chừng
+        assert action.cancelled.is_set()  # lệnh chờ bị huỷ (/process cũng đi đường này)
+
+    asyncio.run(go())
+
+
+def test_stt_stream_clamps_declared_rate_and_channels():
+    """Rate/kênh do client khai không được phồng trần audio (rate=1e9 -> ~60 GB)."""
+    import struct
+
+    tr = StreamingTranscriber("audio/x-adpcm-ima; rate=1000000000; channels=1; block=0")
+    assert tr._rate == adpcm.SAMPLE_RATE and tr._block_align == adpcm.BLOCK_ALIGN
+    tr = StreamingTranscriber("audio/x-adpcm-ima; rate=abc")
+    assert tr._rate == adpcm.SAMPLE_RATE
+
+    fmt = struct.pack("<HHIIHH", 0x0001, 2000, 2_000_000_000, 4, 2, 16)
+    wav = b"RIFF" + struct.pack("<I", 4 + 8 + len(fmt)) + b"WAVE" + b"fmt " + struct.pack("<I", len(fmt)) + fmt + b"data"
+    tr = StreamingTranscriber("audio/wav")
+    tr.feed(wav)
+    assert tr._rate == adpcm.SAMPLE_RATE and tr._channels == 1
+    cap = config.DEVICE_MAX_AUDIO_S * adpcm.SAMPLE_RATE * 2 + 65536
+    tr.feed(b"\x00" * int(cap + 10))
+    tr.feed(b"\x00" * 10)
+    assert tr.capped  # trần byte theo rate đã kẹp, không phải 2e9
+
+
+def test_httpx_logs_do_not_carry_the_search_key(monkeypatch, caplog):
+    import logging
+
+    import app  # noqa: F401  (cấu hình logging khi nạp)
+
+    assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
+    assert logging.getLogger("httpcore").getEffectiveLevel() >= logging.WARNING

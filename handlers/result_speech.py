@@ -91,7 +91,7 @@ _UNSPECIFIED_FAILURE = "Chưa thực hiện được, vui lòng thử lại."
 # không ai cam kết.
 _RIDE_APP_OPENED = (
     "Đã mở ứng dụng đặt xe. Vui lòng nhấn vào thông báo trên điện thoại, "
-    "kiểm tra lại điểm đón và điểm đến trong ứng dụng rồi xác nhận để đặt xe."
+    "kiểm tra lại điểm đón và điểm đến trong ứng dụng, rồi nói xác nhận để đặt xe, hoặc nói hủy."
 )
 _RIDE_REQUESTED = (
     "Đã gửi yêu cầu đặt xe. Vui lòng nhấn vào thông báo trên điện thoại và "

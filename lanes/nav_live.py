@@ -9,6 +9,7 @@ Câu nói của làn D (kết quả mở lộ trình trên điện thoại) đ�
 """
 
 import asyncio
+import contextlib
 import logging
 import queue
 import time
@@ -77,18 +78,18 @@ async def _speak_outbox(ws: WebSocket, session: LiveSession, clock: _HazardClock
             retry = text
             await asyncio.sleep(0.05)
             continue
-        stream = speech.adpcm_stream([text])
-        interrupted = False
-        try:
-            async for chunk in stream:
-                if not clock.quiet():
-                    interrupted = True
-                    break
-                await ws.send_bytes(protocol.audio(chunk))
-        finally:
-            await stream.aclose()
-        if interrupted:
-            retry = text
+        # Trên `/v2/session`: một kênh audio có thứ tự — chờ câu trả lời/kết quả đang phát xong (khoá FIFO),
+        # rồi nói trọn câu. Khung JSON hazard không qua khoá nên vẫn tới ngay.
+        async with getattr(ws, "audio_lock", None) or contextlib.nullcontext():
+            if not clock.quiet():  # trong lúc chờ khoá có hazard mức >= 2
+                retry = text
+                continue
+            async with contextlib.aclosing(speech.adpcm_stream([text])) as stream:
+                async for chunk in stream:
+                    if not clock.quiet():
+                        retry = text
+                        break
+                    await ws.send_bytes(protocol.audio(chunk))
 
 
 async def run(ws: WebSocket, session: LiveSession) -> None:

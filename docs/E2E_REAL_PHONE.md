@@ -36,7 +36,7 @@ CUDA_VISIBLE_DEVICES=2 ~/.venvs/seevia/bin/python tools/e2e_full.py \
 (hoặc thêm `--vh-url http://127.0.0.1:18888` để dùng VH đang chạy; khi đó đặt `VISIONCARE_DEVICE_CLIENT_TOKEN`).
 Không có `phone_sim_log.jsonl`, nên công cụ suy "lệnh đã gửi" từ log VH (`Calling VisionCare API: POST .../service/<op>`), báo FAIL nếu app server
 trả `HTTPError`, và KHÔNG kiểm tham số/`report`/"kết quả đọc": bạn tự nhìn điện thoại theo cột "kết quả mong đợi".
-Lưu ý B1 trong `docs/E2E_FULL_FLOW.md`: với `call`/`music_play`/`emergency`/`ride`, người dùng hiện không nghe được kết quả.
+Kết quả của `call`/`music_play`/`emergency`/`ride` được đọc cho kính qua khung `result-<request_id>` (xem `FIRMWARE_ENDPOINTS.md` §2.2); kịch bản thật nên nghe thử.
 
 ## 3. Kịch bản và kết quả mong đợi
 
@@ -45,9 +45,10 @@ Lưu ý B1 trong `docs/E2E_FULL_FLOW.md`: với `call`/`music_play`/`emergency`/
 | `call_mom` | "Gọi cho mẹ." | Sau ~2-3 s, app gọi số của Mẹ (màn hình gọi mở). Report `succeeded`, `contact_name`=tên lưu trong danh bạ, số được che `***xyz`. | Đọc lại "Đang gọi cho mẹ." trong < 1 s; bảng in PASS với `lệnh -> ĐT` ~2-3 s |
 | `call_nam` | "Gọi cho Nam." (tên có 2 số) | KHÔNG gọi; report `failed` `MULTIPLE_CONTACTS_FOUND` kèm `candidates` (2 số đã che). | PASS khi lệnh tới |
 | `call_cancel`, `call_cancel_newturn`, `call_cancel_disconnect` | "Gọi cho mẹ." rồi huỷ ngay (nút / bấm lượt mới / ngắt kính) | Điện thoại KHÔNG nhận lệnh, KHÔNG gọi. | PASS khi 7 s sau không có `Calling VisionCare API` nào |
-| `music` | "Tăng âm lượng lên." -> "Mở bài Lạc trôi của Sơn Tùng." -> "Dừng nhạc lại." (bấm nút) | Âm lượng STREAM_MUSIC tăng một bậc; Spotify mở/phát bài; rồi dừng. Report `music_play` có `provider:"Spotify"`; thiếu Spotify đăng nhập -> `MUSIC_ACCOUNT_NOT_CONNECTED`. | PASS khi cả 3 lệnh đi |
-| `nav` | "Dẫn tôi đến chợ Bến Thành." -> (hazard) -> bấm nút | Google Maps mở chỉ đường tới điểm đến; `navigation_id` `nav-xxxxxxxx`; bấm nút -> Maps dừng (`navigation_stop` mang đúng `navigation_id`). | PASS khi `navigation_start`/`navigation_stop` đi (hiện kịch bản FAIL vì B2: live nav không đóng) |
-| `ride` | "Đặt xe đến chợ Bến Thành." -> "Đồng ý, xác nhận đặt xe." | Lượt 1 không có gì trên điện thoại. Lượt 2: Grab mở màn báo giá (`ride_quote`: `quote_id` `quote-xxxxxxxx`, `GrabCar`); xác nhận/huỷ chuyến làm TRONG app Grab. | PASS khi `ride_quote` chỉ đi ở lượt 2 |
+| `music` | "Mở bài Lạc trôi của Sơn Tùng." -> "Tăng âm lượng lên." (lúc đang phát) -> chỉ bấm nút (không nói) | Spotify mở/phát bài; âm lượng STREAM_MUSIC tăng một bậc mà nhạc vẫn chạy; bấm nút không lời thì dừng. Report `music_play` có `provider:"Spotify"`; thiếu Spotify đăng nhập -> `MUSIC_ACCOUNT_NOT_CONNECTED`. | PASS khi cả 3 lệnh đi |
+| `nav` | "Dẫn tôi đến chợ Bến Thành." -> (hazard) -> một câu chat -> chỉ bấm nút | Google Maps mở chỉ đường tới điểm đến; `navigation_id` `nav-xxxxxxxx`; câu chat không làm Maps dừng; bấm nút không lời -> Maps dừng (`navigation_stop` mang đúng `navigation_id`). | PASS khi `navigation_start`/`navigation_stop` đi và nav live có `end` |
+| `ride` | "Đặt xe đến chợ Bến Thành." -> "Đồng ý, xác nhận đặt xe." | Lượt 1: Grab mở màn báo giá (`ride_quote`: `quote_id` `quote-xxxxxxxx`, `GrabCar`). Lượt 2: `ride_confirm` với đúng `quote_id`, `confirm:true`. | PASS khi `ride_quote` rồi `ride_confirm` đi |
+| `ride_cancel` | "Đặt xe..." -> "Hủy chuyến xe." | Sau báo giá, `ride_confirm` với `confirm:false` (`ride_status:"cancelled"`). | PASS khi `ride_confirm` đi |
 | `emergency` | "Cấp cứu, gọi người thân giúp tôi." | App gọi người thân đã cài + gửi SMS khẩn cấp; report `answered:false`, `attempt:1`, `cycle:"stopped"`. Chưa cài người thân -> `EMERGENCY_CONTACT_NOT_CONFIGURED`. | PASS khi lệnh tới |
 | `chat` | "Kể cho tôi một câu chuyện cười ngắn." | Không có gì xảy ra trên điện thoại. | PASS khi 0 lệnh |
 

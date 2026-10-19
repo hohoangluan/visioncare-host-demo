@@ -3,6 +3,7 @@ import onnxruntime  # noqa: F401, I001
 
 import asyncio
 import concurrent.futures
+import contextlib
 import glob
 import io
 import logging
@@ -34,6 +35,9 @@ logger = logging.getLogger("blind_assist")
 # thời gian bên dưới bị root logger (mặc định WARNING) nuốt mất.
 # Mỗi dòng mang [device turn] của lượt đang chạy (pipeline/metrics.py).
 logging.basicConfig(level=logging.INFO, format=metrics.LOG_FORMAT)
+# httpx ghi URL ĐẦY ĐỦ (cả query) ở INFO: SerpAPI truyền `api_key` trên query nên khoá lọt vào log.
+for _noisy in ("httpx", "httpcore"):
+    logging.getLogger(_noisy).setLevel(logging.WARNING)
 metrics.install_log_filter()
 
 app = FastAPI(title="Blind-Assist Audio Server")
@@ -413,6 +417,35 @@ def _stream_audio(
         )
 
 
+class _ProcessArm:
+    """Cầu nối làn D cho `/process`: lệnh chờ chỉ đếm ngược từ lúc byte audio đầu tiên rời server.
+
+    Byte đầu của `/process` là câu mở đầu ("Đã tiếp nhận yêu cầu") đi trước câu đọc lại, và server còn gom
+    `AUDIO_PREROLL_SECONDS` trước khi gửi, nên cộng thêm `extra` (câu mở đầu + đệm cũ) vào cửa sổ huỷ.
+    `Reply.on_audio_start` của lượt chỉ biết sau khi lượt v2 xong (`set`), còn byte đầu có thể đi trước
+    hoặc sau đó (`first_chunk`): bên nào tới sau thì kích hoạt.
+    """
+
+    def __init__(self) -> None:
+        self._arm: Callable[[float], None] | None = None
+        self._sent = False
+        self._done = False
+        self.extra = tts.speaking_seconds(_RECEIVED_MESSAGE) + config.AUDIO_PREROLL_SECONDS
+
+    def set(self, arm: Callable[[float], None] | None) -> None:
+        self._arm = arm
+        self._maybe()
+
+    def first_chunk(self) -> None:
+        self._sent = True
+        self._maybe()
+
+    def _maybe(self) -> None:
+        if self._sent and self._arm is not None and not self._done:
+            self._done = True
+            self._arm(self.extra)
+
+
 class _Plan:
     """Mọi thứ khác nhau giữa các định dạng trả về, gom vào một chỗ.
 
@@ -524,6 +557,7 @@ async def process(
         response_format = _negotiate(request.headers.get("accept", ""))
     plan = _plan_for(response_format, idx)
     turn_done: list[float] = []
+    arm = _ProcessArm()
 
     try:
         if audio is None:
@@ -569,6 +603,7 @@ async def process(
                     result = done.result()
                     turn_done.append(time.monotonic())
                     reply = result.reply
+                    arm.set(reply.on_audio_start)
                     # Kính cũ không có clip cue trong flash: cue đổi thành câu nói.
                     for cue in reply.cues:
                         text = cues.fallback_text(cue)
@@ -599,10 +634,12 @@ async def process(
         # hoàn chỉnh có Content-Length, không phụ thuộc việc đường truyền có
         # giữ đều 32 KB/s hay không.
         payload = await run_in_threadpool(lambda: b"".join(body))
+        arm.first_chunk()  # cả file đi một lần ngay sau đây
         return Response(content=_pcm_to_wav(payload), media_type="audio/wav")
 
+    # Kính ngắt giữa chừng -> huỷ lệnh chờ (như /v2/turn); đồng hồ làn D chạy từ byte đầu đã gửi.
     return StreamingResponse(
-        body,
+        _stream_until_disconnect(body, reply, device, arm.first_chunk),
         media_type=plan.media_type,
         headers=_stream_headers(response_format),
     )
@@ -740,7 +777,10 @@ def _first_then(first: bytes, rest: Iterator[bytes]) -> Iterator[bytes]:
         rest.close()
 
 
-async def _stream_until_disconnect(body: Iterator[bytes], reply: Reply, device: str | None):
+async def _stream_until_disconnect(
+    body: Iterator[bytes], reply: Reply, device: str | None,
+    on_first_chunk: Callable[[], None] | None = None,
+):
     """Audio trả lời cho `StreamingResponse`, dọn sạch khi kính ngắt giữa chừng.
 
     Starlette huỷ task gửi khi client rớt nhưng KHÔNG đóng iterator đồng bộ: Gemma và
@@ -748,14 +788,23 @@ async def _stream_until_disconnect(body: Iterator[bytes], reply: Reply, device: 
     đóng generator audio (trong thread đọc), huỷ bước Gemma đang bay (`abort`), và huỷ
     lệnh chờ của kính. Phát hết bình thường thì KHÔNG huỷ lệnh chờ — nó đang đếm ngược
     đúng bằng thời gian đọc lại lệnh.
+
+    `on_first_chunk`: gọi ngay khi khối audio đầu tiên được giao cho StreamingResponse — đây là lúc làn D
+    bắt đầu đếm cửa sổ huỷ (`Reply.on_audio_start`), không phải lúc `route()` xong.
     """
     from live.device_session import _iter_in_thread
     from pipeline import pending_action
 
     completed = False
+    first = True
     try:
-        async for chunk in _iter_in_thread(body, getattr(reply.speech, "abort", None)):
-            yield chunk
+        async with contextlib.aclosing(_iter_in_thread(body, getattr(reply.speech, "abort", None))) as chunks:
+            async for chunk in chunks:
+                yield chunk
+                if first:
+                    first = False
+                    if on_first_chunk is not None:
+                        on_first_chunk()
         completed = True
     finally:
         if not completed and device is not None:
@@ -772,13 +821,17 @@ async def _v2_response(
 
     if response_format == "wav":
         payload = await run_in_threadpool(lambda: b"".join(body))
+        if reply.on_audio_start is not None:
+            reply.on_audio_start(0.0)  # cả file đi một lần ngay sau đây
         return Response(content=_pcm_to_wav(payload), media_type="audio/wav", headers=headers)
 
     audio_headers = _stream_headers(response_format)
     audio_headers["X-Audio-Preroll-Seconds"] = str(config.V2_AUDIO_PREROLL_SECONDS)
     media_type = _plan_for(response_format, _v2_counter).media_type
+    on_first = (lambda: reply.on_audio_start(0.0)) if reply.on_audio_start is not None else None
     return StreamingResponse(
-        _stream_until_disconnect(body, reply, device), media_type=media_type, headers={**audio_headers, **headers},
+        _stream_until_disconnect(body, reply, device, on_first),
+        media_type=media_type, headers={**audio_headers, **headers},
     )
 
 

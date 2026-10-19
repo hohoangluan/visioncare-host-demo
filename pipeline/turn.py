@@ -19,6 +19,7 @@ from dataclasses import dataclass, field
 
 import config
 from lanes import general, phone
+from live.session import sessions
 from pipeline import device_ctx, final_router, metrics, pending_action, vad
 from pipeline.final_router import Speculation, TurnContext
 from pipeline.intent_early import Decision
@@ -39,13 +40,25 @@ class TurnResult:
     timings: dict = field(default_factory=dict)
 
 
-def _bypass(device_state: dict) -> Reply | None:
-    """Đang phát nhạc / đang chỉ đường mà bấm nút -> dừng (giữ hành vi cũ)."""
+def _button_stop(device_state: dict) -> bool:
+    """Nhạc đang phát / ĐT đang dẫn đường: một lần bấm nút KHÔNG kèm lời nói nghĩa là "dừng"."""
+    return bool(device_state.get("music_playing") or device_state.get("navigating"))
+
+
+def _bypass(device: str, device_state: dict) -> Reply | None:
+    """Bấm nút không nói gì khi đang phát nhạc / dẫn đường -> dừng (giữ hành vi cũ cho nút bấm).
+
+    Chỉ áp cho lượt KHÔNG có lời (no_speech). Lượt có lời đi qua bộ phân loại như thường — nó đã biết
+    `music_playing`/`navigating` — nên "tăng âm lượng" lúc đang nghe nhạc là music_volume chứ không phải
+    dừng nhạc, và câu hỏi chat lúc đang dẫn đường không tắt chỉ đường. Dừng chỉ đường bằng nút phải đóng
+    cả live nav (khung `end`), nếu không cảnh báo vật cản chạy mãi sau khi lộ trình đã dừng (E2E 2026-10-19).
+    """
     from lanes.phone import speech
 
     if device_state.get("music_playing"):
         return Reply(speech=speech("music_stop", "", {}), intent="music_stop", lane="D")
     if device_state.get("navigating"):
+        sessions.close_device(device, "nav")
         return Reply(speech=speech("nav_stop", "", {}), intent="nav_stop", lane="C+D")
     return None
 
@@ -128,16 +141,7 @@ async def run(
     started = time.monotonic()
     loop = asyncio.get_running_loop()
 
-    bypass = _bypass(device_state)
-    if bypass is not None:
-        async for _ in body:  # đọc hết body kính đang gửi rồi mới trả lời
-            pass
-        logger.info("v2 turn %s: bypass %s", turn_id, bypass.intent)
-        metrics.record_turn({
-            "device": device, "turn": turn_id, "transport": transport, "intent": bypass.intent,
-            "lane": bypass.lane, "source": "bypass", "confidence": None, "glasses": glasses,
-        })
-        return TurnResult(bypass, released_at=time.monotonic())
+    button_stop = _button_stop(device_state)
 
     prewarmer = Prewarmer(device, turn_id)
     segmenter = vad.Segmenter() if vad.available() else None
@@ -182,7 +186,14 @@ async def run(
             decision = await early.decide(text)
             t_intent = time.monotonic()
 
-        reply = await final_router.route(ctx, decision, text)
+        reply = None
+        if button_stop and (decision.source == "no_speech" or not text.strip()):
+            reply = _bypass(device, device_state)  # chỉ bấm nút, không nói: dừng nhạc/chỉ đường
+            if reply is not None:
+                decision = Decision(reply.intent, source="bypass")
+                logger.info("v2 turn %s: bấm nút không lời -> %s", turn_id, reply.intent)
+        if reply is None:
+            reply = await final_router.route(ctx, decision, text)
         t_route = time.monotonic()
         ctx.cancel_speculation()  # phần chạy trước mà router không dùng tới
     except BaseException as exc:

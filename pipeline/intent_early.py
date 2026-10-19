@@ -103,6 +103,8 @@ class Decision:
     # Bộ phân loại ra nhãn: "gemma" | "clef" | "" (không rõ / luật từ khoá).
     # Làn D chỉ chạy thẳng khi backend == "gemma".
     backend: str = ""
+    # False: Gemma không trả logprobs nên `confidence` là giả định (xem ClefResult.confidence_known).
+    confidence_known: bool = True
 
     @property
     def lane(self) -> str:
@@ -195,6 +197,7 @@ class EarlyIntent:
                 result.intent, mode, result.needs_web, source,
                 result.confidence, time.monotonic() - started,
                 backend=getattr(result, "source", "") or "",
+                confidence_known=getattr(result, "confidence_known", True),
             )
 
         if rule is not None:

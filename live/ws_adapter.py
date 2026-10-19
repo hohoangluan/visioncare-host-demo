@@ -14,6 +14,7 @@ là định dạng `protocol.parse_frame` mong đợi) và báo ngắt bằng `f
 """
 
 import asyncio
+import contextlib
 import json
 from collections.abc import Awaitable, Callable
 
@@ -29,7 +30,11 @@ class LiveSocket:
         send_text: Callable[[str], Awaitable[None]],
         send_bytes: Callable[[bytes], Awaitable[None]],
         speak_cues: bool = False,
+        audio_lock: asyncio.Lock | None = None,
     ) -> None:
+        # Khoá kênh audio 0x02 của phiên: mỗi câu nói (outbox nav, OCR, cue đọc thay clip) giữ nó trọn câu
+        # để không xen với câu trả lời của lượt / kết quả hành động. Khung JSON không cần khoá.
+        self.audio_lock = audio_lock
         # Kính có `cue_version` cũ hơn server (không có clip trong flash): khung
         # {"t":"cue"} đổi thành câu nói TTS, giống `_send_reply` làm với cue của lượt.
         self._speak_cues = speak_cues
@@ -67,8 +72,10 @@ class LiveSocket:
             if isinstance(frame, dict) and frame.get("t") == "cue":
                 text = cues.fallback_text(str(frame.get("id", "")))
                 if text:
-                    async for chunk in speech.adpcm_stream([text]):
-                        await self._send_bytes(protocol.audio(chunk))
+                    async with self.audio_lock or contextlib.nullcontext():
+                        async with contextlib.aclosing(speech.adpcm_stream([text])) as chunks:
+                            async for chunk in chunks:
+                                await self._send_bytes(protocol.audio(chunk))
                 return
         await self._send_text(data)
 

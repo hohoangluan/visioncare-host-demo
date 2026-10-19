@@ -13,6 +13,9 @@ import config
 from models import net
 
 logger = logging.getLogger("blind_assist")
+# httpx ghi URL đầy đủ (kèm `api_key`) ở INFO: luôn giữ WARNING, dù ai cấu hình root logger.
+for _name in ("httpx", "httpcore"):
+    logging.getLogger(_name).setLevel(logging.WARNING)
 
 _URL = "https://serpapi.com/search.json"
 _client = net.LoopClient(lambda: net.async_client(connect_timeout=1.0, timeout=config.SEARCH_TIMEOUT_S))

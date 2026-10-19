@@ -23,6 +23,11 @@ current: contextvars.ContextVar[str] = contextvars.ContextVar(
 turn: contextvars.ContextVar[str] = contextvars.ContextVar("turn_id", default="")
 
 
+# request_id của action điện thoại đang chạy trong thread nền làn D (`action_flow.run_action` đặt),
+# để câu kết quả đẩy xuống kính mang turn id `result-<request_id>`.
+action_request: contextvars.ContextVar[str] = contextvars.ContextVar("action_request", default="")
+
+
 @contextlib.contextmanager
 def use(device: str) -> Iterator[None]:
     token = current.set(device or config.VISIONCARE_DEVICE_ID)
