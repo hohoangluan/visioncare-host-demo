@@ -194,14 +194,20 @@ class DeviceSession:
         await self._cancel_work(reason)
 
     # ---------- huỷ ----------
-    async def _cancel_work(self, reason: str) -> None:
-        """Huỷ lượt + live đang chạy, rồi tăng thế hệ & huỷ lệnh chờ làn D."""
+    async def _cancel_work(self, reason: str, keep_nav: bool = False) -> None:
+        """Huỷ lượt + live đang chạy, rồi tăng thế hệ & huỷ lệnh chờ làn D.
+
+        `keep_nav`: lượt mới/`cancel` của nút bấm KHÔNG được tắt cảnh báo vật cản — người
+        khiếm thị hỏi gì đó giữa lúc dẫn đường vẫn phải được cảnh báo. Nav chỉ dừng khi
+        nav_stop, đóng socket hoặc phiên bị thay. OCR live thì vẫn bị lượt mới huỷ.
+        """
         tasks = []
         turn, self._turn = self._turn, None
         if turn is not None and turn.task is not None:
             turn.task.cancel()
             tasks.append(turn.task)
-        tasks.extend(self._stop_live())
+        if not (keep_nav and self._live_session is not None and self._live_session.mode == "nav"):
+            tasks.extend(self._stop_live())
         if tasks:
             await asyncio.gather(*tasks, return_exceptions=True)
         pending_action.begin_turn(self.device)
@@ -252,7 +258,8 @@ class DeviceSession:
             if turn is not None and str(frame.get("turn", turn.id)) == turn.id:
                 turn.audio_q.put_nowait(None)
         elif kind == "cancel":
-            await self._cancel_work("kính huỷ")
+            if not self._shut:  # socket cũ đã bị thay không được huỷ lệnh chờ của phiên mới
+                await self._cancel_work("kính huỷ", keep_nav=True)
         elif kind == "played":
             logger.info("v2 played: %s", {k: frame.get(k) for k in ("turn", "first_byte_ms", "first_audio_ms")})
         elif kind == "hello":
@@ -272,14 +279,13 @@ class DeviceSession:
                 self._live_sock.feed_frame(payload)
         elif kind == T_TURN_IMAGE:
             if turn is None:
-                await self.error("bad_frame")
-            elif len(payload) > config.DEVICE_MAX_IMAGE_BYTES:
+                return  # lượt bị từ chối/huỷ: khung đang bay bỏ lặng lẽ, không dội lỗi
+            if len(payload) > config.DEVICE_MAX_IMAGE_BYTES:
                 await self.error("too_large")
             elif payload:
                 image_buffer.put(self.device, turn.id, payload)
         elif kind == T_TURN_AUDIO:
             if turn is None:
-                await self.error("bad_frame")
                 return
             turn.audio_bytes += len(payload)
             if turn.audio_bytes > config.DEVICE_MAX_AUDIO_S * adpcm.BYTE_RATE:
@@ -294,11 +300,13 @@ class DeviceSession:
     async def _turn_start(self, frame: dict) -> None:
         from handlers.action_flow import device_state
 
-        # Trạng thái cảnh báo chụp TRƯỚC khi huỷ live, để lượt này còn biết đang bật.
-        state = {**device_state(), "alerting": sessions.active(self.device) is not None}
-        await self._cancel_work("lượt mới")
         if self._shut:
             return
+        await self._cancel_work("lượt mới", keep_nav=True)
+        if self._shut:
+            return
+        # Sau huỷ: chỉ còn nav (OCR live đã dừng) nên `alerting` đúng nghĩa cảnh báo vật cản.
+        state = {**device_state(), "alerting": sessions.active(self.device) is not None}
         if not guard.limiters()[0].allow(self.device):
             await self.error("rate_limited")
             return
@@ -323,7 +331,6 @@ class DeviceSession:
             logger.info("v2 session turn %s: socket đứt (%r)", turn.id, exc)
         except asyncio.CancelledError:
             logger.info("v2 session turn %s: bị huỷ (trong run=%s)", turn.id, turn.cancelled_in_run)
-            sessions.discard(self._unclaimed)  # token live chưa ai nhận: bỏ luôn
             raise
 
     async def _send_reply(self, turn: _Turn, reply: Reply, released: float) -> None:
@@ -347,11 +354,15 @@ class DeviceSession:
             if reply.live:
                 await self._start_live(reply)
         finally:
+            sessions.discard(self._unclaimed)  # bị huỷ trước khi nhận token live: bỏ luôn
             self._unclaimed = None
 
     async def _start_live(self, reply: Reply) -> None:
         from lanes import nav_live, ocr_live
 
+        old = self._stop_live()  # live mới thay live cũ (vd. nav còn chạy từ lượt trước)
+        if old:
+            await asyncio.gather(*old, return_exceptions=True)
         live = sessions.claim(reply.live_token or "")
         self._unclaimed = None
         if live is None:
