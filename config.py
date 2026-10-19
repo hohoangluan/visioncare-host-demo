@@ -18,6 +18,10 @@ def get(name: str, default: str = "") -> str:
 _CACHE_ROOT = get("MODEL_CACHE_DIR", os.path.join(os.path.dirname(__file__), "models", ".cache"))
 os.environ.setdefault("HF_HOME", os.path.join(_CACHE_ROOT, "huggingface"))
 os.environ.setdefault("TORCH_HOME", os.path.join(_CACHE_ROOT, "torch"))
+# Không đặt HF_HUB_OFFLINE ở đây: lần chạy đầu vieneu phải tải model/voices từ
+# huggingface.co. Khi models/.cache/huggingface đã đủ file, đặt HF_HUB_OFFLINE=1 trong
+# môi trường (hoặc .env) để vieneu khỏi gọi HEAD lên mạng mỗi lần nạp (chậm lúc khởi
+# động và hỏng nếu mạng chập chờn). Đặt trước khi import vieneu, nên để ở .env/shell.
 
 STORAGE_DIR = get("STORAGE_DIR", "./storage")
 

@@ -94,8 +94,14 @@ máy này. **Chưa commit gì** (cả phần có từ trước phiên này lẫn
 - **P1 · Cloudflare không stream upload** (mục "Việc còn lại" số 1) và ảnh UXGA qua WiFi có thể tới sau audio.
 - **P1 · Một điểm hỏng duy nhất: Gemma UIT**. LAN đã chết, không có LLM cục bộ dự phòng; UIT hỏng thì chỉ còn cue. Clef chỉ
   dự phòng phân loại, không trả lời được. Cần LLM dự phòng hoặc chấp nhận rủi ro; cũng cần `certs/uit-ca-bundle.pem` trong mọi môi trường chạy.
-- **P2 · Dockerfile, `start-demo.ps1`, README, `docs/KIEN_TRUC_SERVER.md` chưa cập nhật cho v2** (nền CUDA, torch + CUDA 13,
-  thứ tự cài `onnxruntime-gpu`, cổng 18888, biến môi trường mới trong `config.py`).
+- **Xong (Task 17)**: Dockerfile (nền CUDA 13, torch cu130 trước, `onnxruntime-gpu` cài lại sau, cổng 18888; chưa build thử vì máy
+  không có docker), `start-demo.ps1`, README, `KIEN_TRUC_SERVER.md`, `FIRMWARE_ENDPOINTS.md`, test ffmpeg tự skip.
+- **Giấy phép vieneu / watermark (kiểm 2026-10-19, không cài/gỡ gì)**: `vieneu` 3.8.3 giấy phép Apache-2.0. Watermark Resemble Perth
+  là extra tuỳ chọn `vieneu[watermark]` (gói `resemble-perth`), mặc định bật nếu có. Trong venv đang cài `perth` 1.0.0 (MIT) là gói
+  KHÁC cùng tên (helper threading), không có `PerthImplicitWatermarker`, và `resemble-perth` không được cài, nên vieneu chạy KHÔNG
+  watermark (`self.watermarker=None`). Không có ràng buộc giấy phép nào buộc phải có watermark trong bản Apache-2.0 của code. Còn
+  mở: giấy phép trọng số model/voice trên HuggingFace (neuphonic/pnnbao) chưa kiểm được vì cache cục bộ không có README model; xác
+  nhận trước khi phát hành thương mại. Nếu sau này muốn watermark: cần `resemble-perth` (kéo torch/torchaudio) và gỡ `perth` nhầm.
 - **P2 · Khởi động**: lần đầu ~3 phút dựng sẵn 113 câu TTS (cache `models/.cache/tts_phrases`, dựng lại khi đổi giọng/phiên bản
   vieneu); vieneu gọi HEAD lên huggingface.co lúc nạp (cần mạng; file voices trả 404 mỗi lần). Sau khi đã tải đủ, đặt `HF_HUB_OFFLINE=1`.
 - **P2 · GPU dùng chung 8×2080 Ti**: không có cơ chế chiếm VRAM trước, đã gặp OOM; server dùng ~1,8 GB (TTS PyTorch + CUDA graph +

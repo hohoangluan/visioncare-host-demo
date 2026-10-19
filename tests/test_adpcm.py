@@ -287,14 +287,23 @@ def test_saved_debug_file_is_playable(fake_speech, tmp_path):
 
 
 def _has_ffmpeg() -> bool:
+    """Có ffmpeg đủ mới để làm chuẩn đối chiếu không.
+
+    ffmpeg 4.2 (máy dev, 2026-10-19) không có cờ `-block_size` của `adpcm_ima_wav`
+    và hai test dưới đây hỏng trên nó (một cái không chạy được lệnh mã hoá, cái kia
+    giải ra khác mẫu), nên dò bằng `ffmpeg -h encoder=adpcm_ima_wav` và tự skip
+    thay vì để suite đỏ vì môi trường.
+    """
     try:
-        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
-        return True
+        out = subprocess.run(
+            ["ffmpeg", "-h", "encoder=adpcm_ima_wav"], capture_output=True, check=True, text=True
+        )
     except (OSError, subprocess.CalledProcessError):
         return False
+    return "block_size" in out.stdout + out.stderr
 
 
-@pytest.mark.skipif(not _has_ffmpeg(), reason="cần ffmpeg trong PATH")
+@pytest.mark.skipif(not _has_ffmpeg(), reason="cần ffmpeg có cờ -block_size cho adpcm_ima_wav")
 def test_ffmpeg_decodes_our_output_bit_for_bit(tmp_path):
     """Client kiểm bằng ffmpeg/ffprobe, nên hai bên phải ra cùng một kết quả."""
     original = _tone(1.0)
@@ -316,7 +325,7 @@ def test_ffmpeg_decodes_our_output_bit_for_bit(tmp_path):
     assert np.array_equal(ref[:n], ours[:n])
 
 
-@pytest.mark.skipif(not _has_ffmpeg(), reason="cần ffmpeg trong PATH")
+@pytest.mark.skipif(not _has_ffmpeg(), reason="cần ffmpeg có cờ -block_size cho adpcm_ima_wav")
 def test_we_decode_ffmpeg_output_bit_for_bit(tmp_path):
     """Chiều ngược lại: file board sinh ra cùng đường mã hoá với ffmpeg."""
     src = tmp_path / "src.wav"

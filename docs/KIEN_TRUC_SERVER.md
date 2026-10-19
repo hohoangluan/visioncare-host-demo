@@ -13,10 +13,20 @@ và chỉ rõ chỗ nào sửa chức năng nào.
 | | Voice server | App server |
 |---|---|---|
 | Repo | `d:\Study\innostar\Sever_test` (repo này) | `D:\Study\innostar\app_demo_backend\apps\backend` |
-| Cổng | **8000** | **8001** |
+| Cổng | **8000** (Windows demo) / **18888** (Linux GPU, sau Cloudflare tunnel) | **8001** |
 | Entry | `app.py` | `app.main:app`, chạy với `--app-dir src` |
 | Việc | STT → phân loại ý định → TTS, trả audio stream cho kính | Nhận lệnh điều khiển, đẩy xuống điện thoại qua FCM |
 | Ngôn ngữ | Python / FastAPI | Python / FastAPI + SQLAlchemy + Postgres |
+
+Voice server v2 (kính nói chuyện qua `WS /v2/session`; xem `FIRMWARE_ENDPOINTS.md`):
+
+- `live/device_session.py`: một phiên mỗi kính, ghép lượt + audio trả lời + live OCR/nav; phiên mới
+  của cùng kính thay phiên cũ (đóng 4000); `turn_start` mới huỷ lượt/lệnh làn D đang chờ và live OCR,
+  nhưng KHÔNG dừng live nav.
+- `pipeline/guard.py`: token (`Authorization: Bearer` / `X-Device-Token`), trần kích thước và rate
+  limit — 401 sai token, 413 quá cỡ, 429 quá tốc độ, 503 server chưa cấu hình token.
+- `pipeline/turn.py` + `lanes/`: lượt chạy A/B/C/D; `lanes/nav_live.py`, `lanes/ocr_live.py` là live.
+- Tải cuối server: ~1,8 GB VRAM (TTS + YOLO + PP-OCR); GPU dùng chung, chọn GPU trống.
 
 Chạy app server:
 

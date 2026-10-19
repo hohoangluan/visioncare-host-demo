@@ -161,13 +161,19 @@ if ($SkipPhone) {
 
 Write-Host @"
 
-Stack is up. The glasses only need to POST /process from here.
+Stack is up. The glasses connect to WS /v2/session (see docs/FIRMWARE_ENDPOINTS.md);
+POST /process is kept as the legacy path. Every glasses endpoint needs the device token
+(VISIONCARE_DEVICE_CLIENT_TOKEN in .env); an empty token makes them all answer 503.
+Note: the Linux GPU server runs on port 18888 behind the Cloudflare tunnel; this script's
+8000 is the Windows demo only.
 
-  glasses server   http://127.0.0.1:8000/process   (multipart: image + audio)
+  glasses server   ws://127.0.0.1:8000/v2/session  (turn + audio + live on one socket)
+                   http://127.0.0.1:8000/process    (legacy, multipart: image + audio)
   app server       $AppServerUrl
   logs             $LogDir
 
   curl -X POST http://127.0.0.1:8000/process ``
+    -H "Authorization: Bearer <VISIONCARE_DEVICE_CLIENT_TOKEN>" ``
     -F "image=@storage/request1.jpg" -F "audio=@command.wav" --output reply.mp3
 
 Still manual on the phone, once per session:

@@ -63,6 +63,22 @@ python -m uvicorn app:app --reload
 
 Tài liệu API: <http://127.0.0.1:8000/docs>
 
+Triển khai Linux/GPU (voice server v2) chạy ở **cổng 18888** sau Cloudflare tunnel
+`api.visioncare-host.uk`:
+
+```bash
+CUDA_VISIBLE_DEVICES=<gpu trống> ONNX_DEVICE=cuda ~/.venvs/seevia/bin/python \
+  -m uvicorn app:app --host 127.0.0.1 --port 18888 --loop uvloop --http httptools
+fuser -k 18888/tcp   # tắt (đừng dùng pkill -f có số cổng: khớp luôn shell)
+```
+
+Yêu cầu: `VISIONCARE_DEVICE_CLIENT_TOKEN` trong `.env` (rỗng = mọi endpoint kính trả 503);
+torch bản CUDA 13 và `onnxruntime-gpu` cài theo đúng thứ tự trong `Dockerfile` (không cài/gỡ
+bừa trong venv: cài torch thường sẽ hạ các gói `nvidia-*`); GPU dùng chung nên chọn GPU trống,
+OOM thì đổi GPU chứ không lùi về CPU. Sau khi `models/.cache/huggingface` đã đủ file, đặt
+`HF_HUB_OFFLINE=1` để vieneu khỏi gọi lên huggingface.co mỗi lần nạp. Giao thức kính:
+`docs/FIRMWARE_ENDPOINTS.md`.
+
 ## Chạy kiểm thử
 
 ```powershell
@@ -72,7 +88,8 @@ python -m pytest -v
 ## Endpoint
 
 - `GET /health` → `{"status": "ok"}`
-- `POST /process` (multipart: `image`, `audio`) → audio stream
+- `WS /v2/session` → một socket mỗi kính: lượt, audio trả lời, OCR/nav live (xem `docs/FIRMWARE_ENDPOINTS.md`)
+- `POST /process` (multipart: `image`, `audio`) → audio stream (đường cũ, đòi token)
 
 `/process` luôn trả HTTP 200 kèm audio, kể cả khi thiếu field hoặc xử lý gặp
 lỗi. Câu báo lỗi được đọc thành audio để người khiếm thị nghe được, thay vì
