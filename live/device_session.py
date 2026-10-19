@@ -30,7 +30,7 @@ import config
 from live import protocol
 from live.session import sessions
 from live.ws_adapter import LiveSocket
-from pipeline import adpcm, cues, device_ctx, guard, pending_action
+from pipeline import adpcm, cues, device_ctx, guard, metrics, pending_action
 from pipeline import turn as turn_v2
 from pipeline.image_buffer import image_buffer
 from pipeline.reply import Reply
@@ -68,6 +68,7 @@ class _Turn:
         self.audio_bytes = 0
         self.task: asyncio.Task | None = None
         self.cancelled_in_run = False
+        self.glasses: dict = {}  # t_press_ms / t_release_ms từ turn_start / turn_end
 
     async def body(self):
         while True:
@@ -256,12 +257,19 @@ class DeviceSession:
         elif kind == "turn_end":
             turn = self._turn
             if turn is not None and str(frame.get("turn", turn.id)) == turn.id:
+                turn.glasses["t_release_ms"] = frame.get("t_release_ms")
                 turn.audio_q.put_nowait(None)
         elif kind == "cancel":
             if not self._shut:  # socket cũ đã bị thay không được huỷ lệnh chờ của phiên mới
                 await self._cancel_work("kính huỷ", keep_nav=True)
         elif kind == "played":
-            logger.info("v2 played: %s", {k: frame.get(k) for k in ("turn", "first_byte_ms", "first_audio_ms")})
+            marks = metrics.glasses_marks(frame)
+            logger.info("v2 played: %s", {"turn": frame.get("turn"), **marks})
+            # Dòng bổ sung (lượt đã ghi xong từ lâu); ghép với dòng chính theo turn id.
+            metrics.record_turn({
+                "device": self.device, "turn": str(frame.get("turn", "")),
+                "glasses": {k: v for k, v in marks.items() if k in ("first_byte_ms", "first_audio_ms")},
+            })
         elif kind == "hello":
             pass  # hello lặp: bỏ qua
         else:
@@ -311,6 +319,7 @@ class DeviceSession:
             await self.error("rate_limited")
             return
         turn = _Turn(str(frame.get("turn", "")))
+        turn.glasses["t_press_ms"] = frame.get("t_press_ms")
         self._turn = turn
         gen = pending_action.generation(self.device)
         turn.task = asyncio.create_task(self._run_turn(turn, state, gen))
@@ -321,6 +330,7 @@ class DeviceSession:
                 result = await turn_v2.run(
                     self.device, turn.id, AUDIO_CONTENT_TYPE, turn.body(), state, gen=gen,
                     on_cancel=lambda: setattr(turn, "cancelled_in_run", True),
+                    transport="ws", glasses=turn.glasses,
                 )
                 reply, released = result.reply, result.released_at
             except Exception:  # noqa: BLE001 - kính luôn phải nghe được gì đó

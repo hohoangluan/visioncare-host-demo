@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 
 import config
 from lanes import general, phone
-from pipeline import final_router, pending_action, vad
+from pipeline import device_ctx, final_router, metrics, pending_action, vad
 from pipeline.final_router import Speculation, TurnContext
 from pipeline.intent_early import Decision
 from pipeline.image_buffer import image_buffer
@@ -120,7 +120,10 @@ def _speculate(ctx: TurnContext, early: EarlyIntent, text: str) -> None:
 async def run(
     device: str, turn_id: str, content_type: str | None, body: AsyncIterator[bytes],
     device_state: dict, gen: int | None = None, on_cancel: Callable[[], None] | None = None,
+    transport: str = "post", glasses: dict | None = None,
 ) -> TurnResult:
+    """`glasses`: dict mốc kính (t_press_ms/t_release_ms) do phiên điền; đọc lúc ghi metrics."""
+    device_ctx.turn.set(turn_id)  # mọi log của lượt (kể cả thread nền copy context) mang turn id
     started = time.monotonic()
     loop = asyncio.get_running_loop()
 
@@ -129,6 +132,10 @@ async def run(
         async for _ in body:  # đọc hết body kính đang gửi rồi mới trả lời
             pass
         logger.info("v2 turn %s: bypass %s", turn_id, bypass.intent)
+        metrics.record_turn({
+            "device": device, "turn": turn_id, "transport": transport, "intent": bypass.intent,
+            "lane": bypass.lane, "source": "bypass", "confidence": None, "glasses": glasses,
+        })
         return TurnResult(bypass, released_at=time.monotonic())
 
     prewarmer = Prewarmer(device, turn_id)
@@ -206,4 +213,9 @@ async def run(
         timings["upload_s"], timings["final_stt_s"], timings["intent_s"], timings["route_s"],
         timings["release_to_reply_s"], reply.cues, reply.live,
     )
+    metrics.record_turn({
+        "device": device, "turn": turn_id, "transport": transport, "intent": reply.intent,
+        "lane": reply.lane, "source": decision.source, "confidence": decision.confidence,
+        **{k: round(v, 4) for k, v in timings.items()}, "glasses": glasses,
+    })
     return TurnResult(reply, text, released, timings)

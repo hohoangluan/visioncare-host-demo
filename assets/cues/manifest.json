@@ -1,0 +1,222 @@
+{
+ "cue_version": 2,
+ "clips": {
+  "received": {
+   "file": "received.wav",
+   "bytes": 316,
+   "seconds": 0.025,
+   "text": null,
+   "sha256": "fe633a3539701103213aed8ab9c51c7d65047ea63605944d56fe03391c886b20"
+  },
+  "system_busy": {
+   "file": "system_busy.wav",
+   "bytes": 22588,
+   "seconds": 2.773,
+   "text": "Hệ thống đang bận, bạn vui lòng thử lại sau giây lát.",
+   "sha256": "c239f8c74cdd8c04eeac349c98018b999f2c6bd1774f2568bf6af8a17a005963"
+  },
+  "no_speech": {
+   "file": "no_speech.wav",
+   "bytes": 19260,
+   "seconds": 2.363,
+   "text": "Xin lỗi, tôi không nghe rõ, vui lòng nói lại.",
+   "sha256": "696cb2e42ccdf5dae52ceaeb9e07e3d71780547c4b03d9dce783d635384e6513"
+  },
+  "no_image": {
+   "file": "no_image.wav",
+   "bytes": 19260,
+   "seconds": 2.347,
+   "text": "Không nhận được ảnh từ kính, vui lòng thử lại.",
+   "sha256": "efb3f7c8767b7103861ed8e7b8e0bafca7b2e1b7518e7a82f602b8b2bc435b2e"
+  },
+  "ask_destination": {
+   "file": "ask_destination.wav",
+   "bytes": 8252,
+   "seconds": 0.99,
+   "text": "Bạn muốn đi đâu?",
+   "sha256": "511848effc71d27f23ad222b81a1a81af47dfa073c3aa875dc84c1785377bd9c"
+  },
+  "ask_contact_name": {
+   "file": "ask_contact_name.wav",
+   "bytes": 9532,
+   "seconds": 1.143,
+   "text": "Bạn muốn gọi cho ai?",
+   "sha256": "85d780a70d7ad30409d5c8e908ccedbaec4c081243d6c1f19c4f34b6a975d63e"
+  },
+  "ask_song": {
+   "file": "ask_song.wav",
+   "bytes": 11324,
+   "seconds": 1.362,
+   "text": "Bạn muốn nghe bài hát nào?",
+   "sha256": "98b2219bab2a4e5a8536343059507f85ec12c4b65f581825c8a64beb57ba8933"
+  },
+  "ask_ride_destination": {
+   "file": "ask_ride_destination.wav",
+   "bytes": 10812,
+   "seconds": 1.316,
+   "text": "Bạn muốn đặt xe đi đâu?",
+   "sha256": "21517d78364ae2f3a3c39ec5b34145e4fedf344a83cb4b84d66ba4ec5ca45922"
+  },
+  "phone_pending": {
+   "file": "phone_pending.wav",
+   "bytes": 25404,
+   "seconds": 3.119,
+   "text": "Điện thoại vẫn đang thực hiện, tôi sẽ báo khi có kết quả.",
+   "sha256": "97ab22d7cc4ef830f6e4145e46e37104e6ea9b511344eaeb14d94a59edfa537b"
+  },
+  "emergency_started": {
+   "file": "emergency_started.wav",
+   "bytes": 12092,
+   "seconds": 1.469,
+   "text": "Đang kích hoạt cuộc gọi khẩn cấp.",
+   "sha256": "d99484d8e9b049d1bbb16231ded2fdecc5dd74764ff7b697bfac8dd6eda48abf"
+  },
+  "ocr_start": {
+   "file": "ocr_start.wav",
+   "bytes": 10044,
+   "seconds": 1.213,
+   "text": "Đưa sách ra trước mặt.",
+   "sha256": "a9d8265bb332acc0c4421a82b567aa624d13e7e533c6ed5f5023940357f6432d"
+  },
+  "look_left": {
+   "file": "look_left.wav",
+   "bytes": 6972,
+   "seconds": 0.822,
+   "text": "Quay sang trái.",
+   "sha256": "e9f57d5a93b9ace361db44456c4d7a2d2a5d9396eef2cb39be368ad55dac9820"
+  },
+  "look_right": {
+   "file": "look_right.wav",
+   "bytes": 6204,
+   "seconds": 0.743,
+   "text": "Quay sang phải.",
+   "sha256": "9d0a66ae0e0195167172ad82db4e0b2c0534cf9f2266810e6650e44aecf71ae0"
+  },
+  "look_up": {
+   "file": "look_up.wav",
+   "bytes": 4412,
+   "seconds": 0.518,
+   "text": "Ngẩng lên.",
+   "sha256": "36692bd33280e212285d168d4643f72ecd0355a45ddbb750ee3942e7c25e948b"
+  },
+  "look_down": {
+   "file": "look_down.wav",
+   "bytes": 5436,
+   "seconds": 0.636,
+   "text": "Cúi xuống.",
+   "sha256": "6d7c9f22de90ab2d00b40cd4285784480f8e6ed018914853119aa50297909dee"
+  },
+  "look_around": {
+   "file": "look_around.wav",
+   "bytes": 12348,
+   "seconds": 1.486,
+   "text": "Chưa thấy chữ, quay đầu chậm.",
+   "sha256": "d443387f9f1de3a231c53f81603a1e99761857ad6b2d056f03c1b04a9495913a"
+  },
+  "move_closer": {
+   "file": "move_closer.wav",
+   "bytes": 7996,
+   "seconds": 0.96,
+   "text": "Lại gần hơn.",
+   "sha256": "9bdfd51be42149affc7ae97af8ce36b142bddb9f2e93dff560918031a66123ae"
+  },
+  "move_away": {
+   "file": "move_away.wav",
+   "bytes": 7740,
+   "seconds": 0.943,
+   "text": "Lùi ra xa.",
+   "sha256": "11d3fd7ad803bcad1521a266602b25f084b865ba7125f4b53faf43d41c23952c"
+  },
+  "hold_still": {
+   "file": "hold_still.wav",
+   "bytes": 5180,
+   "seconds": 0.613,
+   "text": "Giữ yên.",
+   "sha256": "b16263476558684070a2e1eaa013f946c712f9339b935b32a33ccbe31508917c"
+  },
+  "shutter": {
+   "file": "shutter.wav",
+   "bytes": 316,
+   "seconds": 0.03,
+   "text": null,
+   "sha256": "60f9b2add02311594d866be8bc3d3e50807603c832e692780b1ce682451a0b91"
+  },
+  "ocr_no_text": {
+   "file": "ocr_no_text.wav",
+   "bytes": 11580,
+   "seconds": 1.406,
+   "text": "Không thấy chữ nào đọc được.",
+   "sha256": "3d496cbcce23a87576d61c9a0b6ef6424e3c17471bdbf1efa8f074ae18bb74d7"
+  },
+  "ocr_nothing_to_reread": {
+   "file": "ocr_nothing_to_reread.wav",
+   "bytes": 12860,
+   "seconds": 1.572,
+   "text": "Chưa có nội dung nào để đọc lại.",
+   "sha256": "98371655c7a49f4e7945d21eb6f035ad37bacda96c968df6131faa9a65cfc5a8"
+  },
+  "hazard_1": {
+   "file": "hazard_1.wav",
+   "bytes": 828,
+   "seconds": 0.08,
+   "text": null,
+   "sha256": "b9af2a912a5daf17ef69c12c434b413f3b55e72bb86c15bdb353130ebe7ff7ef"
+  },
+  "hazard_2": {
+   "file": "hazard_2.wav",
+   "bytes": 2364,
+   "seconds": 0.26,
+   "text": null,
+   "sha256": "f3963b2246e319c135e084629d463f68fc13fc3758c4e159ef2a8fa990ae04d0"
+  },
+  "hazard_3": {
+   "file": "hazard_3.wav",
+   "bytes": 5180,
+   "seconds": 0.6,
+   "text": null,
+   "sha256": "d6bb91dbf4f15b667850306fc256469733989c575f15dff55b13f65be4202be1"
+  },
+  "dir_left": {
+   "file": "dir_left.wav",
+   "bytes": 4668,
+   "seconds": 0.544,
+   "text": "Bên trái.",
+   "sha256": "d3e97827e1ac58cc2aaa1a510aa304610fef25f75394b91cfc98fbd84d7826d0"
+  },
+  "dir_center": {
+   "file": "dir_center.wav",
+   "bytes": 5436,
+   "seconds": 0.657,
+   "text": "Phía trước.",
+   "sha256": "ae021c558b82eea5b31b7b6bc86e442f1d63b46635629f4e8b65752d409b745e"
+  },
+  "dir_right": {
+   "file": "dir_right.wav",
+   "bytes": 4668,
+   "seconds": 0.557,
+   "text": "Bên phải.",
+   "sha256": "4c5d4a7e29ec38822b1af08bdc09140dd78d3d781518927bcfb061e7b64242c7"
+  },
+  "stop_now": {
+   "file": "stop_now.wav",
+   "bytes": 4412,
+   "seconds": 0.513,
+   "text": "Dừng lại.",
+   "sha256": "20396728d5b98898aa3c0aa176c750501dbb849f20b7476a17de3ceea0fcfba1"
+  },
+  "nav_alert_on": {
+   "file": "nav_alert_on.wav",
+   "bytes": 8508,
+   "seconds": 1.018,
+   "text": "Đã bật cảnh báo.",
+   "sha256": "a9c571783fa4f571a5ca8fae287f783af1feb76ed63d2fa9ab9c356e679fcc2c"
+  },
+  "nav_alert_off": {
+   "file": "nav_alert_off.wav",
+   "bytes": 7996,
+   "seconds": 0.975,
+   "text": "Đã tắt cảnh báo.",
+   "sha256": "1146c0a5cd1d094d1782114a24be66a982ee33f70b6912ac397b2df8b27862b4"
+  }
+ }
+}

@@ -42,7 +42,7 @@ Hợp đồng cũ (`POST /process`, WAV ADPCM 60 byte header) vẫn ở `HUONG_D
 | text `turn_end` | `{"t":"turn_end","turn":"<id>","t_release_ms":125000}` | Nhả nút. `turn` phải khớp lượt đang chạy, không khớp thì bị bỏ qua. |
 | binary `0x04` + JPEG | khung live | Chỉ có nghĩa khi server đã bật live (§4); ngoài live thì bị bỏ. Trần 300 KB, tối đa 15 fps. |
 | text `cancel` | `{"t":"cancel"}` | Bỏ lượt hiện tại + live + lệnh làn D đang chờ đọc xong. |
-| text `played` | `{"t":"played","turn":"<id>","first_byte_ms":412,"first_audio_ms":455}` | Báo mốc phát. Hiện server chỉ ghi log (server ghi nhận đủ 4 mốc từ Task 14, xem §6). |
+| text `played` | `{"t":"played","turn":"<id>","first_byte_ms":412,"first_audio_ms":455}` | Báo mốc phát. Server ghi một dòng bổ sung `{"turn","device","glasses":{first_byte_ms,first_audio_ms}}` vào `turns.jsonl` (ghép với dòng chính của lượt theo `turn`, xem §6). |
 | text `ping` | `{"t":"ping"}` | Server trả `{"t":"pong"}`. Gửi mỗi **25 s** (§3). |
 
 Khung text sai JSON/thiếu `t`/loại lạ, binary rỗng/loại lạ, ảnh/audio gửi khi chưa có `turn_start`
@@ -166,14 +166,18 @@ server-> {"t":"end"}                                           (người dùng n
 - Kính khai `cue_version` trong `hello`. Server hiện tại: `CUE_VERSION = 2`. Nếu số của kính thấp hơn,
   server không gửi mã cue mà đọc thành câu nói qua TTS.
 - Đổi chữ của cue thì phải tăng `CUE_VERSION` và nạp lại clip vào flash.
-- Manifest `assets/cues/manifest.json` (danh sách mã cue, tên file clip, `cue_version`, checksum) và
-  công cụ `tools/make_cue_clips.py` sinh clip **chưa có trong repo** (server ghi nhận từ Task 14).
-  Cho tới khi có, firmware đọc danh sách mã từ `pipeline/cues.py` và để `cue_version` = 0 để nghe cue
-  bằng giọng đọc.
+- Clip nằm trong repo ở `assets/cues/` (một file `<id>.wav` mỗi mã cue, WAV IMA ADPCM 16 kHz mono, khối 256 byte,
+  cùng định dạng audio trả lời) cùng `assets/cues/manifest.json`:
+  `{"cue_version": N, "clips": {id: {"file","bytes","seconds","text","sha256"}}}`. Firmware nạp flash theo
+  manifest và khai `cue_version` = giá trị trong manifest. Sinh lại bằng
+  `python tools/make_cue_clips.py --out assets/cues` (TTS chạy trên GPU); cue không lời (`received`, `shutter`,
+  `hazard_1..3`) sinh bằng numpy. Test `test_cue_manifest_complete` đỏ nếu bảng cue đổi mà clip chưa sinh lại.
 - Khung `played` đủ **4 mốc** của một lượt: `t_press_ms` (trong `turn_start`), `t_release_ms` (trong
   `turn_end`), `first_byte_ms` (byte audio đầu tới kính) và `first_audio_ms` (tiếng đầu ra loa), tất
-  cả tính theo đồng hồ `millis()` của kính. Hiện server mới ghi log hai mốc sau; ghi vào
-  `turns.jsonl` kèm turn id là việc của Task 14 (server ghi nhận từ Task 14). Kính cứ gửi đủ từ bây giờ.
+  cả tính theo đồng hồ `millis()` của kính. Server ghi mỗi lượt một dòng JSON vào
+  `<STORAGE_DIR>/metrics/turns.jsonl` (timing phía server + `glasses` với `t_press_ms`/`t_release_ms` đã có
+  lúc lượt xong) và khi `played` tới thì thêm một dòng `{"turn","glasses":{first_byte_ms,first_audio_ms}}`;
+  ghép hai dòng theo `turn`. Mọi dòng log của lượt mang `[<device> <turn>]`. Kính cứ gửi đủ mốc.
 
 ## 7. Các trần
 

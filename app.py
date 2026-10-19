@@ -22,6 +22,7 @@ import config
 from handlers import chat
 from models import vlm
 from pipeline import adpcm, cues, device_ctx, guard, intent_local, phrases, router, stt, tts
+from pipeline import metrics
 from pipeline import turn as turn_v2
 from pipeline.image_buffer import image_buffer
 from pipeline.reply import Reply
@@ -31,7 +32,9 @@ logger = logging.getLogger("blind_assist")
 
 # Uvicorn chỉ cấu hình logger của riêng nó; không có dòng này thì log INFO đo
 # thời gian bên dưới bị root logger (mặc định WARNING) nuốt mất.
-logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+# Mỗi dòng mang [device turn] của lượt đang chạy (pipeline/metrics.py).
+logging.basicConfig(level=logging.INFO, format=metrics.LOG_FORMAT)
+metrics.install_log_filter()
 
 app = FastAPI(title="Blind-Assist Audio Server")
 app.add_middleware(guard.ProcessBodyGuard)

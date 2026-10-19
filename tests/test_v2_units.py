@@ -758,3 +758,69 @@ def test_no_speech_skips_classifier(monkeypatch, fake_asr):
     result, calls, routed = _run_turn(monkeypatch, fake_asr, [(1.0, 0)], hold_s=0.1)
     assert fake_asr.decodes == 0 and calls == []  # không giải, không gọi Gemma/Clef
     assert routed == [("no_speech", "")] and result.reply.cues == ["no_speech"]
+
+
+# ── Task 14: quan sát ─────────────────────────────────────────────────────
+
+def test_record_turn_appends_jsonl(tmp_path, monkeypatch):
+    import json
+    import logging
+
+    from pipeline import device_ctx, metrics
+
+    monkeypatch.setattr(config, "STORAGE_DIR", str(tmp_path))
+    metrics.record_turn({"device": "d1", "turn": "t1", "transport": "ws", "intent": "chat", "glasses": None})
+    metrics.record_turn({"turn": "t1", "glasses": {"first_byte_ms": 400, "first_audio_ms": 450}})
+    metrics.flush()
+    rows = [json.loads(line) for line in (tmp_path / "metrics" / "turns.jsonl").read_text().splitlines()]
+    assert [r["turn"] for r in rows] == ["t1", "t1"] and rows[0]["ts"] > 0
+    assert rows[0]["intent"] == "chat" and rows[1]["glasses"]["first_audio_ms"] == 450
+
+    # Log filter: mỗi dòng log của lượt mang device + turn id.
+    record = logging.LogRecord("x", logging.INFO, __file__, 1, "m", (), None)
+    with device_ctx.use("kinh-A"):
+        token = device_ctx.turn.set("t9")
+        try:
+            metrics.TurnLogFilter().filter(record)
+        finally:
+            device_ctx.turn.reset(token)
+    assert (record.device, record.turn) == ("kinh-A", "t9")
+
+
+def test_played_frame_recorded(tmp_path, monkeypatch):
+    import json
+
+    from fastapi.testclient import TestClient
+
+    from app import app
+    from pipeline import metrics
+    from tests.conftest import TEST_DEVICE_TOKEN
+
+    monkeypatch.setattr(config, "STORAGE_DIR", str(tmp_path))
+    with TestClient(app).websocket_connect("/v2/session") as ws:
+        ws.send_text(json.dumps({"t": "hello", "device": "ws-played", "token": TEST_DEVICE_TOKEN,
+                                 "cue_version": cues.CUE_VERSION}))
+        assert json.loads(ws.receive_text())["t"] == "hello_ok"
+        ws.send_text(json.dumps({"t": "played", "turn": "t7", "first_byte_ms": 412, "first_audio_ms": 455}))
+        ws.send_text('{"t":"ping"}')
+        assert json.loads(ws.receive_text()) == {"t": "pong"}  # played đã xử lý xong trước ping
+    metrics.flush()
+    rows = [json.loads(line) for line in (tmp_path / "metrics" / "turns.jsonl").read_text().splitlines()]
+    assert rows[-1]["turn"] == "t7" and rows[-1]["device"] == "ws-played"
+    assert rows[-1]["glasses"] == {"first_byte_ms": 412, "first_audio_ms": 455}
+
+
+def test_cue_manifest_complete():
+    import json
+    import os
+
+    root = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "assets", "cues")
+    manifest = json.load(open(os.path.join(root, "manifest.json"), encoding="utf-8"))
+    assert manifest["cue_version"] == cues.CUE_VERSION  # đổi chữ cue mà quên sinh lại clip thì đỏ ở đây
+    assert set(manifest["clips"]) == set(cues.CUES)
+    for cue_id, info in manifest["clips"].items():
+        data = open(os.path.join(root, info["file"]), "rb").read()
+        assert len(data) == info["bytes"] and data[:4] == b"RIFF" and data[8:12] == b"WAVE"
+        assert int.from_bytes(data[20:22], "little") == adpcm.FORMAT_TAG
+        assert int.from_bytes(data[24:28], "little") == adpcm.SAMPLE_RATE
+        assert (len(data) - adpcm.WAV_HEADER_BYTES) % adpcm.BLOCK_ALIGN == 0, cue_id

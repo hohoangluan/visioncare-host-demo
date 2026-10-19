@@ -19,6 +19,9 @@ current: contextvars.ContextVar[str] = contextvars.ContextVar(
     "device_id", default=config.VISIONCARE_DEVICE_ID
 )
 
+# Id lượt đang chạy, để mọi dòng log của lượt mang theo (pipeline/metrics.TurnLogFilter).
+turn: contextvars.ContextVar[str] = contextvars.ContextVar("turn_id", default="")
+
 
 @contextlib.contextmanager
 def use(device: str) -> Iterator[None]:
