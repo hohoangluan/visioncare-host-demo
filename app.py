@@ -34,6 +34,7 @@ logger = logging.getLogger("blind_assist")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
 app = FastAPI(title="Blind-Assist Audio Server")
+app.add_middleware(guard.ProcessBodyGuard)
 
 PCM_FORMAT = f"pcm_s16le;rate={tts.OUTPUT_SAMPLE_RATE};channels=1"
 _BYTES_PER_SAMPLE = 2

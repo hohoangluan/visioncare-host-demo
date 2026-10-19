@@ -92,7 +92,10 @@ class StreamingTranscriber:
             return
         # Trần audio (Task 9): quá DEVICE_MAX_AUDIO_S thì ngừng nhận, lượt kết
         # thúc với phần đã có — chặn buffer phình vô hạn từ kẻ giữ nút mãi.
-        if self._n_samples >= config.DEVICE_MAX_AUDIO_S * (self._rate or 1):
+        # Chặn thêm theo BYTE: header RIFF không bao giờ hoàn tất thì _n_samples
+        # đứng ở 0 và _pending phình mãi. PCM 16-bit là dạng tốn byte nhất.
+        byte_cap = config.DEVICE_MAX_AUDIO_S * (self._rate or 1) * 2 * max(1, self._channels) + 65536
+        if self._n_samples >= config.DEVICE_MAX_AUDIO_S * (self._rate or 1) or self.bytes_in > byte_cap:
             self.capped = True
             logger.warning("audio vượt %.0fs: bỏ phần còn lại", config.DEVICE_MAX_AUDIO_S)
             return
