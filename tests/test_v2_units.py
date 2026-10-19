@@ -663,3 +663,98 @@ def test_choice_rejects_label_outside_set(monkeypatch):
     monkeypatch.setattr(llm.client, "complete_raw", fake_raw)
     with pytest.raises(llm.LLMError):
         asyncio.run(llm.generate_choice("p", ["a", "b"]))
+
+# ── VAD (Task 2b) ────────────────────────────────────────────────────────
+
+class _EnergyDetector:
+    """Thay Silero: khung nào to hơn ngưỡng năng lượng thì là tiếng."""
+
+    def __init__(self):
+        self._on = False
+
+    def accept_waveform(self, w):
+        self._on = float(np.sqrt(np.mean(w * w))) > 0.05
+
+    def is_speech_detected(self):
+        return self._on
+
+    def empty(self):
+        return True
+
+    def pop(self):
+        pass
+
+
+from pipeline import vad as _vad_mod
+_RealSegmenter = _vad_mod.Segmenter
+
+
+def _vad_segmenter():
+    return _RealSegmenter(_EnergyDetector(), end_silence_s=0.35, pad_s=0.2)
+
+
+def _adpcm_parts(*parts):
+    """parts: (giây, biên độ) nối nhau; biên độ 0 = im lặng."""
+    out = []
+    for sec, amp in parts:
+        t = np.arange(int(16000 * sec)) / 16000
+        out.append((np.sin(2 * np.pi * 300 * t) * amp).astype("<i2"))
+    return adpcm.encode_blocks(np.concatenate(out).tobytes())
+
+
+def test_vad_trims_silence(fake_asr):
+    tr = StreamingTranscriber(vad=_vad_segmenter())
+    tr.feed(_adpcm_parts((1.0, 0), (0.5, 12000), (1.0, 0)))
+    assert tr.final() == "Đọc giúp tôi"
+    # 0,5 s tiếng + 0,2 s đệm mỗi đầu (đo từ khung đầu có tiếng), không phải 2,5 s
+    assert 0.8 * 16000 <= fake_asr.seen[0] <= 1.0 * 16000
+    quiet = StreamingTranscriber(vad=_vad_segmenter())
+    quiet.feed(_adpcm_parts((1.0, 0)))
+    assert quiet.final() == "" and not quiet.has_speech
+    assert len(fake_asr.seen) == 1  # lượt im lặng không gọi ASR
+
+
+def _run_turn(monkeypatch, fake_asr, parts, hold_s):
+    """Chạy turn.run với VAD giả; trả (kết quả, số lần phân loại, text đưa vào route)."""
+    from pipeline import final_router, turn, vad
+    from pipeline.reply import Reply
+
+    calls, routed = [], []
+
+    async def fake_clef(text, state=None):
+        calls.append(text)
+        return clef.ClefResult("chat", 0.9)
+
+    async def fake_route(ctx, decision, text):
+        routed.append((decision.source, text))
+        return Reply(cues=["no_speech"] if decision.source == "no_speech" else [])
+
+    monkeypatch.setattr(turn.vad, "available", lambda: True)
+    monkeypatch.setattr(vad, "Segmenter", _vad_segmenter)
+    monkeypatch.setattr(turn.config, "STT_PARTIAL_INTERVAL_S", 0.05)
+    monkeypatch.setattr(intent_early.classifier, "available", lambda: True)
+    monkeypatch.setattr(intent_early.classifier, "classify", fake_clef)
+    monkeypatch.setattr(final_router, "route", fake_route)
+    audio = _adpcm_parts(*parts)
+
+    async def body():
+        for i in range(0, len(audio), 2048):
+            yield audio[i:i + 2048]
+        await asyncio.sleep(hold_s)  # nút còn giữ sau khi nói xong
+
+    result = asyncio.run(turn.run("d", "1", "audio/x-adpcm-ima; rate=16000; block=256", body(), {}))
+    return result, calls, routed
+
+
+def test_early_final_reused_on_release(monkeypatch, fake_asr):
+    result, calls, routed = _run_turn(monkeypatch, fake_asr, [(0.3, 0), (0.5, 12000), (0.6, 0)], hold_s=0.8)
+    # VAD thấy hết câu khi nút còn giữ -> chốt sớm đúng một lần, nhả nút dùng lại
+    assert result.timings["final_stt_s"] < 0.01 and result.timings["intent_s"] < 0.01
+    assert fake_asr.decodes == 1  # giải đúng một lần (chốt sớm), nhả nút không giải lại
+    assert routed == [("model", "Đọc giúp tôi")]
+
+
+def test_no_speech_skips_classifier(monkeypatch, fake_asr):
+    result, calls, routed = _run_turn(monkeypatch, fake_asr, [(1.0, 0)], hold_s=0.1)
+    assert fake_asr.decodes == 0 and calls == []  # không giải, không gọi Gemma/Clef
+    assert routed == [("no_speech", "")] and result.reply.cues == ["no_speech"]

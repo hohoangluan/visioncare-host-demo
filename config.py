@@ -323,6 +323,15 @@ EARLY_CLASSIFY_MAX_CALLS = int(get("EARLY_CLASSIFY_MAX_CALLS", "2"))
 # gửi lệnh điện thoại nào trước khi có nhãn cuối (§1 nguyên tắc 3).
 SPECULATIVE_FINAL = get("SPECULATIVE_FINAL", "1") != "0"
 
+# VAD Silero (pipeline/vad.py, Task 2b): cắt im lặng, chốt sớm khi hết câu, no_speech
+# ngay khi cả lượt không có tiếng. Tắt: VAD_ENABLED=0.
+VAD_ENABLED = get("VAD_ENABLED", "1") != "0"
+VAD_MODEL_PATH = get("VAD_MODEL_PATH", "./models/vad/silero_vad.onnx")
+VAD_END_SILENCE_S = float(get("VAD_END_SILENCE_S", "0.35"))
+VAD_THRESHOLD = float(get("VAD_THRESHOLD", "0.5"))
+VAD_PAD_S = float(get("VAD_PAD_S", "0.2"))  # đệm hai đầu đoạn tiếng, tránh cắt phụ âm
+VAD_EARLY_FINAL = get("VAD_EARLY_FINAL", "1") != "0"
+
 # Đệm audio trước byte đầu cho /v2/turn. Đo 2026-10-19 (TTS GPU, RTF 0,76),
 # `tools/bench_live.py` cột `starve`, 15 lượt với đệm 0: loa đói tối đa 177 ms
 # (localhost). Mỗi 0,1 s đệm là ~0,08 s chờ thêm trước tiếng đầu; người dùng

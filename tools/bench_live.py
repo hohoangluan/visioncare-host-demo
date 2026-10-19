@@ -38,15 +38,16 @@ CHUNK = 512
 WAV_HEADER = 60
 
 
-def _command_audio(name: str, text: str, cache: str) -> bytes:
-    path = os.path.join(cache, f"{name}.adpcm")
+def _command_audio(name: str, text: str, cache: str, tail_s: float = 0.25) -> bytes:
+    path = os.path.join(cache, f"{name}.adpcm" if tail_s == 0.25 else f"{name}_t{tail_s}.adpcm")
     if os.path.exists(path):
         return open(path, "rb").read()
     from pipeline import adpcm, tts
 
     pcm = b"".join(tts.synthesize_stream(text))
     silence = b"\x00\x00" * 4000  # 0,25 s im lặng hai đầu như người bấm nút
-    data = adpcm.encode_blocks(silence + pcm + silence)
+    tail = b"\x00\x00" * int(16000 * tail_s)  # --tail-s: giữ nút lâu sau khi nói xong (đo chốt sớm VAD)
+    data = adpcm.encode_blocks(silence + pcm + tail)
     os.makedirs(cache, exist_ok=True)
     open(path, "wb").write(data)
     return data
@@ -180,6 +181,7 @@ async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base", default="http://127.0.0.1:8000")
     parser.add_argument("--runs", type=int, default=2)
+    parser.add_argument("--tail-s", type=float, default=0.25, help="im lặng cuối trước khi nhả nút")
     parser.add_argument("--only", nargs="*")
     parser.add_argument("--cache", default=os.path.join(ROOT, "tools", "board_audio", "v2"))
     parser.add_argument("--street", help="ảnh đường phố có xe cho đo làn C")
@@ -196,7 +198,7 @@ async def main() -> None:
         for name, text in COMMANDS.items():
             if args.only and name not in args.only:
                 continue
-            audio = _command_audio(name, text, args.cache)
+            audio = _command_audio(name, text, args.cache, args.tail_s)
             for run in range(args.runs):
                 image = text_image if name == "ocr" else scene
                 r = await one_turn(http, args.base, name, audio, image)

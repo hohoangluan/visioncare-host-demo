@@ -47,6 +47,8 @@ class _Rec:
 def world(monkeypatch):
     rec = _Rec()
     monkeypatch.setattr(stt, "_load_asr", lambda: rec)
+    # Audio ở đây là âm tổng hợp, Silero không coi là tiếng người; VAD có test riêng trong test_v2_units.
+    monkeypatch.setattr(config, "VAD_ENABLED", False)
     calls = {"clef": [], "llm": [], "actions": []}
     labels: dict[str, clef.ClefResult] = {}
 

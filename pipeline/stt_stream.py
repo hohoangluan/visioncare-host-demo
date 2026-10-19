@@ -39,7 +39,9 @@ class StreamingTranscriber:
     `_decode()`, mà mỗi lượt `/v2/turn` chỉ có một lượt giải chạy cùng lúc.
     """
 
-    def __init__(self, content_type: str | None = None) -> None:
+    def __init__(self, content_type: str | None = None, vad=None) -> None:
+        # `vad`: pipeline.vad.Segmenter (hoặc None = giải cả buffer như trước).
+        self._vad = vad
         params = _content_params(content_type)
         self._block_align = int(params.get("block", adpcm.BLOCK_ALIGN) or adpcm.BLOCK_ALIGN)
         self._rate = int(params.get("rate", adpcm.SAMPLE_RATE) or adpcm.SAMPLE_RATE)
@@ -52,7 +54,7 @@ class StreamingTranscriber:
         self._n_samples = 0
         self._lock = threading.Lock()
         self._decode_lock = threading.Lock()
-        self._decoded_at = -1  # số mẫu ở lần giải gần nhất
+        self._decoded_at = -1  # khoá của lần giải gần nhất (số mẫu, hoặc đoạn tiếng khi có VAD)
         self._text = ""
         self.bytes_in = 0
         self.capped = False
@@ -119,37 +121,71 @@ class StreamingTranscriber:
                 samples = samples.reshape(-1, self._channels).mean(axis=1)
             self._chunks.append(samples)
             self._n_samples += samples.size
+            if self._vad is not None:
+                self._vad.feed(samples if self._rate == 16000 else stt._resample(samples, self._rate))
 
     @property
     def seconds(self) -> float:
         return self._n_samples / float(self._rate or 1)
 
+    def _key(self):
+        """Khoá "nội dung cần giải": số mẫu, hoặc (đầu, cuối) đoạn tiếng khi có VAD.
+
+        Có VAD thì im lặng tới thêm không đổi khoá -> không giải lại; không có
+        tiếng nào -> None (không có gì để giải).
+        """
+        if self._vad is None:
+            return self._n_samples
+        return self._vad.span()
+
     def has_new_audio(self) -> bool:
-        return self._n_samples != self._decoded_at
+        key = self._key()
+        return key is not None and key != self._decoded_at
+
+    @property
+    def speech_ended(self) -> bool:
+        """VAD báo hết câu (im lặng >= VAD_END_SILENCE_S sau tiếng) trong lúc nút còn giữ."""
+        return self._vad is not None and self._vad.speech_ended_at is not None
+
+    @property
+    def has_speech(self) -> bool:
+        return self._vad is None or self._vad.speech_started
+
+    @property
+    def decoded_key(self):
+        return self._decoded_at
+
+    def span_key(self):
+        with self._lock:
+            return self._key()
 
     # ── giải mã ─────────────────────────────────────────────────────────
 
-    def _snapshot(self) -> tuple[np.ndarray, int]:
+    def _snapshot(self):
         with self._lock:
             if len(self._chunks) > 1:
                 self._chunks = [np.concatenate(self._chunks)]
             samples = self._chunks[0] if self._chunks else np.zeros(0, np.float32)
-            return samples, self._n_samples
+            return samples, self._n_samples, self._key()
 
     def _decode(self) -> str:
         with self._decode_lock:
-            samples, count = self._snapshot()
-            if count == self._decoded_at:
-                return self._text  # không có mẫu mới: kết quả cũ vẫn đúng
+            samples, count, key = self._snapshot()
+            if self._vad is not None and key is None:
+                return ""  # cả lượt không có tiếng: khỏi giải
+            if key == self._decoded_at:
+                return self._text  # không có tiếng/mẫu mới: kết quả cũ vẫn đúng
             if count == 0:
                 self._decoded_at, self._text = 0, ""
                 return ""
             samples = stt._resample(samples, self._rate)
+            if self._vad is not None:
+                samples = samples[key[0]:key[1]]  # chỉ giải đoạn có tiếng
             recognizer = stt._load_asr()
             stream = recognizer.create_stream()
             stream.accept_waveform(stt._TARGET_SAMPLE_RATE, samples)
             recognizer.decode_stream(stream)
-            self._decoded_at, self._text = count, stt._normalize(stream.result.text)
+            self._decoded_at, self._text = key, stt._normalize(stream.result.text)
             return self._text
 
     def partial(self) -> str:

@@ -4,6 +4,11 @@
     giải lại phần đuôi (0 ms nếu partial cuối đã thấy hết audio)
   + Clef cuối (0 ms nếu đã chạy trên partial trùng bản ghi cuối)
   + phần của làn (đã được prewarm / chạy song song với Clef).
+
+VAD (Task 2b, pipeline/vad.py): khi VAD báo hết câu mà nút còn giữ thì "chốt sớm" —
+giải đoạn có tiếng + intent + chạy trước làn A/D ngay lúc đó; nhả nút mà không có
+tiếng mới thì dùng thẳng kết quả (bỏ final_stt + intent khỏi đường chờ). Cả lượt
+không có tiếng -> `no_speech` ngay, không giải, không gọi Gemma.
 """
 
 import asyncio
@@ -14,8 +19,9 @@ from dataclasses import dataclass, field
 
 import config
 from lanes import general, phone
-from pipeline import final_router, pending_action
+from pipeline import final_router, pending_action, vad
 from pipeline.final_router import Speculation, TurnContext
+from pipeline.intent_early import Decision
 from pipeline.image_buffer import image_buffer
 from pipeline.intent_early import EarlyIntent, LANE, keyword_rule
 from pipeline.prewarm import Prewarmer
@@ -44,8 +50,39 @@ def _bypass(device_state: dict) -> Reply | None:
     return None
 
 
-async def _partial_loop(transcriber: StreamingTranscriber, early: EarlyIntent, stop: asyncio.Event) -> None:
+@dataclass
+class _EarlyFinal:
+    """Kết quả chốt sớm trên đoạn có tiếng `key` (xem transcriber.span_key())."""
+    task: asyncio.Task | None = None
+    key: object = None
+    text: str = ""
+    decision: Decision | None = None
+
+
+async def _early_final(ctx: TurnContext, transcriber: StreamingTranscriber, early: EarlyIntent,
+                       ef: _EarlyFinal) -> None:
+    text = await asyncio.to_thread(transcriber.final)
+    key = transcriber.decoded_key
+    ef.key, ef.text, ef.decision = None, text, None
+    if not text.strip():
+        return
+    _speculate(ctx, early, text)
+    decision = await early.decide(text)
+    if transcriber.span_key() != key:  # tiếng mới chen vào lúc đang chốt: bỏ
+        _discard_speculation(ctx)
+        return
+    ef.key, ef.decision = key, decision
+
+
+def _discard_speculation(ctx: TurnContext) -> None:
+    ctx.cancel_speculation()
+    ctx.spec_answer = ctx.spec_params = None
+
+
+async def _partial_loop(transcriber: StreamingTranscriber, early: EarlyIntent, stop: asyncio.Event,
+                        ctx: TurnContext | None = None, ef: _EarlyFinal | None = None) -> None:
     text = ""
+    loop = asyncio.get_running_loop()
     while not stop.is_set():
         try:
             await asyncio.wait_for(stop.wait(), config.STT_PARTIAL_INTERVAL_S)
@@ -56,6 +93,9 @@ async def _partial_loop(transcriber: StreamingTranscriber, early: EarlyIntent, s
             text = await asyncio.to_thread(transcriber.partial)
         if text:
             early.on_partial(text)
+        if (ef is not None and ctx is not None and transcriber.speech_ended
+                and (ef.task is None or ef.task.done()) and ef.key != transcriber.span_key()):
+            ef.task = loop.create_task(_early_final(ctx, transcriber, early, ef))
 
 
 def _speculate(ctx: TurnContext, early: EarlyIntent, text: str) -> None:
@@ -92,12 +132,14 @@ async def run(
         return TurnResult(bypass, released_at=time.monotonic())
 
     prewarmer = Prewarmer(device, turn_id)
-    transcriber = StreamingTranscriber(content_type)
+    segmenter = vad.Segmenter() if vad.available() else None
+    transcriber = StreamingTranscriber(content_type, segmenter)
     early = EarlyIntent(device_state, on_guess=prewarmer.on_guess)
     stop = asyncio.Event()
-    partials = loop.create_task(_partial_loop(transcriber, early, stop))
     ctx = TurnContext(device, turn_id, prewarmer, loop)
     ctx.gen = pending_action.generation(device) if gen is None else gen
+    ef = _EarlyFinal() if segmenter is not None and config.VAD_EARLY_FINAL else None
+    partials = loop.create_task(_partial_loop(transcriber, early, stop, ctx, ef))
 
     try:
         async for chunk in body:
@@ -106,12 +148,28 @@ async def run(
         stop.set()
         await partials
 
-        text = await asyncio.to_thread(transcriber.final)
-        t_final = time.monotonic()
+        if ef is not None and ef.task is not None:
+            try:
+                await ef.task  # chốt sớm đang dở thì chờ nốt, rẻ hơn làm lại
+            except Exception:
+                logger.exception("v2 turn %s: chốt sớm lỗi, làm lại", turn_id)
+                ef.key = None
 
-        _speculate(ctx, early, text)
-        decision = await early.decide(text)
-        t_intent = time.monotonic()
+        if not transcriber.has_speech:
+            text, decision = "", Decision("", source="no_speech")  # không tiếng: khỏi giải, khỏi Gemma
+            t_final = t_intent = time.monotonic()
+        elif ef is not None and ef.decision is not None and ef.key == transcriber.span_key():
+            text, decision = ef.text, ef.decision  # không có tiếng mới từ lúc chốt sớm
+            t_final = t_intent = time.monotonic()
+            logger.info("v2 turn %s: dùng bản chốt sớm", turn_id)
+        else:
+            if ef is not None:
+                _discard_speculation(ctx)
+            text = await asyncio.to_thread(transcriber.final)
+            t_final = time.monotonic()
+            _speculate(ctx, early, text)
+            decision = await early.decide(text)
+            t_intent = time.monotonic()
 
         reply = await final_router.route(ctx, decision, text)
         t_route = time.monotonic()
@@ -119,6 +177,8 @@ async def run(
     except BaseException:
         stop.set()
         partials.cancel()
+        if ef is not None and ef.task is not None:
+            ef.task.cancel()
         ctx.cancel_speculation()
         prewarmer.discard()
         raise
