@@ -21,11 +21,14 @@ task/ruling/minor. Ràng buộc chung cho subagent: `.../global-constraints.md`.
 (+ `076dd83` đổi biến `NINE_ROUTER_*`). Test 416 pass / 2 skip / 0 fail. Review cuối toàn nhánh (opus) xong:
 `.../final-review.md` — "ready with fixes".
 
-1. **Đợt sửa cuối (đang chạy khi bàn giao, có thể đã chết do đổi tài khoản).** Worktree `../vh-wt-15B`,
-   nhánh `wt-task-15B`. Brief đầy đủ: `.../fixwave-brief.md` (E2E B1–B4 + review C1, I1–I5 + 3 minor + aclose).
-   Kiểm: `git -C ../vh-wt-15B log --oneline -3` và `status`. Nếu HEAD còn là `9e05470 WIP ...` hoặc có sửa chưa
-   commit → giao một agent sonnet MỚI: "đọc fixwave-brief.md, tiếp tục trong vh-wt-15B (xem git diff/HEAD), làm hết
-   danh sách, chạy test + E2E chỉ các kịch bản từng FAIL". Nếu đã có commit sửa → bước 2.
+1. **Đợt sửa cuối — giao cho subagent `model: opus` (người dùng: "khó quá thì giao cho opus").** Đã dừng giữa
+   chừng 2 lần (hết quota). Worktree `../vh-wt-15B`, nhánh `wt-task-15B`: `9e05470` WIP B1–B4 (agent 1) và
+   `76254ec` WIP 2 (agent 2 đã sửa ~20 file: app.py, device_session, ws_adapter, nav_live, ocr_live, final_router,
+   intent_classifier, pending_action, stt_stream, search/client, Dockerfile… — **CHƯA viết test, CHƯA chạy test**).
+   Brief đầy đủ: `.../fixwave-brief.md` (E2E B1–B4 + review C1, I1–I5 + 3 minor + aclose); file:line ở
+   `.../final-review.md`. Dispatch: "đọc fixwave-brief.md; tiếp tục trong vh-wt-15B, `git show 9e05470 76254ec`
+   để xem phần đã làm, kiểm từng mục brief làm đúng chưa, viết test còn thiếu, chạy toàn bộ test, E2E chỉ các
+   kịch bản từng FAIL (call_mom, call_nam, ride, music, nav, emergency, call_cancel), gộp thành một commit sửa".
    Dọn trước khi chạy: `fuser -k 18893/tcp 18001/tcp 18002/tcp`; kiểm container postgres test của AB.
 2. **Re-review có phạm vi** đợt sửa (sonnet, `re-review-prompt.md` của skill) với danh sách mục trong
    fixwave-brief.md; nếu sạch → `git merge --ff-only wt-task-15B` vào `voice-v2-hardening`, chạy toàn bộ test.
@@ -35,6 +38,11 @@ task/ruling/minor. Ràng buộc chung cho subagent: `.../global-constraints.md`.
    bench đọc `VISIONCARE_DEVICE_CLIENT_TOKEN` từ môi trường — nạp từ `VH/.env` bằng Python (wrapper mẫu đã viết ở
    scratchpad cũ: đọc dòng `VISIONCARE_DEVICE_CLIENT_TOKEN=` rồi `runpy` bench). **Tắt ngay** `fuser -k 18888/tcp`
    (server công khai qua tunnel). Người dùng từng huỷ lệnh bench dài — hỏi trước khi chạy, hoặc chạy từng chế độ một.
+   **Chưa có số Cloudflare nào.** Đã có số LOCAL POST và WS trên `71f2659` (trước đợt sửa):
+   `.superpowers/sdd/2026-10-19-voice-v2-hardening/cf-bench/local_post.txt`, `local_ws.txt`; wrapper nạp token:
+   `cf-bench/run_bench.py` (chạy từ thư mục VH). Đo lại sau khi gộp đợt sửa (đợt sửa đổi thời điểm bắt đầu cửa
+   sổ huỷ và hàng đợi audio). "Tối ưu Cloudflare" = so POST vs `WS /v2/session` qua tunnel; nếu WS không nhanh
+   hơn rõ, tìm chỗ dồn độ trễ (TLS/handshake mỗi lượt, kích thước khối audio, ping) trước khi đổi gì.
 4. **Tài liệu + bàn giao (một agent sonnet):** (a) hoàn thiện `docs/FIRMWARE_ENDPOINTS.md` thành hướng dẫn
    firmware code theo được — người dùng dặn rõ "ghi lại kính cần làm gì, endpoint giao tiếp các thứ để kính code
    theo": checklist việc kính phải làm (bật máy → kết nối → bấm/nhả nút → phát audio theo hàng đợi → hazard → rớt
