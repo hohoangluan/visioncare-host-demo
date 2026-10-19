@@ -3,6 +3,11 @@
 Cập nhật 2026-10-19. Repo `SeeVia_system/visioncare-host-demo` ("VH"), nhánh `voice-v2-hardening`
 (không push). App server: `SeeVia_system/app-demo-backend/server` ("AB", repo git riêng).
 
+## CHẾ ĐỘ NHANH
+
+Đọc mục "CHẾ ĐỘ NHANH" đầu plan 1 — nó đè lên mọi thứ: luồng đúng + độ trễ thấp nhất,
+gold 200–300 mẫu, ít test, chỉ review task rủi ro, có thêm Task 2b (VAD).
+
 ## Vai của session này
 
 Điều phối, không tự code. Dùng skill `superpowers:subagent-driven-development`; **mọi

@@ -12,6 +12,8 @@
 
 **Điều kiện bắt đầu:** plan `docs/superpowers/plans/2026-10-19-voice-v2-hardening.md` đã xong tới Task 15 (cần `WS /v2/session`, `pipeline/guard.py`, `pipeline/pending_action.py`, transport `webhook` + `phone_sim`).
 
+> **CHẾ ĐỘ NHANH:** áp dụng mục "CHẾ ĐỘ NHANH" ở đầu plan `2026-10-19-voice-v2-hardening.md` (luồng đúng + độ trễ thấp nhất; 1–3 test/task; chỉ review C2, C5; gold cho nhãn mới ≤ 60 câu).
+
 ## Global Constraints
 
 - Mọi ràng buộc chung của plan `2026-10-19-voice-v2-hardening.md` (mục Global Constraints) áp dụng nguyên văn: venv, GPU, không cài gói, NFS, commit, không push, Co-Authored-By.

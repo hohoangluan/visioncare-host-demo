@@ -10,6 +10,36 @@
 
 **Spec:** `docs/superpowers/specs/2026-10-19-voice-v2-hardening-design.md` (đọc kèm `docs/HANDOFF_VOICE_V2.md` và spec v2 `docs/superpowers/specs/2026-10-19-voice-server-architecture-design.md`).
 
+## CHẾ ĐỘ NHANH (người dùng, 2026-10-19 — ĐÈ lên mọi chỗ khác trong plan này và plan 2)
+
+> "mẫu vừa vừa thôi, đủ sài thôi 200-300 mẫu" · "sử dụng thêm vad cho tối ưu khâu stt" ·
+> "dùng thời gian tối thiểu cho flow đúng ... không cần kỹ test quá nhiều" ·
+> "flow đúng và tối ưu nhanh nhất về latency"
+
+- **Ưu tiên duy nhất:** luồng chạy đúng đầu-cuối + độ trễ thấp nhất. Mọi thứ khác cắt.
+- **Tập gold:** 200–300 dòng TỔNG (dev+test, gồm biến thể STT một mức SNR 10 dB). Chỉ số đích
+  "≥ 96%" giữ làm hướng, không chặn tiến độ; Task 4 tối đa 3 vòng chỉnh prompt.
+- **Test:** mỗi task chỉ 1–3 test cho hành vi chính (luồng đúng + một ca an toàn quan trọng),
+  bỏ các test phụ liệt kê trong task. Không làm yếu test cũ đang có.
+- **Review:** chỉ review (sonnet) các task rủi ro: 6 (an toàn làn D), 9 (xác thực), 10 (WS
+  phiên), 15 (luồng đầy đủ); plan 2: C2, C5. Task khác: implementer tự kiểm + chạy toàn bộ test
+  rồi commit, controller xem nhanh `git diff --stat`. Một review cuối toàn nhánh.
+- **Cắt / thu nhỏ:** Task 14 chỉ giữ turn id trong log + `turns.jsonl` (cue clips làm nếu còn
+  thời gian); Task 16 chỉ chạy N=1 và N=4; Task 13 chỉ phần huỷ khi kính ngắt; Task 17 chỉ
+  `FIRMWARE_ENDPOINTS.md`, test ffmpeg skip, bàn giao (Dockerfile/README cập nhật tối thiểu).
+- **Thêm Task 2b (VAD cho STT)** ngay sau Task 2 — xem dưới.
+
+### Task 2b: VAD (Silero qua sherpa-onnx) cho đường STT
+
+**Files:** Create `VH/pipeline/vad.py`; Modify `VH/pipeline/stt_stream.py`, `VH/pipeline/turn.py`, `VH/config.py`; Test `VH/tests/test_v2_units.py`.
+
+**Interfaces / hành vi:**
+- Model: `silero_vad.onnx` của sherpa-onnx (tải file model vào `VH/models/vad/`, KHÔNG cài gói; `sherpa_onnx.VoiceActivityDetector`/`VadModelConfig` có sẵn trong venv — kiểm trước, thiếu thì BLOCKED). CPU là đúng ở đây (model ~2 MB, < 1 ms/khung) — không vi phạm luật GPU vì đây không phải lùi từ GPU.
+- `vad.Segmenter` chạy trên PCM 16 kHz khi audio tới: biết `speech_started`, `speech_ended_at` (im lặng ≥ `VAD_END_SILENCE_S`, mặc định 0,35 s), và đoạn có tiếng.
+- Dùng cho độ trễ: (1) partial STT chỉ chạy khi có tiếng mới; (2) bản ghi cuối chỉ giải đoạn có tiếng (cắt im lặng đầu/cuối — giải nhanh hơn, bớt chữ rác do nhiễu); (3) **chốt sớm**: khi VAD báo hết câu mà nút còn giữ, chạy luôn STT cuối + intent + chạy trước làn A/D (không tác dụng phụ) trên đoạn đó; lúc nhả nút nếu không có tiếng mới thì dùng thẳng kết quả → bỏ `final_stt` + `intent` khỏi đường chờ; (4) cả lượt không có tiếng → `no_speech` ngay khi nhả nút, không gọi Gemma.
+- Đo trước/sau trên `tools/bench_live.py` (cột `final_stt`, `intent`, nhả nút → tiếng đầu) và WER/intent trên các biến thể STT của tập gold: chỉ giữ khi nhanh hơn và không làm tụt độ chính xác (memory người dùng: chỉ đổi khi đo ra nhanh hơn).
+- [ ] Test: `test_vad_trims_silence`, `test_early_final_reused_on_release`, `test_no_speech_skips_classifier`. Cài → PASS → đo → Commit (ghi số đo trong commit message).
+
 ## Global Constraints
 
 - Repo server kính: `SeeVia_system/visioncare-host-demo` (gọi tắt `VH`), nhánh `voice-v2-hardening`. App server: `SeeVia_system/app-demo-backend/server` (gọi tắt `AB`, repo git riêng — tạo nhánh `voice-v2-hardening` ở đó trước khi sửa). Mỗi task một commit; KHÔNG push. Cuối commit message thêm dòng `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
