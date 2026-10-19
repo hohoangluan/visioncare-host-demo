@@ -173,6 +173,44 @@ def value_prob(choice: dict, key: str) -> float | None:
     return math.exp(total) if hit else None
 
 
+def prefix_prob(choice: dict, upto: int) -> float | None:
+    """Xác suất của `upto` ký tự đầu của câu trả lời = tích exp(logprob) các token phủ lên
+    đoạn đó (token nằm vắt qua ranh giới được tính). Dùng cho nhãn ghép "intent/mode":
+    độ tin cậy của intent không bị chia nhỏ bởi phần mode đứng sau."""
+    items = (choice.get("logprobs") or {}).get("content")
+    if not items or upto <= 0:
+        return None
+    pos, total, hit = 0, 0.0, False
+    for it in items:
+        if pos >= upto:
+            break
+        lp = it.get("logprob")
+        if lp is None:
+            return None
+        total += lp
+        hit = True
+        pos += len(it.get("token", ""))
+    return math.exp(total) if hit else None
+
+
+async def generate_choice(prompt: str, choices: list[str], max_tokens: int = 8, sep: str = "/") -> tuple[str, float | None]:
+    """Chọn MỘT chuỗi trong `choices` bằng `structured_outputs: {choice}` của vLLM.
+
+    Trả (chuỗi, xác suất phần trước `sep` đầu tiên — tức nhãn chính, hoặc None khi không có
+    logprobs). Đo 2026-10-19 trên llm.uit.edu.vn: chỉ khoá `structured_outputs` MỚI ép đúng tập
+    chọn; `guided_choice` và `extra_body` bị server lờ đi (trả "Hello!" cho tập {alpha,beta}).
+    Sinh ~4 token thay vì ~24 của JSON ba trường, nên nhanh hơn nhiều (decode ~8 ms/token).
+    """
+    choice = await complete_raw(
+        [user_message(prompt)], max_tokens=max_tokens, temperature=0.0,
+        logprobs=True, top_logprobs=1, structured_outputs={"choice": choices},
+    )
+    text = (choice["message"].get("content") or "").strip()
+    if text not in choices:
+        raise LLMError(f"Gemma không trả đúng nhãn: {text[:80]!r}")
+    return text, prefix_prob(choice, text.index(sep) if sep in text else len(text))
+
+
 _JSON_BLOCK = re.compile(r"\{.*\}", re.DOTALL)
 
 

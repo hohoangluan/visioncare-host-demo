@@ -378,6 +378,8 @@ EARLY_CLASSIFY_SKIP_INFLIGHT = get("EARLY_CLASSIFY_SKIP_INFLIGHT", "1") != "0"
 # Bộ phân loại intent (`pipeline/intent_classifier.py`): "auto" = Gemma rồi Clef
 # dự phòng, "gemma", "clef". Số đo so sánh nằm trong module đó.
 INTENT_BACKEND = get("INTENT_BACKEND", "auto")
+# Định dạng đầu ra của Gemma: "choice" (nhãn ngắn, Task 4c) hoặc "json" (ba trường, bản cũ).
+INTENT_FORMAT = get("INTENT_FORMAT", "choice")
 INTENT_LLM_TIMEOUT_S = float(get("INTENT_LLM_TIMEOUT_S", "0.8"))
 # Trần chờ intent cuối (cả lượt dự phòng); quá trần thì luật từ khoá / làn chat.
 INTENT_DECIDE_TIMEOUT_S = float(get("INTENT_DECIDE_TIMEOUT_S", "1.5"))

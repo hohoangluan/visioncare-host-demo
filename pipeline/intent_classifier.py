@@ -36,6 +36,15 @@ _SCHEMA = {
     "required": ["intent", "ocr_mode", "needs_web"],
 }
 
+_OCR_MODES = ("read", "summarize", "reread", "raw", "specialized")
+
+# Đầu ra dạng nhãn (Task 4c): intent là MỘT lựa chọn trong LABELS (~4 token thay vì ~24 của JSON
+# ba trường, decode ~8 ms/token). `ocr_mode` / `needs_web` chỉ có nghĩa với ocr / chat nên chỉ hỏi
+# thêm một lượt nhãn ngắn khi đúng intent đó (hỏi gộp một lượt song song thì Gemma gần như không
+# bao giờ trả "web": 0/10 so với 10/10 của JSON, đo 2026-10-19).
+_WEB_TAIL = "Trường needs_web của câu này là true (web) hay false (no_web)? Trả web hoặc no_web."
+_MODE_TAIL = "Trả ocr_mode (read/summarize/reread/raw/specialized)."
+
 _PREFIX = (
     "Phân loại câu lệnh thoại của người khiếm thị đeo kính hỗ trợ vào ĐÚNG MỘT nhãn.\n"
     + "\n".join(f"{k}: {v}" for k, v in LABELS.items())
@@ -88,11 +97,22 @@ def prefix_messages() -> list[dict]:
     return [llm.user_message(_PREFIX)]
 
 
-async def _gemma(text: str, device: dict | None) -> ClefResult | None:
-    started = time.monotonic()
+async def _choice_reply(text: str, device: dict | None) -> dict:
+    base = _PREFIX + _context(device) + f'Câu lệnh: "{text}"\n'
+    intent, prob = await llm.generate_choice(base + "Trả nhãn.", list(LABELS))
+    mode, web = "read", False
+    if intent == "ocr":
+        mode, _ = await llm.generate_choice(base + _MODE_TAIL, list(_OCR_MODES))
+    elif intent == "chat":
+        answer, _ = await llm.generate_choice(base + _WEB_TAIL, ["web", "no_web"])
+        web = answer == "web"
+    return {"intent": intent, "ocr_mode": mode, "needs_web": web, "_label_prob": prob}
+
+
+async def _json_reply(text: str, device: dict | None, started: float) -> dict | None:
     prompt = _PREFIX + _context(device) + f'Câu lệnh: "{text}"\nTrả JSON.'
     try:
-        reply = await asyncio.wait_for(
+        return await asyncio.wait_for(
             llm.generate_json(prompt, _SCHEMA, max_tokens=40, logprobs=True),
             config.INTENT_LLM_TIMEOUT_S,
         )
@@ -100,6 +120,25 @@ async def _gemma(text: str, device: dict | None) -> ClefResult | None:
         raise
     except Exception as exc:  # noqa: BLE001
         logger.warning("Gemma phân loại lỗi sau %.2fs: %r", time.monotonic() - started, exc)
+        return None
+
+
+async def _gemma(text: str, device: dict | None) -> ClefResult | None:
+    started = time.monotonic()
+    if config.INTENT_FORMAT == "choice":
+        try:
+            reply = await asyncio.wait_for(_choice_reply(text, device), config.INTENT_LLM_TIMEOUT_S)
+        except asyncio.CancelledError:
+            raise
+        except llm.LLMError as exc:  # server không hiểu structured_outputs -> JSON như cũ
+            logger.warning("Gemma nhãn lỗi (%r), dùng JSON", exc)
+            reply = await _json_reply(text, device, started)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Gemma phân loại lỗi sau %.2fs: %r", time.monotonic() - started, exc)
+            return None
+    else:
+        reply = await _json_reply(text, device, started)
+    if reply is None:
         return None
     intent = reply.get("intent")
     if intent not in LABELS:
@@ -114,7 +153,7 @@ async def _gemma(text: str, device: dict | None) -> ClefResult | None:
         prob = 1.0
     result = ClefResult(
         intent=intent, confidence=prob,
-        ocr_mode=mode if mode in ("read", "summarize", "reread", "raw", "specialized") else "read",
+        ocr_mode=mode if mode in _OCR_MODES else "read",
         needs_web=bool(reply.get("needs_web")), seconds=time.monotonic() - started,
         source="gemma",
     )

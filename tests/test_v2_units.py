@@ -259,6 +259,7 @@ def test_classifier_prefers_gemma_and_falls_back_to_clef(monkeypatch):
         return clef.ClefResult("nav_stop", 0.9)
 
     monkeypatch.setattr(intent_classifier.clef, "classify", clef_ok)
+    monkeypatch.setattr(config, "INTENT_FORMAT", "json")
     monkeypatch.setattr(llm, "generate_json", gemma_ok)
     assert asyncio.run(intent_classifier.classify("tắt đi", {"music_playing": True})).intent == "music_stop"
     monkeypatch.setattr(llm, "generate_json", gemma_down)
@@ -584,6 +585,7 @@ def test_label_prob_missing_logprobs_is_one(monkeypatch):
                 "logprobs": None}
 
     monkeypatch.setattr(llm.client, "complete_raw", fake_raw)
+    monkeypatch.setattr(config, "INTENT_FORMAT", "json")
     monkeypatch.setattr(intent_classifier, "_warned_no_logprobs", False)
     res = asyncio.run(intent_classifier._gemma("tắt đi", None))
     assert res.confidence == 1.0 and res.source == "gemma"
@@ -616,3 +618,48 @@ def test_timeout_prefers_uxga_fallback():
     assert ocr_live.pick_image(None, b"uxga", b"vga") == b"uxga"
     assert ocr_live.pick_image(b"new", b"uxga", b"vga") == b"new"
     assert ocr_live.pick_image(None, None, b"vga") == b"vga"
+
+def test_choice_format_confidence_and_aux_calls(monkeypatch):
+    """Task 4c: intent là một nhãn; confidence = xác suất nhãn; chỉ chat/ocr mới hỏi thêm một lượt."""
+    import math
+    from models import llm
+    from pipeline import intent_classifier
+
+    monkeypatch.setattr(config, "INTENT_FORMAT", "choice")
+    asked = []
+
+    def choice(content, lps):
+        return {"message": {"content": content},
+                "logprobs": {"content": [{"token": t, "logprob": lp} for t, lp in lps]}}
+
+    async def fake_raw(messages, max_tokens=None, **extra):
+        asked.append(extra["structured_outputs"]["choice"])
+        prompt = messages[0]["content"]
+        if "Trả nhãn." in prompt:
+            return choice("music_play", [("music", -0.2), ("_", 0.0), ("play", -0.3)])
+        raise AssertionError("music_play không được hỏi thêm")
+
+    monkeypatch.setattr(llm.client, "complete_raw", fake_raw)
+    res = asyncio.run(intent_classifier._gemma("phát nhạc", None))
+    assert res.intent == "music_play" and res.confidence == pytest.approx(math.exp(-0.5))
+    assert len(asked) == 1
+
+    async def ocr_raw(messages, max_tokens=None, **extra):
+        if "Trả nhãn." in messages[0]["content"]:
+            return choice("ocr", [("ocr", -0.1)])
+        return choice("raw", [("raw", -0.1)])
+
+    monkeypatch.setattr(llm.client, "complete_raw", ocr_raw)
+    res = asyncio.run(intent_classifier._gemma("đọc từng chữ", None))
+    assert (res.intent, res.ocr_mode, res.needs_web) == ("ocr", "raw", False)
+
+
+def test_choice_rejects_label_outside_set(monkeypatch):
+    from models import llm
+
+    async def fake_raw(messages, max_tokens=None, **extra):
+        return {"message": {"content": "Hello!"}, "logprobs": None}
+
+    monkeypatch.setattr(llm.client, "complete_raw", fake_raw)
+    with pytest.raises(llm.LLMError):
+        asyncio.run(llm.generate_choice("p", ["a", "b"]))

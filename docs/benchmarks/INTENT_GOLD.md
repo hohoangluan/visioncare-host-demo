@@ -56,3 +56,32 @@ McNemar mới vs mốc: 8/0, p = 0,0078.
 
 ### Hedge (Step 4b)
 Không bật (`INTENT_HEDGE_AFTER_S` không tồn tại trong nhánh này; không thêm). Trên dev p90 chỉ cách p50 ~8 ms (273 vs 265): đuôi đã sát, không có gì để hedge cắt, mà mỗi hedge tăng request.
+
+## Task 4c — tốc độ (2026-10-19, Gemma UIT, concurrency 1, --params)
+
+### Trục 0: phân rã độ trễ (stream, 12 câu, prompt ~726 token)
+TTFT ~95 ms (mạng ~15 + prefill; lượt đầu 174 ms), tổng ~270-295 ms, `completion_tokens` 22-26. Phần còn lại ~180 ms = decode ~8 ms/token cho JSON 3 trường. Server không trả `cached_tokens`; prompt_tokens không đổi giữa các lượt nên prefix cache coi như trúng (TTFT lượt đầu cao hơn ~75 ms). => đòn bẩy duy nhất là SỐ TOKEN SINH RA; prefill/mạng đã sát.
+
+### Các trục
+- Trục 3 (max_tokens sát): vô nghĩa, guided decoding tự dừng ở 24 token (max 40 không bao giờ chạm).
+- Trục 2 (stream + dừng sớm): không thử, vì JSON phải đi hết khoá `ocr_mode`/`needs_web` mới đóng; đổi trục 1 đã gom được toàn bộ lợi ích.
+- Trục 1 (nhãn một trường): server UIT chỉ ép đúng tập chọn khi gửi `structured_outputs: {"choice": [...]}`; `guided_choice` và `extra_body` bị LỜ (trả "Hello!"). Intent là một nhãn trong LABELS (~4 token). Hỏi gộp `ocr_mode`/`needs_web` vào nhãn ("chat/web", "ocr/raw"): đuôi gợi ý trong prompt làm intent tụt 0,956 -> 0,82-0,92; bỏ gợi ý thì Gemma không bao giờ trả "/web". Hỏi gộp một lượt song song: "web" 0/10. Chốt: lượt 1 = intent; chỉ khi intent là `chat` hoặc `ocr` mới hỏi thêm một lượt nhãn ngắn (web/no_web hoặc chế độ chữ).
+- Đuôi prompt "Trả JSON." dùng cho lượt nhãn: acc 0,138 (hỏng). Đuôi "Trả nhãn." là bản chốt.
+
+### A/B xen kẽ (gold_dev, 2 lượt mỗi bên; A = JSON Task 4, B = nhãn)
+| | acc | p50 | p90 | action_fp (không cổng / 0,999) |
+|---|---|---|---|---|
+| A lượt 1 | 0,956 | 262 | 271 | 1 / 1 |
+| B lượt 1 | 0,938 | 79 | 134 | 2 / 0 |
+| A lượt 2 | 0,956 | 261 | 272 | 1 / 0 |
+| B lượt 2 | 0,944 | 79 | 131 | 2 / 0 |
+
+Theo nhóm intent (B lượt 1): intent khác chat/ocr p50 75 ms, p90 82; chat p50 36->124 ms (thêm một lượt), ocr 9->132. McNemar A vs B: a_only 2-3, b_only 0 (p 0,25-0,5, không có ý nghĩa). Confidence: <0,9 có 4 câu (A 2), <0,999 có 18 (A 12) — phân bố hơi thấp hơn.
+Chi phí: `needs_web` đúng 18-20/29 (A 23-24/29, B dự đoán web 19 lần so gold 10 — thiên về tra web); `ocr_mode` đúng 6/8 (A 9/9). Đây là phần thua rõ nhất của định dạng mới.
+
+gold_test (một lần, --gate 0,999): B acc 0,925, p50 81, p90 136, FP 0, ask_rate 0,128; A chạy lại cùng lúc acc 0,944, p50 262, p90 274, FP 0, ask_rate 0,025. McNemar A vs B 3/1 (p 0,625). Ghi nhận: tỉ lệ hỏi lại làn D tăng ~5 lần.
+
+### Trục 4 (chi phí logprobs): giữ logprobs (cổng làn D cần); với nhãn ~4 token chi phí tuyệt đối nhỏ hơn +8-9 ms của Task 3 (không đo riêng).
+
+### Kết luận
+Giữ định dạng nhãn (`config.INTENT_FORMAT=choice`, đặt `json` để quay về bản cũ): p50 262 -> 79 ms (-70%), p90 271 -> ~132 ms. Rủi ro đã biết: acc dev -1,2 đến -1,8 điểm và test -1,9 điểm (đều không có ý nghĩa thống kê), ask_rate tăng, `needs_web`/`ocr_mode` kém hơn. Nếu cần chặt hơn: chạy lượt phụ bằng JSON cũ cho chat/ocr (chat/ocr giữ ~260 ms) hoặc tinh chỉnh prompt lượt phụ.
