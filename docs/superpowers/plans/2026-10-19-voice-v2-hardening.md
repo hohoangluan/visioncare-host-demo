@@ -48,7 +48,7 @@
 - GPU dùng chung 8×2080 Ti: chọn GPU trống bằng `nvidia-smi --query-gpu=index,memory.used --format=csv,noheader`; OOM thì đổi GPU, **không lùi về CPU**.
 - Không dùng `pkill -f` theo mẫu có số cổng (khớp cả shell); tắt server bằng `fuser -k <port>/tcp`.
 - NFS `/workingspace_aiclub` từng bị quota cắt file âm thầm: sau khi ghi file > 64 KB, kiểm tra kích thước (`stat -c %s`).
-- 9router (`http://localhost:20128/v1`, khoá `9ROUTER_API_KEY` và model `9ROUTER_MODEL=cx/gpt-6.1-sol` trong `SeeVia_system/.env`) **chỉ dùng trong `tools/`**, không bao giờ trong code runtime của server. Không in khoá ra log.
+- 9router (`http://localhost:20128/v1`, khoá `NINE_ROUTER_API_KEY` và model `NINE_ROUTER_MODEL=cx/gpt-6.1-sol` trong `SeeVia_system/.env`) **chỉ dùng trong `tools/`**, không bao giờ trong code runtime của server. Không in khoá ra log.
 - Mọi thay đổi chạm đường chờ phải kèm số đo p50/p90 trước/sau cùng điều kiện, ghi trong commit message hoặc docstring như lệ hiện tại (`pipeline/intent_classifier.py`). Thay đổi prompt Gemma: không tăng p50 quá +10 ms.
 - Code mới theo phong cách hiện có: docstring/chú thích tiếng Việt, giải thích "vì sao", số đo kèm ngày.
 - Bí mật: không đưa token/khoá vào code, fixture, log, commit. Biến mới thêm vào `config.py` (mục "Voice server v2") và `.env.example` với giá trị trống.
@@ -74,7 +74,7 @@
 
 **Interfaces:**
 - Produces:
-  - `sol.ask_json(system: str, user: str, schema: dict, effort: str = "high", timeout: float = 120) -> dict` — đọc `9ROUTER_API_KEY/9ROUTER_API_URL/9ROUTER_MODEL` từ `SeeVia_system/.env` (đường dẫn tương đối từ `VH/..`), gọi `/chat/completions` với `reasoning_effort`, `response_format` json_schema; thử lại 4 lần, backoff 4 s; trả dict đã parse. sol trả một tool call/response và không kèm text — dùng `response_format`, KHÔNG dùng tools.
+  - `sol.ask_json(system: str, user: str, schema: dict, effort: str = "high", timeout: float = 120) -> dict` — đọc `NINE_ROUTER_API_KEY/NINE_ROUTER_API_URL/NINE_ROUTER_MODEL` từ `SeeVia_system/.env` (đường dẫn tương đối từ `VH/..`), gọi `/chat/completions` với `reasoning_effort`, `response_format` json_schema; thử lại 4 lần, backoff 4 s; trả dict đã parse. sol trả một tool call/response và không kèm text — dùng `response_format`, KHÔNG dùng tools.
   - `sol.ask_many(jobs: list[tuple[str,str,dict]], effort: str, concurrency: int = 6) -> list[dict | None]`.
   - Dòng gold (mọi file `gold_*.jsonl`), khoá cố định:
     `{"id": str, "group": str, "text": str, "source_text": str, "variant": "clean"|"stt_snr20"|"stt_snr10"|"stt_snr5", "device": {"music_playing": bool, "navigating": bool, "alerting": bool, "ride_quote_pending": bool}, "label": <17 nhãn của models.clef.LABELS>, "ocr_mode": "read"|"summarize"|"reread"|"raw"|"specialized", "needs_web": bool, "params": {"contact_name"?: str, "destination"?: str, "song"?: str}, "label_source": "agree"|"sol_adjudicated"|"user", "origin": "eval"|"train"|"suspect"|"rejected"|"sol_gen"}`

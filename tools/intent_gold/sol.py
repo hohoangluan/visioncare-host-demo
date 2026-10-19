@@ -51,8 +51,8 @@ def _env() -> dict[str, str]:
 def _config() -> tuple[str, str, str]:
     env = _env()
     try:
-        return (env["9ROUTER_API_URL"].rstrip("/"), env["9ROUTER_API_KEY"],
-                env["9ROUTER_MODEL"])
+        return (env["NINE_ROUTER_API_URL"].rstrip("/"), env["NINE_ROUTER_API_KEY"],
+                env["NINE_ROUTER_MODEL"])
     except KeyError as exc:
         raise SolError(f"thiếu {exc.args[0]} trong {ENV_PATH}") from None
 

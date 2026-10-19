@@ -13,7 +13,7 @@ Cloudflare đến logic, độ chính xác", với hai tiêu chí, theo thứ t�
 2. **Độ chính xác cao nhất** — "tốt nhất, chính xác nhất".
 
 Được phép dùng `cx/gpt-6.1-sol` qua 9router (local, `http://localhost:20128/v1`, khoá
-trong `SeeVia_system/.env`: `9ROUTER_API_KEY`, `9ROUTER_MODEL`) để **tạo tập gold** cho
+trong `SeeVia_system/.env`: `NINE_ROUTER_API_KEY`, `NINE_ROUTER_MODEL`) để **tạo tập gold** cho
 việc chỉnh prompt Gemma. Mức reasoning do builder chọn.
 
 ## 2. Mục tiêu, không làm, phản mục tiêu
