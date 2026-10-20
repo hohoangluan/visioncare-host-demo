@@ -310,7 +310,7 @@ class DeviceSession:
         await self._cancel_work(reason)
 
     # ---------- huỷ ----------
-    async def _cancel_work(self, reason: str, keep_nav: bool = False) -> None:
+    async def _cancel_work(self, reason: str, keep_nav: bool = False, keep_results: bool = False) -> None:
         """Huỷ lượt + live đang chạy, rồi tăng thế hệ & huỷ lệnh chờ làn D.
 
         `keep_nav`: lượt mới/`cancel` của nút bấm KHÔNG được tắt cảnh báo vật cản — người
@@ -318,7 +318,8 @@ class DeviceSession:
         nav_stop, đóng socket hoặc phiên bị thay. OCR live thì vẫn bị lượt mới huỷ.
         """
         tasks = []
-        self._results.clear()  # bấm nút/huỷ/ngắt: người dùng đã chuyển sang việc khác, bỏ câu kết quả chưa đọc
+        if not keep_results:
+            self._results.clear()  # bấm nút/huỷ/ngắt: người dùng đã chuyển sang việc khác, bỏ câu kết quả chưa đọc
         if self._result_task is not None:
             self._result_task.cancel()
             tasks.append(self._result_task)
@@ -363,8 +364,8 @@ class DeviceSession:
 
     def _on_call_button(self, kind: str, frame: dict) -> None:
         call = calls.by_device(self.device)
-        if call is None or call.session is not self or str(frame.get("call", call.call_id)) != call.call_id:
-            return
+        if call is None or call.session is not self:
+            return  # mỗi kính một cuộc gọi: không so id (id tạm `local-…` đổi sang id AB sau `bind`)
         if kind == "call_hangup":
             task = asyncio.get_running_loop().create_task(call.hangup("glasses_hangup", by="glasses"))
         elif call.state == call_bridge.RINGING_IN:
@@ -383,7 +384,9 @@ class DeviceSession:
             live = self._live_session
             if live is not None and live.mode == "nav" and not live.closed.is_set():
                 self._nav_suspended = True
-            await self._cancel_work("cuộc gọi")  # huỷ lượt/câu đang đọc + live; kênh 0x02 chỉ còn cuộc gọi
+            self._results = collections.deque(r for r in self._results if not r[0].startswith("call-"))  # "đang gọi" đã lỗi thời
+            # huỷ lượt/câu đang đọc + live; kênh 0x02 chỉ còn cuộc gọi. Hàng đợi câu/tin xếp sẵn được GIỮ, đọc sau cúp.
+            await self._cancel_work("cuộc gọi", keep_results=True)
         elif call.state == call_bridge.ENDED:
             if self._nav_suspended:
                 await self._resume_nav(None)
@@ -717,6 +720,7 @@ def _on_call_created(call) -> None:
     """`calls.create` (có thể từ thread nền): gắn cuộc gọi vào phiên WS của kính, trên event loop của phiên."""
     session = session_for(call.device)
     if session is not None:
+        call.loop = session._evloop  # để hangup_threadsafe/discard từ thread nền luôn đi qua loop của phiên
         session._evloop.call_soon_threadsafe(session._attach_call, call)
 
 

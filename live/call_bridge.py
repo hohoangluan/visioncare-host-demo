@@ -64,7 +64,7 @@ TO_RELATIVE, TO_GLASSES = "to_relative", "to_glasses"
 FRAME_BYTES = 640  # 20 ms PCM16 16 kHz mono
 _BLOCK = adpcm.BLOCK_ALIGN
 _STEP, _INDEX, _MAX_INDEX = adpcm._STEP_TABLE, adpcm._INDEX_TABLE, adpcm._MAX_INDEX
-_QUEUE_MAX = 50  # 1 s: đầy thì bỏ khung CŨ nhất (giữ độ trễ thấp hơn là giữ đủ tiếng)
+_QUEUE_MAX = 10  # 200 ms: đầy thì bỏ khung CŨ nhất (giữ độ trễ thấp hơn là giữ đủ tiếng)
 
 AudioSender = Callable[[bytes], Awaitable[None]]
 StateSender = Callable[[dict], Awaitable[None]]
@@ -129,6 +129,7 @@ class Call:
         self.direction = direction
         self.state = RINGING_IN if direction == TO_GLASSES else RINGING_OUT
         self.end_reason = ""
+        self.emergency = False
         self.media_token = secrets.token_urlsafe(16)  # một lần; AB chỉ chuyển, VH kiểm khi app mở WS
         self.expires_at = time.monotonic() + config.CALL_RING_TIMEOUT_S + config.CALL_TOKEN_GRACE_S
         self.session = None  # DeviceSession đang giữ đầu kính
@@ -142,7 +143,6 @@ class Call:
         self._tasks: set[asyncio.Task] = set()
         self._timers: list[tuple[str, asyncio.TimerHandle]] = []
         self._answering = False
-        self._muted = False
         # kính -> app
         self._g_rem = b""  # byte ADPCM lẻ chưa đủ một khối
         self._g_pcm = b""  # PCM chưa đủ một khung 640 B
@@ -171,7 +171,7 @@ class Call:
 
     async def announce(self) -> None:
         """Báo kính trạng thái đầu tiên (`ringing_out|ringing_in`) và cho phiên cập nhật khung mode."""
-        await self._notify_glasses()
+        await self._notify_glasses(self.end_reason if self.state == ENDED else None)
         await self._call_hook()
 
     async def attach_app(self, ws) -> None:
@@ -184,12 +184,12 @@ class Call:
         if self.state == ACTIVE:
             self._start_media()
         await self._send_app_state()
-        ended = self._ended_event()
+        # MỘT waiter `ended` cho cả cuộc gọi (không tạo mới mỗi khung: rò task theo 50 khung/s)
+        ended_task = asyncio.ensure_future(self._ended_event().wait())
         recv = asyncio.ensure_future(ws.receive())
         try:
             while self.state != ENDED:
-                done, _ = await asyncio.wait({recv, asyncio.ensure_future(ended.wait())},
-                                             return_when=asyncio.FIRST_COMPLETED)
+                done, _ = await asyncio.wait({recv, ended_task}, return_when=asyncio.FIRST_COMPLETED)
                 if recv not in done:
                     break
                 msg = recv.result()
@@ -205,6 +205,7 @@ class Call:
             pass
         finally:
             recv.cancel()
+            ended_task.cancel()
             if self.state != ENDED:
                 self.end_soon("peer_disconnect", by="app")
 
@@ -217,7 +218,7 @@ class Call:
         if kind == "hangup":
             await self.hangup("app_hangup", by="app")
         elif kind == "mute":
-            self._muted = frame.get("on") is True  # app tự ngắt mic của nó; ghi lại để debug
+            pass  # app tự ngắt mic của nó: không cần làm gì (khung PCM ngừng tới, đệm tự cạn rồi neo lại)
 
     # ---------- chuyển trạng thái ----------
     async def activate(self) -> None:
@@ -319,7 +320,7 @@ class Call:
             if self._to_glasses is not None:
                 self._to_glasses.put_nowait((now, data))
             return
-        self._jb.push(data, int(self._app_ts))
+        self._jb.push(data, int(self._app_ts))  # seq_ts chỉ để sắp thứ tự; độ trễ do độ sâu đệm quyết định
         self._app_ts += len(data) / 32.0
         if self._jb.playing and self._wake is not None:
             self._wake.set()
@@ -451,7 +452,12 @@ class Call:
 
     def _timer(self, delay: float, fn: Callable[[], Awaitable[None]], tag: str = "ring") -> None:
         loop = self.loop or asyncio.get_running_loop()
-        handle = loop.call_later(delay, lambda: loop.create_task(fn()))
+        def fire() -> None:
+            task = loop.create_task(fn())
+            _bg.add(task)
+            task.add_done_callback(_bg.discard)
+
+        handle = loop.call_later(delay, fire)
         self._timers.append((tag, handle))
 
     def _cancel_timers(self, tag: str | None = None) -> None:
@@ -492,13 +498,14 @@ class CallRegistry:
         # `device_session` đặt: tìm phiên của `call.device` rồi gắn đầu kính (an toàn từ thread nền).
         self.attach_hook: Callable[[Call], None] | None = None
 
-    def create(self, call_id: str | None, device: str, peer: str, direction: str) -> Call:
+    def create(self, call_id: str | None, device: str, peer: str, direction: str, emergency: bool = False) -> Call:
         """Tạo cuộc gọi (gọi được từ thread nền). `call_id=None` = chưa có id của AB (kính gọi đi cần
         `media_token` TRƯỚC khi AB sinh id): dùng `call.media_token` gọi AB rồi `bind(call, id)`.
         Kính đang có cuộc gọi khác -> `GlassesBusy` (AB không chặn hai cuộc gọi trên một kính)."""
         if direction not in (TO_RELATIVE, TO_GLASSES):
             raise ValueError(direction)
         call = Call(call_id or "local-" + secrets.token_hex(6), device, peer, direction)
+        call.emergency = emergency
         with self._lock:
             if device in self._by_device:
                 raise GlassesBusy(device)
@@ -507,7 +514,18 @@ class CallRegistry:
             self._by_token[_token_hash(call.media_token)] = call
         if self.attach_hook is not None:
             self.attach_hook(call)
+        if call.loop is None:
+            # Không có phiên kính để gắn (không có timer chuông trên loop): hạn dự phòng để kính không "bận" mãi.
+            timer = threading.Timer(config.CALL_RING_TIMEOUT_S + config.CALL_TOKEN_GRACE_S, self._expire_unattached, (call,))
+            timer.daemon = True
+            timer.start()
         return call
+
+    def _expire_unattached(self, call: Call) -> None:
+        if call.session is None and call.state in (RINGING_OUT, RINGING_IN):
+            call.end_reason = "timeout"
+            call.state = ENDED
+            self._remove(call)
 
     def bind(self, call: Call, call_id: str, peer: str | None = None) -> None:
         with self._lock:
@@ -517,11 +535,10 @@ class CallRegistry:
         if peer:
             call.peer = peer
 
-    def discard(self, call: Call) -> None:
-        """Bỏ cuộc gọi chưa thành (AB từ chối lúc `start`): không báo AB, không gửi `call_state`."""
-        call.state = ENDED
-        call._cancel_timers()
-        self._remove(call)
+    def discard(self, call: Call, reason: str = "start_failed") -> None:
+        """Bỏ cuộc gọi chưa thành (AB từ chối lúc `start`). Gọi được từ thread nền: đi qua `hangup_threadsafe`
+        (by="ab": không dội AB) nên kính nhận `call_state ended` kèm lý do + phát `mode`, timer/task dọn trên loop."""
+        call.hangup_threadsafe(reason, by="ab")
 
     def _remove(self, call: Call) -> None:
         with self._lock:
@@ -601,7 +618,7 @@ async def _handle_event(body: dict) -> tuple[int, dict]:
             _refuse(device, call_id, "glasses_offline")
             return ok(False)
         try:
-            calls.create(call_id, device, peer, TO_GLASSES)
+            calls.create(call_id, device, peer, TO_GLASSES, emergency=bool(body.get("emergency")))
         except GlassesBusy:  # AB không chặn hai cuộc gọi trên một kính
             _refuse(device, call_id, "busy")
             return ok(False)
@@ -615,10 +632,13 @@ async def _handle_event(body: dict) -> tuple[int, dict]:
         await call.activate()
     elif event in ("call_rejected", "call_missed", "call_ended"):
         outgoing = call.direction == TO_RELATIVE and call.state == RINGING_OUT
+        emergency = call.emergency or bool(body.get("emergency"))  # lời riêng của khẩn cấp do C6 lo
         name = call.peer or "Người thân"
         end = {"call_rejected": "rejected", "call_missed": "missed"}.get(event) or str(reason or "ended")
         await call.hangup(end, by="ab")
-        if outgoing and event == "call_missed":
+        if emergency:
+            pass
+        elif outgoing and event == "call_missed":
             device_session.push_result(device, missed_speech(name), f"call-{call_id}")
         elif outgoing and event == "call_rejected":
             device_session.push_result(device, rejected_speech(name), f"call-{call_id}")

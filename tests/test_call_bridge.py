@@ -159,14 +159,24 @@ def test_audio_app_to_glasses_adpcm(env):
         call = _active_call(env, glasses)
         with env.client.websocket_connect(f"/v2/call?token={call.media_token}") as app_ws:
             assert _app_state(app_ws)["state"] == "active"
-            for i in range(0, len(pcm), 640):
-                app_ws.send_bytes(pcm[i:i + 640])
+            import threading
+
+            def feed():  # theo nhịp 20 ms như app thật (gửi dồn cả giây sẽ bị đệm cắt về target)
+                t = time.monotonic()
+                for i in range(0, len(pcm), 640):
+                    app_ws.send_bytes(pcm[i:i + 640])
+                    t += 0.02
+                    time.sleep(max(0, t - time.monotonic()))
+
+            feeder = threading.Thread(target=feed, daemon=True)
+            feeder.start()
             blocks = b""
             while len(blocks) < 256 * 20:
                 msg = glasses.receive()
                 if msg.get("bytes") is not None:
                     assert msg["bytes"][0] == 0x02 and (len(msg["bytes"]) - 1) % 256 == 0
                     blocks += msg["bytes"][1:]
+            feeder.join()
             got = adpcm.decode_blocks(blocks).tobytes()
             assert _corr(got, pcm) > 0.95  # khung đầu phát đầu tiên, không lệch pha
 
@@ -174,22 +184,163 @@ def test_audio_app_to_glasses_adpcm(env):
 def test_jitter_reorders_and_drops_late():
     jb = JitterBuffer(target_ms=60, max_late_ms=200)
     f = {ts: bytes([ts // 20 + 1]) * 640 for ts in range(0, 200, 20)}
-    now = 10_000.0
     assert jb.pop() is None  # chưa gom đủ
     for ts in (40, 0, 20):  # tới sai thứ tự
-        jb.push(f[ts], ts, now_ms=now + ts)
+        jb.push(f[ts], ts)
     assert jb.playing
     assert [jb.pop(), jb.pop(), jb.pop()] == [f[0], f[20], f[40]]
     # khung 60 mất, 80 tới: giữ nhịp bằng 1 khung im lặng rồi mới tới 80
-    jb.push(f[80], 80, now_ms=now + 80)
-    jb.push(f[100], 100, now_ms=now + 100)
-    jb.push(f[120], 120, now_ms=now + 120)
+    for ts in (80, 100, 120):
+        jb.push(f[ts], ts)
     assert jb.pop() == bytes(640)
     assert [jb.pop(), jb.pop(), jb.pop()] == [f[80], f[100], f[120]]
     assert jb.concealed == 1
-    # khung có ts đã phát qua: bỏ; khung trễ > 200 ms so với nhịp nguồn: bỏ
-    assert jb.push(f[60], 60, now_ms=now + 130) is False and jb.dropped_old == 1
-    assert jb.push(f[140], 140, now_ms=now + 140 + 250) is False and jb.dropped_late == 1
+    # khung có ts đã phát qua (tới quá muộn) hoặc trùng: bỏ
+    assert jb.push(f[60], 60) is False and jb.dropped_old == 1
+    jb.push(f[140], 140)
+    assert jb.push(f[140], 140) is False
+
+
+def _drive(jb, src_period_ms, secs, pause=None):
+    """Mô phỏng đồng hồ ảo: nguồn đẩy 1 khung mỗi `src_period_ms`, kính rút 1 khung mỗi 20 ms.
+    -> (số khung thật nhận được, độ sâu đệm lớn nhất tính theo ms, tick cuối cùng nhận được âm thanh thật)."""
+    real, deepest, last_real = 0, 0.0, -1
+    nxt, seq, t = 0.0, 0, 0.0
+    end = secs * 1000
+    while t < end:
+        while nxt <= t:
+            if not (pause and pause[0] <= nxt < pause[1]):
+                jb.push(bytes([1]) * 640, seq * 20)
+                seq += 1  # bộ đếm tự dựng như Call._app_ts: KHÔNG nhảy theo lúc nguồn ngừng
+            nxt += src_period_ms
+        frame = jb.pop()
+        if frame is not None and any(frame):
+            real += 1
+            last_real = t
+        deepest = max(deepest, jb.buffered_ms)
+        t += 20
+    return real, deepest, last_real
+
+
+def test_jitter_recovers_after_pause_and_drift():
+    # (C1) nguồn ngừng 500 ms giữa chừng rồi nói tiếp: phải nghe lại được tới cuối, không câm vĩnh viễn
+    jb = JitterBuffer(60, 200)
+    real, _, last = _drive(jb, 20, 10, pause=(3000, 3500))
+    assert last >= 9900 and real > 400 and jb.underruns >= 1
+    # nguồn CHẬM 0,5% trong 60 s mô phỏng: vẫn phát tới giây cuối
+    jb = JitterBuffer(60, 200)
+    real, _, last = _drive(jb, 20.1, 60)
+    assert last >= 59900 and real > 2900
+    # (I3) nguồn NHANH 0,5% trong 60 s: độ sâu đệm không vượt target + max_late (trễ không tích luỹ), có bỏ khung cũ
+    jb = JitterBuffer(60, 200)
+    real, deepest, last = _drive(jb, 19.9, 60)
+    assert deepest <= 60 + 200 + 20 and jb.dropped_depth > 0 and last >= 59900
+
+
+def test_call_audio_resumes_after_pause_real_time(monkeypatch):
+    """Call thật (không WS): app ngừng 500 ms rồi gửi tiếp -> khung sau vẫn tới kính; không rò task theo khung."""
+    monkeypatch.setattr(config, "CALL_JITTER_MS", 60)
+    sent = []
+
+    async def run():
+        call = call_bridge.Call("c-rt", DEV, "Mẹ", "to_relative")
+        call.state = ACTIVE
+
+        async def send_audio(b):
+            sent.append((time.monotonic(), len(b)))
+
+        call._send_audio = send_audio
+        call._start_media()
+        frame = _sine(0.02)
+        for _ in range(25):
+            call._on_app_frame(frame)
+            await asyncio.sleep(0.02)
+        n_before = len(sent)
+        await asyncio.sleep(0.5)  # app mute/bỏ mute
+        resume = time.monotonic()
+        for _ in range(25):
+            call._on_app_frame(frame)
+            await asyncio.sleep(0.02)
+        await asyncio.sleep(0.1)
+        after = [t for t, _ in sent if t > resume]
+        call.state = ENDED
+        for t in list(call._tasks):
+            t.cancel()
+        return n_before, len(after)
+
+    n_before, n_after = asyncio.run(run())
+    assert n_before > 10 and n_after > 10
+
+
+def test_attach_app_no_task_growth(env):
+    """(I1) Nhiều khung PCM từ app không được để lại task treo."""
+    import threading
+
+    with env.client.websocket_connect("/v2/session") as glasses:
+        _hello(glasses)
+        call = _active_call(env, glasses)
+        with env.client.websocket_connect(f"/v2/call?token={call.media_token}") as app_ws:
+            assert _app_state(app_ws)["state"] == "active"
+            counts = []
+            for k in range(2):
+                for _ in range(300):
+                    app_ws.send_bytes(bytes(640))
+                time.sleep(0.5)
+                counts.append(env.client.portal.call(lambda: len(asyncio.all_tasks())))
+            assert counts[1] - counts[0] <= 2, counts
+
+
+def test_discard_after_ab_rejects_start(env):
+    """(I2) AB từ chối `start` sau `create`: kính nhận ended + lý do, mode.call về null, hết bận, không dội AB."""
+    with env.client.websocket_connect("/v2/session") as glasses:
+        ws_hello_debug = json.dumps({"t": "hello", "device": DEV, "token": TOK, "cue_version": cues.CUE_VERSION,
+                                     "debug": True})
+        glasses.send_text(ws_hello_debug)
+        assert json.loads(glasses.receive_text())["t"] == "hello_ok"
+        call = calls.create(None, DEV, "Mẹ", "to_relative")
+        _until_state(glasses, RINGING_OUT)
+        import threading
+        threading.Thread(target=calls.discard, args=(call, "contact_not_found")).start()  # thread nền như handler làn D
+        assert _until_state(glasses, ENDED)["reason"] == "contact_not_found"
+        modes = []
+        for _ in range(20):
+            msg = glasses.receive()
+            if msg.get("text") and json.loads(msg["text"]).get("t") == "mode":
+                modes.append(json.loads(msg["text"])["call"])
+                if modes[-1] is None:
+                    break
+        assert modes and modes[-1] is None
+        assert calls.by_device(DEV) is None and not env.ab
+
+
+def test_queued_result_survives_call_and_emergency_missed_silent(env):
+    """(a) câu xếp hàng trước `active` được đọc SAU cúp; (c) call_missed khẩn cấp không nói câu thường."""
+    with env.client.websocket_connect("/v2/session") as glasses:
+        _hello(glasses)
+        session = device_session._registry[DEV]
+        call = calls.create("c-em", DEV, "Mẹ", "to_relative", emergency=True)
+        _until_state(glasses, RINGING_OUT)
+        env.client.portal.call(lambda: session._results.append(("m1", "Tin nhắn chờ")))
+        assert _event(env, "call_answered", "c-em").status_code == 200
+        _until_state(glasses, ACTIVE)
+        assert [r[0] for r in session._results] == ["m1"]
+        assert _event(env, "call_missed", "c-em").status_code == 200  # đã active: hangup, không nói gì
+        _until_state(glasses, ENDED)
+        call2 = calls.create("c-em2", DEV, "Mẹ", "to_relative", emergency=True)
+        _until_state(glasses, RINGING_OUT)
+        assert _event(env, "call_missed", "c-em2", emergency=True).status_code == 200
+        _until_state(glasses, ENDED)
+        assert not any(r[1].startswith("Mẹ chưa nghe máy") for r in session._results)
+
+
+def test_unattached_call_expires(monkeypatch):
+    """(b) Call tạo khi kính không có phiên: hết hạn chuông thì kính hết 'bận'."""
+    monkeypatch.setattr(config, "CALL_RING_TIMEOUT_S", 0.1)
+    monkeypatch.setattr(config, "CALL_TOKEN_GRACE_S", 0.1)
+    call = calls.create(None, "dev-nosession", "Mẹ", "to_relative")
+    assert calls.by_device("dev-nosession") is call
+    assert _wait(lambda: calls.by_device("dev-nosession") is None)
+    assert call.state == ENDED
 
 
 def test_glasses_hangup_notifies_ab(env):
