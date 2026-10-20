@@ -174,6 +174,9 @@ TTS_STYLE = get("TTS_STYLE", "tu_nhien")
 VISIONCARE_HOST_URL = get("VISIONCARE_HOST_URL", "http://127.0.0.1:8001")
 VISIONCARE_CLIENT_TOKEN = get("VISIONCARE_CLIENT_TOKEN", "")
 VISIONCARE_DEVICE_ID = get("VISIONCARE_DEVICE_ID", "glasses-123")
+# `user_id` (public_user_id) chủ kính, gửi AB ở các lệnh gọi/nhắn/khẩn cấp (AB kiểm kính có gắn user này không).
+# Các lệnh làn D cũ chỉ gửi device_id nên VH chưa từng biết user; demo ghép glasses-123 -> user-100. Rỗng = chưa cấu hình.
+VISIONCARE_USER_ID = get("VISIONCARE_USER_ID", "")
 
 # Số giây chờ kết quả thật của một action sau khi host trả `202 Accepted`.
 #
@@ -403,3 +406,6 @@ CALL_HALF_DUPLEX_HOLD_MS = int(get("CALL_HALF_DUPLEX_HOLD_MS", "100"))
 CALL_HALF_DUPLEX_DUCK_DB = float(get("CALL_HALF_DUPLEX_DUCK_DB", "20"))
 # Trần khung WS của app (PCM16 20 ms = 640 B; chừa dư cho cụm).
 CALL_MAX_FRAME_BYTES = int(get("CALL_MAX_FRAME_BYTES", "16384"))
+# Số token media gửi AB khi bắt đầu chuỗi khẩn cấp (mỗi lượt gọi trong chuỗi dùng một token; AB cho 1..90).
+# 3 vòng x tối đa 10 người thân = 30. Hết token trước khi hết vòng thì AB kết thúc chuỗi sớm.
+EMERGENCY_MEDIA_TOKENS = int(get("EMERGENCY_MEDIA_TOKENS", "30"))

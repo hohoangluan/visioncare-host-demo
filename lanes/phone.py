@@ -15,6 +15,7 @@ import logging
 import re
 import threading
 import time
+import unicodedata
 from collections.abc import Iterator
 
 from pipeline import device_ctx
@@ -24,8 +25,10 @@ from models import llm
 logger = logging.getLogger("blind_assist")
 
 HANDLERS = {
-    "contact_call": phone.handle_contact,
-    "emergency_call": phone.handle_emergency,
+    # Gọi điện / khẩn cấp đi qua AB + cầu âm thanh (Plan 2); bản cũ (gọi bằng trình gọi của điện thoại)
+    # còn là `phone.handle_contact` / `phone.handle_emergency` (khẩn cấp rơi về đó khi kính chưa có phiên/token riêng).
+    "contact_call": phone.handle_contact_call,
+    "emergency_call": phone.handle_emergency_call,
     "nav_start": navigation.handle_start,
     "nav_stop": navigation.handle_stop,
     "ride_quote": ride.handle_quote,
@@ -281,5 +284,55 @@ def take_pending_confirm(device: str) -> tuple[str, dict] | None:
     with _PENDING_LOCK:
         item = _CONFIRM.pop(device, None)
     if item is None or time.monotonic() - item[2] > _CONFIRM_TTL_S:
+        return None
+    return item[0], item[1]
+
+
+# ── gọi điện: hỏi lại người thân trùng tên / mời nhắn tin khi không nghe máy ─────────────────
+
+_CHOICE: dict[str, tuple[str, list[str], float]] = {}  # device -> (intent, candidates, lúc hỏi)
+_CHOICE_TTL_S = 30.0
+_OFFER: dict[str, tuple[str, dict, float]] = {}  # device -> (intent, params, lúc đề nghị)
+_OFFER_TTL_S = 60.0
+
+
+def _fold(text: str) -> str:
+    """Chữ thường, bỏ dấu và dấu câu: "Mẹ Lan" == "me lan" (STT hay rơi dấu)."""
+    text = unicodedata.normalize("NFD", (text or "").lower().replace("đ", "d"))
+    text = "".join(c for c in text if unicodedata.category(c) != "Mn")
+    return " ".join(re.sub(r"[^\w\s]", " ", text).split())
+
+
+def set_pending_choice(device: str, intent: str, candidates: list[str]) -> None:
+    with _PENDING_LOCK:
+        _CHOICE[device] = (intent, list(candidates), time.monotonic())
+
+
+def take_pending_choice(device: str) -> tuple[str, list[str]] | None:
+    with _PENDING_LOCK:
+        item = _CHOICE.pop(device, None)
+    if item is None or time.monotonic() - item[2] > _CHOICE_TTL_S:
+        return None
+    return item[0], item[1]
+
+
+def match_choice(candidates: list[str], text: str) -> str | None:
+    """Câu trả lời "Bạn muốn gọi ai: A hay B?" -> đúng MỘT người trong `candidates`, không thì None (không gọi bừa)."""
+    said = _fold(text)
+    if len(said) < 2:
+        return None
+    hits = [c for c in candidates if _fold(c) and (_fold(c) in said or said in _fold(c))]
+    return hits[0] if len(hits) == 1 else None
+
+
+def set_pending_offer(device: str, intent: str, params: dict) -> None:
+    with _PENDING_LOCK:
+        _OFFER[device] = (intent, params, time.monotonic())
+
+
+def take_pending_offer(device: str) -> tuple[str, dict] | None:
+    with _PENDING_LOCK:
+        item = _OFFER.pop(device, None)
+    if item is None or time.monotonic() - item[2] > _OFFER_TTL_S:
         return None
     return item[0], item[1]

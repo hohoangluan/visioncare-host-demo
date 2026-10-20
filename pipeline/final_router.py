@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator, Callable
 
 import config
 from lanes import general, ocr_live, phone
+from live import call_bridge
 from live.session import sessions
 from models import search
 from pipeline import device_ctx, image_quality, pending_action, speech
@@ -272,8 +273,18 @@ async def _lane_c(ctx: TurnContext, d: Decision, text: str, params: dict | None 
     return Reply(cues=["nav_alert_on"], live="nav", live_token=session.token, intent=d.intent, lane="C")
 
 
+def _call_blocker(ctx: TurnContext) -> str | None:
+    return call_bridge.unavailable_reason(ctx.device, device_ctx.per_device.get())
+
+
 async def _lane_d(ctx: TurnContext, d: Decision, text: str, params: dict | None = None) -> Reply:
     intent = d.intent
+    if intent == "contact_call":
+        # Gọi điện cần phiên WS + token riêng của kính: chặn TRƯỚC khi hỏi tên / đọc lại để không nói "Đang gọi..." rồi im.
+        # (Khẩn cấp không chặn ở đây: nó rơi về luồng cũ trong handler.)
+        blocked = _call_blocker(ctx)
+        if blocked:
+            return Reply(speech=[blocked], intent=intent, lane="D")
     if params is None:
         params = await _params(ctx, intent, text)
     slot = phone.SLOT.get(intent)
@@ -308,6 +319,29 @@ async def route(ctx: TurnContext, d: Decision, text: str) -> Reply:
             ctx.cancel_speculation()
             return Reply(speech=["Đã huỷ."], intent=intent, lane="D")
         # Câu khác: bỏ lệnh chờ, xử lý như lượt mới.
+
+    # Lượt trước hỏi "Bạn muốn gọi ai: A hay B?": câu này chọn một người (khớp không rõ thì xử lý như lượt mới).
+    choice = phone.take_pending_choice(ctx.device)
+    if choice is not None:
+        intent, candidates = choice
+        picked = phone.match_choice(candidates, text)
+        if picked is not None:
+            ctx.cancel_speculation()
+            # Người dùng tự chọn trong danh sách vừa đọc -> tin cậy; vẫn đọc lại + cửa sổ huỷ như mọi cuộc gọi.
+            d = Decision(intent, source="confirmed", backend="gemma", confidence=1.0)
+            return await _lane_d(ctx, d, text, {phone.SLOT[intent]: picked})
+
+    # Lượt trước hỏi "... chưa nghe máy. Bạn muốn nhắn tin không?"
+    offer = phone.take_pending_offer(ctx.device)
+    if offer is not None:
+        intent, params = offer
+        if phone.is_yes(text) and intent in phone.HANDLERS:
+            ctx.cancel_speculation()
+            d = Decision(intent, source="confirmed", backend="gemma", confidence=1.0)
+            return await _lane_d(ctx, d, text, params)
+        if phone.is_no(text):
+            ctx.cancel_speculation()
+            return Reply(speech=["Đã huỷ."], intent=intent, lane="D")
 
     if not d.intent:
         return Reply(cues=["system_busy"])

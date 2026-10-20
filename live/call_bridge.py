@@ -42,8 +42,23 @@ logger = logging.getLogger("blind_assist")
 
 # Câu cố định (đưa vào `pipeline/phrases.py` để dựng sẵn audio). Câu có tên người thì tổng hợp lúc chạy.
 NEED_OWN_TOKEN = "Kính cần token riêng để gọi điện."
-EMERGENCY_UNANSWERED = "Chưa ai nghe máy cuộc gọi khẩn cấp."
-STATIC_SPEECH: tuple[str, ...] = (NEED_OWN_TOKEN, EMERGENCY_UNANSWERED)
+EMERGENCY_NONE_REACHED = "Chưa liên lạc được người thân nào."  # hết 3 vòng (callback `emergency_exhausted`)
+NEED_UPDATE = "Kính cần cập nhật để gọi điện."  # kính chỉ dùng POST (không có phiên WS): không có kênh âm thanh
+STATIC_SPEECH: tuple[str, ...] = (NEED_OWN_TOKEN, EMERGENCY_NONE_REACHED, NEED_UPDATE)
+
+
+def unavailable_reason(device: str, per_device: bool) -> str | None:
+    """Kính này gọi điện được không? None = được; không thì câu nói cho người dùng.
+
+    Cần phiên `WS /v2/session` (cầu âm thanh 0x05/0x02; kính POST-only không có) VÀ phiên xác thực bằng token riêng
+    của kính (C0): token dùng chung không cho phép AB biết cuộc gọi của kính nào."""
+    from live import device_session  # nhập muộn: device_session nhập module này
+
+    if device_session.session_for(device) is None:
+        return NEED_UPDATE
+    if not per_device:
+        return NEED_OWN_TOKEN
+    return None
 
 
 def incoming_speech(name: str) -> str:
@@ -130,8 +145,11 @@ class Call:
         self.state = RINGING_IN if direction == TO_GLASSES else RINGING_OUT
         self.end_reason = ""
         self.emergency = False
+        # Khẩn cấp: MỘT Call đại diện cả chuỗi AB gọi lần lượt (mỗi người thân một call_id + một token media).
+        self.emergency_id: str | None = None
+        self.ring_window = config.CALL_RING_TIMEOUT_S + config.CALL_TOKEN_GRACE_S
         self.media_token = secrets.token_urlsafe(16)  # một lần; AB chỉ chuyển, VH kiểm khi app mở WS
-        self.expires_at = time.monotonic() + config.CALL_RING_TIMEOUT_S + config.CALL_TOKEN_GRACE_S
+        self.expires_at = time.monotonic() + self.ring_window
         self.session = None  # DeviceSession đang giữ đầu kính
         self.ab_task: asyncio.Task | None = None  # báo AB hangup/answer (nền) — test chờ được
         self.loop: asyncio.AbstractEventLoop | None = None
@@ -167,7 +185,7 @@ class Call:
         self.loop = asyncio.get_running_loop()
         self._send_audio, self._send_state, self._on_state, self.session = send_audio, send_state, on_state, session
         if self.state != ENDED:
-            self._timer(config.CALL_RING_TIMEOUT_S + config.CALL_TOKEN_GRACE_S, self._ring_expired)
+            self._timer(self.ring_window, self._ring_expired)
 
     async def announce(self) -> None:
         """Báo kính trạng thái đầu tiên (`ringing_out|ringing_in`) và cho phiên cập nhật khung mode."""
@@ -254,14 +272,15 @@ class Call:
         """Kết thúc cuộc gọi (idempotent). `by`: glasses|app|server|ab. Báo AB trừ khi chính AB báo."""
         if self.state == ENDED:
             return
+        was_ringing = self.state in (RINGING_OUT, RINGING_IN)
         self.state, self.end_reason = ENDED, reason
         self._cancel_timers()
         calls._remove(self)
         for task in list(self._tasks):
             if task is not asyncio.current_task():
                 task.cancel()
-        if by != "ab" and not self.call_id.startswith("local-"):
-            self.ab_task = self._spawn(self._ab_hangup(reason))
+        if by != "ab" and (self.emergency_id or not self.call_id.startswith("local-")):
+            self.ab_task = self._spawn(self._ab_hangup(reason, was_ringing))
         if self._ended is not None:
             self._ended.set()
         await self._notify_glasses(reason)  # kính trước (đường nhạy trễ), rồi phiên, cuối cùng mới đóng đầu app
@@ -420,9 +439,14 @@ class Call:
         with contextlib.suppress(Exception):
             await asyncio.wait_for(ws.close(1000), 1.0)
 
-    async def _ab_hangup(self, reason: str) -> None:
+    async def _ab_hangup(self, reason: str, was_ringing: bool = False) -> None:
         try:
-            await _ab_post(self.device, f"api/v1/service/call/{self.call_id}/hangup", {"reason": reason})
+            if self.emergency_id and was_ringing:
+                # Bấm nút / rớt phiên khi chuỗi còn đang chuông: dừng CẢ chuỗi (cuộc đang chuông AB tự huỷ),
+                # không chỉ cúp một cuộc rồi để AB gọi tiếp người kế.
+                await _ab_post(self.device, f"api/v1/service/emergency/{self.emergency_id}/stop", {})
+            elif not self.call_id.startswith("local-"):
+                await _ab_post(self.device, f"api/v1/service/call/{self.call_id}/hangup", {"reason": reason})
         except Exception as exc:  # noqa: BLE001 - AB tự đánh `ended`/`missed` theo hạn chuông
             logger.warning("call %s: báo AB hangup lỗi (%r)", self.call_id, exc)
 
@@ -484,7 +508,7 @@ async def _ab_post(device: str, path: str, payload: dict) -> dict:
 
     def run() -> dict:
         with device_ctx.use(device, per_device=True):
-            return visioncare_client.call_service_api(path, payload)
+            return visioncare_client.call_service_api(path, payload, bare=True)
 
     return await asyncio.to_thread(run)
 
@@ -506,6 +530,9 @@ class CallRegistry:
             raise ValueError(direction)
         call = Call(call_id or "local-" + secrets.token_hex(6), device, peer, direction)
         call.emergency = emergency
+        if emergency:  # chuỗi tối đa EMERGENCY_MEDIA_TOKENS lượt x chuông: cửa sổ chuông/token dài tương ứng
+            call.ring_window = config.CALL_RING_TIMEOUT_S * config.EMERGENCY_MEDIA_TOKENS + config.CALL_TOKEN_GRACE_S
+            call.expires_at = time.monotonic() + call.ring_window
         with self._lock:
             if device in self._by_device:
                 raise GlassesBusy(device)
@@ -516,7 +543,7 @@ class CallRegistry:
             self.attach_hook(call)
         if call.loop is None:
             # Không có phiên kính để gắn (không có timer chuông trên loop): hạn dự phòng để kính không "bận" mãi.
-            timer = threading.Timer(config.CALL_RING_TIMEOUT_S + config.CALL_TOKEN_GRACE_S, self._expire_unattached, (call,))
+            timer = threading.Timer(call.ring_window, self._expire_unattached, (call,))
             timer.daemon = True
             timer.start()
         return call
@@ -526,6 +553,15 @@ class CallRegistry:
             call.end_reason = "timeout"
             call.state = ENDED
             self._remove(call)
+
+    def add_tokens(self, call: Call, count: int) -> list[str]:
+        """Chuỗi khẩn cấp: sinh thêm `count` token media cùng trỏ về `call` (mỗi lượt gọi trong chuỗi một token;
+        VH không biết trước call_id của lượt sau nên mọi token của chuỗi hợp lệ cho kính này). Trả token MỚI."""
+        extra = [secrets.token_urlsafe(16) for _ in range(count)]
+        with self._lock:
+            for token in extra:
+                self._by_token[_token_hash(token)] = call
+        return extra
 
     def bind(self, call: Call, call_id: str, peer: str | None = None) -> None:
         with self._lock:
@@ -546,7 +582,8 @@ class CallRegistry:
                 del self._by_id[call.call_id]
             if self._by_device.get(call.device) is call:
                 del self._by_device[call.device]
-            self._by_token.pop(_token_hash(call.media_token), None)
+            for key in [k for k, c in self._by_token.items() if c is call]:  # token chuỗi khẩn cấp
+                del self._by_token[key]
 
     def by_device(self, device: str) -> "Call | None":
         return self._by_device.get(device)
@@ -600,7 +637,7 @@ async def _handle_event(body: dict) -> tuple[int, dict]:
         call = calls.by_device(device)
         if call is not None and call.state == RINGING_OUT:
             await call.hangup("emergency_exhausted", by="ab")
-        device_session.push_result(device, EMERGENCY_UNANSWERED)
+        device_session.push_result(device, EMERGENCY_NONE_REACHED)
         return ok(False)
     if not call_id or not event:
         return 422, {"detail": "event/call_id bắt buộc"}
@@ -626,9 +663,22 @@ async def _handle_event(body: dict) -> tuple[int, dict]:
         return ok()
 
     call = calls.get(call_id)
+    if call is None and body.get("emergency"):
+        # Chuỗi khẩn cấp: AB gọi lần lượt, mỗi người thân một call_id mới mà VH không biết trước. Cuộc đại diện
+        # còn đang chuông thì nhận call_id mới (chỉ khi đang chuông: đã `active` thì call_id lạ là sự kiện muộn).
+        cand = calls.by_device(device)
+        if cand is not None and cand.emergency and cand.state == RINGING_OUT:
+            calls.bind(cand, call_id, peer or None)
+            call = cand
     if call is None:
         return ok(False)  # đã kết thúc ở phía này / không phải của kính này: bỏ, trả 2xx để AB khỏi thử lại
+    if call.emergency and event in ("call_rejected", "call_missed", "call_ended") and call.state == RINGING_OUT:
+        return ok()  # một người thân không nghe: AB gọi người kế; chuỗi chỉ kết thúc bằng `emergency_exhausted`/bấm nút
+    if call.emergency and call.call_id != call_id and call.state == ACTIVE:
+        return ok(False)  # sự kiện muộn của một lượt gọi trước trong chuỗi
     if event == "call_answered":
+        if peer:  # khẩn cấp: người nghe máy có thể khác người đang chuông lúc `start`
+            call.peer = peer
         await call.activate()
     elif event in ("call_rejected", "call_missed", "call_ended"):
         outgoing = call.direction == TO_RELATIVE and call.state == RINGING_OUT
@@ -640,6 +690,8 @@ async def _handle_event(body: dict) -> tuple[int, dict]:
             pass
         elif outgoing and event == "call_missed":
             device_session.push_result(device, missed_speech(name), f"call-{call_id}")
+            from lanes import phone  # nhập muộn: lanes.phone -> handlers -> call_bridge
+            phone.set_pending_offer(device, "message_send", {"contact_name": name})  # "Bạn muốn nhắn tin không?" -> có/không
         elif outgoing and event == "call_rejected":
             device_session.push_result(device, rejected_speech(name), f"call-{call_id}")
     else:

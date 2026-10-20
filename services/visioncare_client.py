@@ -69,20 +69,25 @@ class VisionCareAPIError(Exception):
         self.details = details or {}
 
 
-def call_service_api(endpoint_path: str, payload: dict) -> dict:
+def call_service_api(endpoint_path: str, payload: dict, bare: bool = False) -> dict:
     """Gửi POST request tới VisionCare Host Public Service API (`/api/v1/service/...`).
 
     Tự động chèn `device_id` (luôn là kính đã xác thực) và `request_id` (UUID4) nếu chưa có, và thêm
     các header xác thực Bearer token.
+
+    `bare=True`: gửi đúng payload của nơi gọi, KHÔNG chèn gì. Các endpoint gọi/nhắn/khẩn cấp của AB
+    (`service/call|messages|emergency/...`) khai schema `extra="forbid"` với tên trường riêng
+    (`glasses_device_id`, hangup không có `request_id`) nên chèn thêm `device_id`/`request_id` là 422.
     """
     url = f"{config.VISIONCARE_HOST_URL.rstrip('/')}/{endpoint_path.lstrip('/')}"
 
     request_payload = dict(payload)
-    # Luôn là kính đã xác thực của luồng này (`device_ctx.current` do `guard.authenticate` quyết), không nhận
-    # `device_id` do nơi gọi/client khai trong payload: tránh gọi AB nhân danh kính khác (C0).
-    request_payload["device_id"] = device_ctx.current.get()
-    if "request_id" not in request_payload:
-        request_payload["request_id"] = str(uuid.uuid4())
+    if not bare:
+        # Luôn là kính đã xác thực của luồng này (`device_ctx.current` do `guard.authenticate` quyết), không nhận
+        # `device_id` do nơi gọi/client khai trong payload: tránh gọi AB nhân danh kính khác (C0).
+        request_payload["device_id"] = device_ctx.current.get()
+        if "request_id" not in request_payload:
+            request_payload["request_id"] = str(uuid.uuid4())
 
     logger.info("Calling VisionCare API: POST %s with request_id=%s", url, request_payload.get("request_id"))
 
@@ -111,6 +116,79 @@ def call_service_api(endpoint_path: str, payload: dict) -> dict:
     response_json = resp.json() if resp.content else {}
     logger.info("VisionCare API response [%d]: %s", resp.status_code, response_json)
     return response_json
+
+
+# ── gọi điện / nhắn tin / khẩn cấp với người thân (Plan 2; AB `service/call|messages|emergency`) ──
+#
+# Mọi hàm: đồng bộ (gọi trong thread làn D hoặc `asyncio.to_thread`), trả phần `data` của envelope, lỗi HTTP/mạng
+# -> `VisionCareAPIError` (`error_code(exc)` / `error_candidates(exc)` đọc mã lỗi AB). `glasses_device_id` luôn là
+# kính đã xác thực của luồng (`device_ctx.current`), không nhận từ nơi gọi.
+
+def error_code(exc: VisionCareAPIError) -> str:
+    err = exc.details.get("error") if isinstance(exc.details, dict) else None
+    return str(err.get("code") or "") if isinstance(err, dict) else ""
+
+
+def error_candidates(exc: VisionCareAPIError) -> list[str]:
+    """Tên các người thân trùng khớp khi AB trả `MULTIPLE_CONTACTS_FOUND` (`error.details.candidates`)."""
+    err = exc.details.get("error") if isinstance(exc.details, dict) else None
+    details = err.get("details") if isinstance(err, dict) else None
+    items = details.get("candidates") if isinstance(details, dict) else None
+    return [str(c) for c in items] if isinstance(items, list) else []
+
+
+def _service(path: str, payload: dict) -> dict:
+    return call_service_api(path, payload, bare=True).get("data", {}) or {}
+
+
+def call_start(user_id: str, contact_alias: str, media_token: str, request_id: str | None = None,
+               emergency: bool = False) -> dict:
+    return _service("api/v1/service/call/start", {
+        "user_id": user_id, "glasses_device_id": device_ctx.current.get(), "contact_alias": contact_alias,
+        "media_token": media_token, "request_id": request_id or str(uuid.uuid4()), "emergency": emergency,
+    })
+
+
+def call_hangup(call_id: str, reason: str | None = None) -> dict:
+    return _service(f"api/v1/service/call/{call_id}/hangup", {"reason": reason} if reason else {})
+
+
+def call_answer(call_id: str, media_token: str) -> dict:
+    return _service(f"api/v1/service/call/{call_id}/answer", {"media_token": media_token})
+
+
+def emergency_start(user_id: str, media_tokens: list[str], request_id: str | None = None) -> dict:
+    return _service("api/v1/service/emergency/start", {
+        "user_id": user_id, "glasses_device_id": device_ctx.current.get(),
+        "request_id": request_id or str(uuid.uuid4()), "media_tokens": media_tokens,
+    })
+
+
+def emergency_stop(emergency_id: str) -> dict:
+    return _service(f"api/v1/service/emergency/{emergency_id}/stop", {})
+
+
+def messages_send(user_id: str, contact_alias: str, text: str, request_id: str | None = None) -> dict:
+    return _service("api/v1/service/messages/send", {
+        "user_id": user_id, "contact_alias": contact_alias, "text": text,
+        "request_id": request_id or str(uuid.uuid4()),
+    })
+
+
+def messages_unread(user_id: str) -> list[dict]:
+    """Tin chưa đọc (cũ -> mới, tối đa 50): `[{message_id, from_display_name, text, created_at}]`."""
+    url = f"{config.VISIONCARE_HOST_URL.rstrip('/')}/api/v1/service/messages/unread"
+    try:
+        resp = _client().get(url, params={"user_id": user_id}, headers=_auth_header())
+    except Exception as exc:  # noqa: BLE001
+        raise VisionCareAPIError(f"Lỗi kết nối VisionCare API: {exc}") from exc
+    if resp.status_code >= 400:
+        raise VisionCareAPIError(f"VisionCare API returned status {resp.status_code}", status_code=resp.status_code)
+    return (resp.json().get("data") or {}).get("messages", [])
+
+
+def message_read(message_id: str, user_id: str | None = None) -> dict:
+    return _service(f"api/v1/service/messages/{message_id}/read", {"user_id": user_id} if user_id else {})
 
 
 def get_request_status(request_id: str) -> dict:
