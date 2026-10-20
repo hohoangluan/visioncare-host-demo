@@ -1,41 +1,43 @@
 # Session kế tiếp: đọc file này trước
 
-Cập nhật 2026-10-20. Repo `SeeVia_system/visioncare-host-demo` ("VH"), nhánh `voice-v2-hardening`
-(chưa push). App server `SeeVia_system/app-demo-backend/server` ("AB", repo git riêng, nhánh `voice-v2-hardening`).
+Cập nhật 2026-10-20 (chiều). VH = `SeeVia_system/visioncare-host-demo`, AB = `SeeVia_system/app-demo-backend` (code `server/`),
+cả hai nhánh `voice-v2-hardening`, CHƯA push (chưa được bảo thì không push/merge vào main).
 
-## Trạng thái
+**Tiết kiệm token (người dùng yêu cầu):** xem memory `seevia-toi-uu-token-dieu-phoi`. Gộp task cho 1 agent sonnet, review chỉ
+bảo mật + 1 review cuối, hand-back ≤ 5 dòng, ít nhắn trạng thái. Trả lời tiếng Việt, ngắn.
 
-**Plan 1 XONG**: gộp vào `voice-v2-hardening` = `5963ad5` (+ commit docs), test **429 pass / 2 skip**. Số đo, E2E, Cloudflare và
-việc còn lại của người dùng: `docs/HANDOFF_VOICE_V2.md`. Giao thức firmware: `docs/FIRMWARE_ENDPOINTS.md`.
-Còn dọn: các worktree `../vh-wt-*` đã gộp (`git worktree remove`) và workspace SDD của plan 1
-(`.superpowers/sdd/2026-10-19-voice-v2-hardening/`, git-ignored); quyết việc push/merge vào `main` cùng người dùng (chưa bảo thì không làm).
+## Đã xong
 
-Quy ước làm việc: điều phối, không tự code; skill `superpowers:subagent-driven-development`; implementer/reviewer là subagent
-`model: sonnet`, review cuối dùng opus; task độc lập chạy song song, mỗi task một worktree `../vh-wt-<N>` (symlink asset bị ignore:
-`models/hazard models/stt models/text_det models/.cache models/vad certs .env tests/fixtures/*`). KHÔNG `source` file `.env` trong
-shell (từng lộ khoá); đọc bằng Python. Token đã thống nhất: `SeeVia_system/.env` là nguồn duy nhất, `VH/.env` giữ bản sao.
+- Plan `plans/2026-10-20-modes-demo-app-protocol.md` (đã gộp VH + AB):
+  dẫn đường = gửi `maps_url` Google Maps về điện thoại, người dùng tự chạm (bộ định tuyến riêng để sau);
+  tránh vật cản = chế độ riêng `alert_on/alert_off`, chỉ kêu mức ≥ `HAZARD_MIN_LEVEL`=2;
+  khung debug `hello.debug` (trace/say/det/ocr/mode); demo-web mới giao diện TRẮNG, chỉ 1920×1080 (`demo-web/README.md`);
+  `AB/docs/MOBILE_APP_PROTOCOL.md` (giao thức app).
+- Plan 2 `plans/2026-10-19-glasses-calls-messages.md` (có mục "Sửa đổi 2026-10-20" + Task C0):
+  - VH đã gộp: C0 (token theo từng kính), C5 (cầu âm thanh, `WS /v2/call`, `/internal/calls`).
+  - VH nhánh `wt-C6` (worktree `../vh-wt-C6`): C6 (gọi điện/khẩn cấp phía kính, commit 5191ede) + C7 (nhắn tin — xem ledger
+    xem đã commit chưa). CHƯA gộp vào `voice-v2-hardening`.
+  - AB nhánh `wt-calls` (worktree `../ab-wt-calls`): C1 care_links, C2 calls, C3 messages, C4 emergency (eb8ef3f). CHƯA gộp.
 
-## PLAN 2 — gọi điện / nhắn tin từ kính (người dùng: KHÔNG làm trong session plan 1)
+Ledger chi tiết (quyết định "Ruling:", minor hoãn): `VH/.superpowers/sdd/2026-10-19-glasses-calls-messages/progress.md`
+và `.../2026-10-20-modes-demo-app-protocol/progress.md` (git-ignored). Report từng task cùng thư mục.
 
-Plan `VH/docs/superpowers/plans/2026-10-19-glasses-calls-messages.md`, spec
-`VH/docs/superpowers/specs/2026-10-19-glasses-calls-messages-design.md`. Bắt đầu SAU khi plan 1 gộp xong (đã xong).
-Workspace riêng: `bash ~/.claude/plugins/cache/claude-plugins-official/superpowers/7.0.0/skills/subagent-driven-development/scripts/sdd-workspace <plan2>`;
-brief từng task: `.../scripts/task-brief <plan2> <N>`. Chế độ nhanh trong plan 1 cũng áp cho plan 2 (review chỉ C2, C5 + cuối).
-Trước khi chạy, quét plan 2 đối chiếu với những gì plan 1 đã đổi:
-- giao thức `WS /v2/session` thật (`live/device_session.py`, `docs/FIRMWARE_ENDPOINTS.md`), hàng đợi audio theo phiên, khung `result-*`
-  server chủ động gửi — plan 2 gọi điện/nhắn tin phải dùng chung hàng đợi này;
-- `pipeline/pending_action.py` (begin_turn/gen, cửa sổ huỷ tính từ audio đọc lại), cổng làn D 0,999 + hỏi lại;
-- transport webhook + `scripts/phone_sim.py` ở AB (Task 15A/15b), fixtures `AB/tests/fixtures/server_payloads/`;
-- **I6 từ review cuối phải vào plan 2:** hiện một token dùng chung cho mọi kính và `device_id` do client tự khai
-  (`services/visioncare_client.py`) → ai có token đều kích lệnh trên kính khác. Plan 2 (gọi điện tới người thân)
-  cần token theo từng kính / ràng buộc device_id với token.
+## Còn lại (theo thứ tự)
+
+1. Nếu C7 chưa commit: đọc `task-C7-report.md`, giao 1 agent làm nốt. Rồi gộp `wt-C6` → VH `voice-v2-hardening`,
+   `wt-calls` → AB `voice-v2-hardening` (chạy toàn bộ test hai repo sau gộp; AB cần `PYTHONPATH=$PWD/src` + Postgres
+   `compose.test.yaml` cổng 55432; test `test_committed_openapi_artifacts_are_up_to_date` chỉ hỏng trong worktree).
+2. C8 (1 agent): `AB/scripts/relative_sim.py`, `VH/tools/e2e_calls.py`, viết phần gọi điện/nhắn tin vào
+   `AB/docs/MOBILE_APP_PROTOCOL.md` (KHÔNG file riêng), `FIRMWARE_ENDPOINTS.md` khung cuộc gọi. Dùng hợp đồng trong report C2–C7.
+3. Review cuối toàn nhánh (opus), đưa vào các dòng `minor (deferred)` + `Ruling:` của 2 ledger; MỘT lượt sửa.
+   Điểm cần xem: `VISIONCARE_USER_ID` một user cho cả server (AB nên suy user từ kính); C6 đã sửa hành vi C5 (chưa review);
+   STT nghe nhầm "bật cảnh báo vật cản"; e2e `sc_alert` cần ảnh vật cản mức 2.
+4. C9 đo qua Cloudflare: cổng 18888 đang có server người dùng chạy — HỎI trước khi tắt/bật lại.
+5. Dọn worktree `../vh-wt-*`, `../ab-wt-*` (đã gộp), xoá thư mục SDD; cập nhật `docs/HANDOFF_VOICE_V2.md`.
 
 ## Điều người dùng đã chốt (đừng hỏi lại)
 
-- Ưu tiên: độ trễ thấp nhất, rồi chính xác. Đổi gì cũng đo p50/p90 trước/sau. Chỉ giữ thay đổi đo ra nhanh hơn.
-- Chỉ tối ưu Gemma; Clef giữ làm dự phòng khi Gemma lỗi.
-- sol qua 9router (`NINE_ROUTER_API_KEY/URL/MODEL` trong `SeeVia_system/.env`) chỉ offline trong `tools/`.
+- Ưu tiên độ trễ thấp nhất, rồi chính xác; đo p50/p90 trước/sau; chỉ giữ thay đổi nhanh hơn. Chỉ tối ưu Gemma; Clef dự phòng.
 - Khoá token MỌI endpoint kính. App điện thoại người dùng tự làm; không sửa `mobile/`.
-- Hỏi trước khi gỡ/cài gói trong `~/.venvs/seevia`; GPU: chọn GPU trống, không lùi về CPU.
-
-Trả lời người dùng: tiếng Việt, ngắn.
+- Hỏi trước khi gỡ/cài gói trong `~/.venvs/seevia`; GPU: chọn GPU trống, không lùi CPU. Không `source` file `.env`.
+- UI SeeVia qua skill `ui-ux-pro-max`; nhận diện navy #041466 (memory `seevia-brand-identity-ui-logo`).
