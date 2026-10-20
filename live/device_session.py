@@ -7,8 +7,9 @@ gom body, còn WS giữ kết nối nóng nên audio tới server theo từng m�
 Giao thức (JSON text; binary có byte đầu là loại):
     kính -> server  hello | turn_start | 0x01 JPEG lượt | 0x03 ADPCM lượt | turn_end
                     | 0x04 JPEG khung live | cancel | played | ping
+                    | 0x05 ADPCM mic cuộc gọi | call_answer | call_hangup
     server -> kính  hello_ok | reply | 0x02 khối audio | reply_end | cam/capture/cue/hazard/end
-                    (live, giữ nguyên `live/protocol.py`) | pong | error
+                    (live, giữ nguyên `live/protocol.py`) | call_state | pong | error
 
 Khung debug (chỉ trang demo, `hello.debug=true`; kính thật không gửi nên không đổi gì): trace | say | det | ocr
 | mode, JSON text, gửi không chờ khoá audio và nuốt mọi lỗi gửi (xem `docs/FIRMWARE_ENDPOINTS.md`, mục Debug).
@@ -32,7 +33,8 @@ from collections.abc import Awaitable, Callable
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 import config
-from live import protocol
+from live import call_bridge, protocol
+from live.call_bridge import calls
 from live.session import sessions
 from live.ws_adapter import LiveSocket
 from pipeline import adpcm, cues, device_ctx, guard, metrics, pending_action
@@ -45,6 +47,7 @@ logger = logging.getLogger("blind_assist")
 T_TURN_IMAGE = 0x01
 T_TURN_AUDIO = 0x03
 T_LIVE_FRAME = 0x04
+T_CALL_AUDIO = 0x05  # mic kính trong cuộc gọi (tách khỏi 0x03 của lượt lệnh)
 PING_S = 25
 IDLE_TIMEOUT_S = PING_S * 3 + 15  # Cloudflare cắt idle ~100 s; kính ping mỗi PING_S
 HELLO_TIMEOUT_S = 10.0
@@ -165,10 +168,11 @@ class DeviceSession:
 
         live = sessions.active(self.device)
         state = device_state()
+        call = calls.by_device(self.device)
         return {"t": "mode", "obstacle": live is not None and live.mode == "nav",
                 "ocr": live is not None and live.mode == "ocr",
                 "navigating": bool(state.get("navigating")), "music": bool(state.get("music_playing")),
-                "call": None}  # plan 2 sẽ điền
+                "call": call.state if call is not None else None}  # ringing_out|ringing_in|active|None
 
     def emit_mode(self) -> None:
         if not self.debug or self._shut:
@@ -297,13 +301,16 @@ class DeviceSession:
         if self._shut:
             return
         self._shut = True
+        call = calls.by_device(self.device)
+        if call is not None and call.session is self:  # kính rớt/bị thay giữa cuộc gọi: cúp, báo AB, đóng đầu app
+            await call.hangup("glasses_disconnect", by="glasses")
         for task in [*self._debug_tasks, self._debug_pump]:
             if task is not None:
                 task.cancel()
         await self._cancel_work(reason)
 
     # ---------- huỷ ----------
-    async def _cancel_work(self, reason: str, keep_nav: bool = False) -> None:
+    async def _cancel_work(self, reason: str, keep_nav: bool = False, keep_results: bool = False) -> None:
         """Huỷ lượt + live đang chạy, rồi tăng thế hệ & huỷ lệnh chờ làn D.
 
         `keep_nav`: lượt mới/`cancel` của nút bấm KHÔNG được tắt cảnh báo vật cản — người
@@ -311,7 +318,8 @@ class DeviceSession:
         nav_stop, đóng socket hoặc phiên bị thay. OCR live thì vẫn bị lượt mới huỷ.
         """
         tasks = []
-        self._results.clear()  # bấm nút/huỷ/ngắt: người dùng đã chuyển sang việc khác, bỏ câu kết quả chưa đọc
+        if not keep_results:
+            self._results.clear()  # bấm nút/huỷ/ngắt: người dùng đã chuyển sang việc khác, bỏ câu kết quả chưa đọc
         if self._result_task is not None:
             self._result_task.cancel()
             tasks.append(self._result_task)
@@ -338,6 +346,52 @@ class DeviceSession:
             tasks.append(self._live_task)
         self._live_task = self._live_session = self._live_sock = None
         return tasks
+
+    # ---------- cuộc gọi (plan 2 C5) ----------
+    def _attach_call(self, call) -> None:
+        """Chạy trên event loop: gắn đầu kính của `call` vào phiên này rồi báo `call_state` đầu tiên."""
+        if self._shut:
+            call.hangup_threadsafe("glasses_disconnect", by="glasses")
+            return
+        call.attach_glasses(self._send_call_audio, self.send_json, self._on_call_state, session=self)
+        task = asyncio.get_running_loop().create_task(call.announce())
+        self._debug_tasks.add(task)
+        task.add_done_callback(self._debug_tasks.discard)
+
+    async def _send_call_audio(self, adpcm_bytes: bytes) -> None:
+        # Chỉ `_send_lock` từng khung (không `_audio_lock`): chờ tối đa MỘT khung đang gửi.
+        await self.send_bytes(protocol.audio(adpcm_bytes))
+
+    def _on_call_button(self, kind: str, frame: dict) -> None:
+        call = calls.by_device(self.device)
+        if call is None or call.session is not self:
+            return  # mỗi kính một cuộc gọi: không so id (id tạm `local-…` đổi sang id AB sau `bind`)
+        if kind == "call_hangup":
+            task = asyncio.get_running_loop().create_task(call.hangup("glasses_hangup", by="glasses"))
+        elif call.state == call_bridge.RINGING_IN:
+            task = asyncio.get_running_loop().create_task(call.glasses_answer())  # AB HTTP: không chặn vòng nhận
+        else:
+            return
+        self._debug_tasks.add(task)
+        task.add_done_callback(self._debug_tasks.discard)
+
+    async def _on_call_state(self, call) -> None:
+        """Mỗi lần trạng thái cuộc gọi đổi: `active` -> dừng mọi thứ đang nói/live (tránh vật cản tạm dừng,
+        bật lại khi cúp); `ended` -> bật lại tránh vật cản + đọc phần hàng đợi bị giữ; luôn phát khung `mode`."""
+        if self._shut:
+            return
+        if call.state == call_bridge.ACTIVE:
+            live = self._live_session
+            if live is not None and live.mode == "nav" and not live.closed.is_set():
+                self._nav_suspended = True
+            self._results = collections.deque(r for r in self._results if not r[0].startswith("call-"))  # "đang gọi" đã lỗi thời
+            # huỷ lượt/câu đang đọc + live; kênh 0x02 chỉ còn cuộc gọi. Hàng đợi câu/tin xếp sẵn được GIỮ, đọc sau cúp.
+            await self._cancel_work("cuộc gọi", keep_results=True)
+        elif call.state == call_bridge.ENDED:
+            if self._nav_suspended:
+                await self._resume_nav(None)
+            self._kick_results()
+        self.emit_mode()
 
     # ---------- vòng nhận ----------
     async def _loop(self) -> None:
@@ -387,6 +441,8 @@ class DeviceSession:
                 "device": self.device, "turn": str(frame.get("turn", "")),
                 "glasses": {k: v for k, v in marks.items() if k in ("first_byte_ms", "first_audio_ms")},
             })
+        elif kind in ("call_answer", "call_hangup"):
+            self._on_call_button(kind, frame)
         elif kind == "hello":
             pass  # hello lặp: bỏ qua
         else:
@@ -397,6 +453,11 @@ class DeviceSession:
             await self.error("bad_frame")
             return
         kind, payload = data[0], data[1:]
+        if kind == T_CALL_AUDIO:  # đường nóng của cuộc gọi: đồng bộ, không khoá, không chờ app
+            call = calls.by_device(self.device)
+            if call is not None and call.session is self:
+                call.from_glasses(payload)
+            return
         turn = self._turn
         if kind == T_LIVE_FRAME:
             # Khung live vượt trần/fps do runner bỏ (ocr_live.receive_frames); ngoài live thì bỏ ở đây.
@@ -427,6 +488,9 @@ class DeviceSession:
 
         if self._shut:
             return
+        call = calls.by_device(self.device)
+        if call is not None and call.state in (call_bridge.RINGING_OUT, call_bridge.ACTIVE):
+            return  # đang gọi: nút = cúp (`call_hangup`), không mở lượt lệnh (spec §6)
         await self._cancel_work("lượt mới", keep_nav=True)
         if self._shut:
             return
@@ -507,6 +571,16 @@ class DeviceSession:
         if self._shut:
             return
         self._results.append((request_id, text))
+        self._kick_results()
+
+    def _in_call(self) -> bool:
+        call = calls.by_device(self.device)
+        return call is not None and call.session is self and call.state == call_bridge.ACTIVE
+
+    def _kick_results(self) -> None:
+        """Bắt đầu đọc hàng đợi câu kết quả/tin nhắn — trừ khi đang trong cuộc gọi (không chen vào kênh 0x02)."""
+        if self._shut or not self._results or self._in_call():
+            return
         if self._result_task is None or self._result_task.done():
             self._result_task = asyncio.create_task(self._drain_results())
 
@@ -515,7 +589,7 @@ class DeviceSession:
         device_ctx.per_device.set(self.per_device)
         # Task này sinh từ thread Timer/làn D (context trống hoặc của phiên cũ): đặt lại móc `say` của phiên NÀY.
         device_ctx.say.set(self._say_hook if self.debug else None)
-        while self._results:
+        while self._results and not self._in_call():
             request_id, text = self._results.popleft()
             try:
                 await self._send_reply(_Turn(f"result-{request_id}"), Reply(speech=[text], intent="result", lane="D"),
@@ -559,13 +633,13 @@ class DeviceSession:
             await runner(sock, live)
         finally:
             self.emit_mode()  # live kết thúc (runner đã nhả phiên)
-            if live.mode == "ocr" and self._nav_suspended and not self._shut:
+            if live.mode == "ocr" and self._nav_suspended and not self._shut and not self._in_call():
                 self._resume_task = asyncio.get_running_loop().create_task(self._resume_nav(live))
 
     async def _resume_nav(self, ended) -> None:
         """Dựng lại nav live sau OCR live (I5). Bỏ qua nếu giữa chừng đã có live khác thay vào."""
-        if self._shut or not self._nav_suspended:
-            return
+        if self._shut or not self._nav_suspended or self._in_call():
+            return  # đang gọi: để `_nav_suspended` nguyên, bật lại khi cúp (`_on_call_state`)
         if self._live_session is not None and self._live_session is not ended:
             return
         self._nav_suspended = False
@@ -635,6 +709,22 @@ def push_result(device: str, text: str, request_id: str = "") -> bool:
         return False
     session._evloop.call_soon_threadsafe(session._enqueue_result, request_id or secrets.token_hex(4), text.strip())
     return True
+
+
+def session_for(device: str) -> "DeviceSession | None":
+    session = _registry.get(device)
+    return None if session is None or session._shut else session
+
+
+def _on_call_created(call) -> None:
+    """`calls.create` (có thể từ thread nền): gắn cuộc gọi vào phiên WS của kính, trên event loop của phiên."""
+    session = session_for(call.device)
+    if session is not None:
+        call.loop = session._evloop  # để hangup_threadsafe/discard từ thread nền luôn đi qua loop của phiên
+        session._evloop.call_soon_threadsafe(session._attach_call, call)
+
+
+calls.attach_hook = _on_call_created
 
 
 async def serve(ws: WebSocket, reply_audio: ReplyAudio) -> None:

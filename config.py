@@ -386,3 +386,20 @@ INTENT_AUX = get("INTENT_AUX", "rules")
 INTENT_LLM_TIMEOUT_S = float(get("INTENT_LLM_TIMEOUT_S", "0.8"))
 # Trần chờ intent cuối (cả lượt dự phòng); quá trần thì luật từ khoá / làn chat.
 INTENT_DECIDE_TIMEOUT_S = float(get("INTENT_DECIDE_TIMEOUT_S", "1.5"))
+
+# ── Gọi điện qua kính (docs/superpowers/specs/2026-10-19-glasses-calls-messages-design.md, §5.3) ──
+# Chuông tối đa (AB cũng dùng số này để đánh `missed`); hạn token media = chuông + CALL_TOKEN_GRACE_S.
+CALL_RING_TIMEOUT_S = float(get("CALL_RING_TIMEOUT_S", "30"))
+CALL_TOKEN_GRACE_S = float(get("CALL_TOKEN_GRACE_S", "10"))
+# Sau `active`, app phải mở `WS /v2/call` trong ngần này giây, không thì cúp (`media_timeout`).
+CALL_MEDIA_WAIT_S = float(get("CALL_MEDIA_WAIT_S", "15"))
+# Đệm chống giật đầu app -> kính. 0 = không đệm, phát ngay khi khung tới (thấp nhất, dễ giật hơn).
+CALL_JITTER_MS = int(get("CALL_JITTER_MS", "60"))
+CALL_JITTER_MAX_LATE_MS = int(get("CALL_JITTER_MAX_LATE_MS", "200"))
+# Dự phòng khi kính không khử vọng: đầu app đang nói (RMS > -40 dBFS trong 100 ms gần nhất) thì mic kính giảm 20 dB.
+CALL_HALF_DUPLEX = get("CALL_HALF_DUPLEX", "0") == "1"
+CALL_HALF_DUPLEX_THRESHOLD_DBFS = float(get("CALL_HALF_DUPLEX_THRESHOLD_DBFS", "-40"))
+CALL_HALF_DUPLEX_HOLD_MS = int(get("CALL_HALF_DUPLEX_HOLD_MS", "100"))
+CALL_HALF_DUPLEX_DUCK_DB = float(get("CALL_HALF_DUPLEX_DUCK_DB", "20"))
+# Trần khung WS của app (PCM16 20 ms = 640 B; chừa dư cho cụm).
+CALL_MAX_FRAME_BYTES = int(get("CALL_MAX_FRAME_BYTES", "16384"))

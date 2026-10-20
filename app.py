@@ -261,9 +261,8 @@ def health():
     return {"status": "ok"}
 
 
-@app.post("/internal/action-results")
-async def receive_action_result(request: Request) -> dict:
-    """Accept an idempotent backend callback from `CALLBACK_ALLOWED_NETWORKS` only."""
+def _require_callback_auth(request: Request) -> None:
+    """Callback của backend: chỉ từ `CALLBACK_ALLOWED_NETWORKS` và mang `VISIONCARE_CALLBACK_TOKEN`."""
     host = request.client.host if request.client else ""
     try:
         caller = ipaddress.ip_address(host)
@@ -283,6 +282,11 @@ async def receive_action_result(request: Request) -> dict:
     if not hmac.compare_digest(supplied, f"Bearer {expected}"):
         raise HTTPException(status_code=401, detail="Invalid callback token")
 
+
+@app.post("/internal/action-results")
+async def receive_action_result(request: Request) -> dict:
+    """Accept an idempotent backend callback from `CALLBACK_ALLOWED_NETWORKS` only."""
+    _require_callback_auth(request)
     envelope = await request.json()
     data = envelope.get("data") if isinstance(envelope, dict) else None
     if not isinstance(data, dict) or not data.get("request_id"):
@@ -294,6 +298,24 @@ async def receive_action_result(request: Request) -> dict:
 
     matched = action_callbacks.resolve(request_id, data)
     return {"status": "ok", "data": {"request_id": request_id, "matched": matched}}
+
+
+@app.post("/internal/calls")
+async def receive_call_event(request: Request) -> JSONResponse:
+    """Callback cuộc gọi của AB (`call_answered|call_rejected|call_ended|call_missed|call_incoming|
+    emergency_exhausted`). Cùng xác thực với `/internal/action-results`; dedupe theo `Idempotency-Key`;
+    luôn trả nhanh (AB thử lại 1/2/5/10 s với mọi mã không phải 2xx)."""
+    from live import call_bridge
+
+    _require_callback_auth(request)
+    try:
+        body = await request.json()
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=422, detail="Body must be a JSON object")
+    status, out = await call_bridge.handle_event(body, request.headers.get("idempotency-key", ""))
+    return JSONResponse(out, status_code=status)
 
 
 def _stream_audio(
@@ -907,6 +929,20 @@ async def live_lane(ws: WebSocket, token: str = "") -> None:
         await ws.close()
     except RuntimeError:
         pass
+
+
+@app.websocket("/v2/call")
+async def call_media_lane(ws: WebSocket, token: str = "") -> None:
+    """Âm thanh cuộc gọi phía app (§5.3): PCM16LE 16 kHz mono khung 20 ms; text hangup/mute.
+    `token` = media_token do VH sinh, DÙNG MỘT LẦN. Accept trước rồi đóng 4401 (đóng trước accept thành 403)."""
+    from live.call_bridge import calls
+
+    await ws.accept()
+    call = calls.claim_token(token)
+    if call is None:
+        await ws.close(code=4401)
+        return
+    await call.attach_app(ws)
 
 
 @app.websocket("/v2/session")
