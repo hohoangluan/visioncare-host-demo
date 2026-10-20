@@ -243,3 +243,18 @@ def test_startup_logs_token_status(per_device_tokens, monkeypatch, caplog):
     text = caplog.text
     assert "token riêng từng kính: 2 kính" in text and "VISIONCARE_ALLOW_SHARED_DEVICE_TOKEN=1" in text
     assert TOK_A not in text and TEST_DEVICE_TOKEN not in text
+
+
+def test_shared_token_without_claim_cannot_resolve_to_enrolled_default(tmp_path, monkeypatch, world):  # noqa: F811
+    """Không khai id -> id mặc định (glasses-123); nếu nó đã đăng ký thì token chung cũng bị từ chối."""
+    path = tmp_path / "t.json"
+    path.write_text(json.dumps({config.VISIONCARE_DEVICE_ID: hashlib.sha256(TOK_A.encode()).hexdigest()}))
+    monkeypatch.setattr(config, "VISIONCARE_DEVICE_TOKENS", str(path))
+    guard.reset()
+    assert guard.authenticate(TEST_DEVICE_TOKEN) is None
+    assert guard.authenticate(TOK_A) == guard.Auth(config.VISIONCARE_DEVICE_ID, True)
+    assert _post_image(TEST_DEVICE_TOKEN).status_code == 401
+    with client.websocket_connect("/v2/session") as ws:
+        ws.send_text(json.dumps({"t": "hello", "token": TEST_DEVICE_TOKEN}))  # không khai device
+        msg = ws.receive()
+        assert msg["type"] == "websocket.close" and msg["code"] == 4401
