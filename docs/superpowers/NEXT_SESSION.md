@@ -15,8 +15,7 @@ bảo mật + 1 review cuối, hand-back ≤ 5 dòng, ít nhắn trạng thái. 
   `AB/docs/MOBILE_APP_PROTOCOL.md` (giao thức app).
 - Plan 2 `plans/2026-10-19-glasses-calls-messages.md` (có mục "Sửa đổi 2026-10-20" + Task C0):
   - VH đã gộp: C0 (token theo từng kính), C5 (cầu âm thanh, `WS /v2/call`, `/internal/calls`).
-  - VH nhánh `wt-C6` (worktree `../vh-wt-C6`): C6 (gọi điện/khẩn cấp phía kính, commit 5191ede) + C7 (nhắn tin — xem ledger
-    xem đã commit chưa). CHƯA gộp vào `voice-v2-hardening`.
+  - VH: C6 (gọi điện/khẩn cấp phía kính) + C7 (nhắn tin, 489 pass) ĐÃ gộp vào `voice-v2-hardening`.
   - AB nhánh `wt-calls` (worktree `../ab-wt-calls`): C1 care_links, C2 calls, C3 messages, C4 emergency (eb8ef3f). CHƯA gộp.
 
 Ledger chi tiết (quyết định "Ruling:", minor hoãn): `VH/.superpowers/sdd/2026-10-19-glasses-calls-messages/progress.md`
@@ -24,8 +23,8 @@ và `.../2026-10-20-modes-demo-app-protocol/progress.md` (git-ignored). Report t
 
 ## Còn lại (theo thứ tự)
 
-1. Nếu C7 chưa commit: đọc `task-C7-report.md`, giao 1 agent làm nốt. Rồi gộp `wt-C6` → VH `voice-v2-hardening`,
-   `wt-calls` → AB `voice-v2-hardening` (chạy toàn bộ test hai repo sau gộp; AB cần `PYTHONPATH=$PWD/src` + Postgres
+1. Gộp `wt-calls` → AB `voice-v2-hardening`
+   (chạy toàn bộ test hai repo sau gộp; AB cần `PYTHONPATH=$PWD/src` + Postgres
    `compose.test.yaml` cổng 55432; test `test_committed_openapi_artifacts_are_up_to_date` chỉ hỏng trong worktree).
 2. C8 (1 agent): `AB/scripts/relative_sim.py`, `VH/tools/e2e_calls.py`, viết phần gọi điện/nhắn tin vào
    `AB/docs/MOBILE_APP_PROTOCOL.md` (KHÔNG file riêng), `FIRMWARE_ENDPOINTS.md` khung cuộc gọi. Dùng hợp đồng trong report C2–C7.
