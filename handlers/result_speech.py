@@ -43,6 +43,8 @@ _ERROR_SPEECH = {
     "QUOTE_EXPIRED": "Báo giá chuyến đi đã hết hạn.",
     "NO_RIDE_AVAILABLE": "Hiện không có xe nào gần đây.",
     "RIDE_ACCOUNT_NOT_CONNECTED": "Chưa liên kết tài khoản đặt xe.",
+    # App bỏ lệnh tới quá expires_at (FCM trễ) thay vì chạy lệnh cũ.
+    "COMMAND_EXPIRED": "Điện thoại nhận lệnh quá muộn nên chưa làm. Bạn nói lại giúp tôi nhé.",
 }
 
 # Câu nói khi action thất bại mà mã lỗi không có trong bảng trên.
