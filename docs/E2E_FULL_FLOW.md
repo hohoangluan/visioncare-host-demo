@@ -76,3 +76,52 @@ không phải từ lúc `route()` xong. `vh.log`: 0 traceback, 0 `aclose`, 0 dò
 Quan sát: Gemma >= 0,999 chạy thẳng ở hầu hết lượt lệnh (hỏi lại "phải không?" -> "Đúng." chạy đúng ở một lần chạy trước, lệnh vẫn tới ĐT).
 Nhả nút -> lệnh ĐT (2,1-3,4 s) chủ yếu là thời gian đọc lại + cửa sổ huỷ làn D (`readback_delay` + `ACTION_TTS_LEAD_S`), không phải
 mạng/AB: lệnh từ VH tới ĐT giả mất < 0,1 s. Kết quả được đọc 0,5-0,85 s sau khi ĐT báo.
+
+## Cuộc gọi, tin nhắn, khẩn cấp (Plan 2 / C8) — `tools/e2e_calls.py`
+
+Kính giả (token RIÊNG của kính, `WS /v2/session`) ↔ VH ↔ AB ↔ **`relative_sim.py`** (3 người thân là tài khoản thật: đăng ký, OTP, lời mời `care_links`) + `phone_sim`
+của chủ kính (trả `location_get` cho tin khẩn cấp). Lời nói là giọng tổng hợp qua STT/Gemma thật; âm thanh cuộc gọi là nguồn im lặng + tiếng "tách" 5 ms mỗi giây ở cả hai đầu,
+dò bằng tương quan chéo. Cổng riêng (VH 18895, AB 18011, phone_sim 18012, relative_sim 18013, postgres 55436), không đụng 18888/8001; mọi tiến trình/DB bị tắt khi xong.
+
+```bash
+cd VH
+CUDA_VISIBLE_DEVICES=0 ~/.venvs/seevia/bin/python tools/e2e_calls.py --gpu 0                  # dựng stack, chạy hết 11 kịch bản
+CUDA_VISIBLE_DEVICES=0 ~/.venvs/seevia/bin/python tools/e2e_calls.py --gpu 0 --keep --only call_mom   # giữ stack
+CUDA_VISIBLE_DEVICES=0 ~/.venvs/seevia/bin/python tools/e2e_calls.py --attach --only emergency_stop   # chạy lại nhanh
+~/.venvs/seevia/bin/python tools/e2e_calls.py --stop                                          # tắt stack đã --keep
+```
+
+`--ring-s` (mặc định 5) đặt `CALL_RING_TIMEOUT_S` cho cả AB và VH để test không phải chờ 30 s; hằng số mặc định (30) không đổi.
+Người thân: Mẹ (alias "mẹ/má", khẩn cấp, ưu tiên 0), Nam Anh và Nam Bình (cùng alias "nam" để thử trùng tên; Nam Bình khẩn cấp, ưu tiên 1).
+
+### Cách đo
+
+| Cột | Mốc |
+|---|---|
+| nhả nút → chuông app | từ `turn_end` của lượt kích hoạt tới lúc `relative_sim` nhận FCM `call_incoming` (cùng máy, cùng đồng hồ). Gồm đọc lại + cửa sổ huỷ của làn D. Ghi chú có "đọc lại xong → chuông" (từ `reply_end` của lượt đó). Với `glasses_called` là "app gọi → kính nhận `ringing_in`" (từ lúc `POST /calls`) |
+| nghe → active | từ lúc app gửi `POST /answer` (hoặc kính bấm `call_answer`) tới khung `call_state active` ở kính |
+| nghe → khối audio đầu tới kính | từ cùng mốc tới khối `0x02` đầu tiên sau `active` (tiếng đầu của app, có thể là khung im lặng) |
+| trễ kính → app / app → kính | trễ một chiều của tiếng "tách": mẫu `n` được "thu" lúc `t0 + n/16000`, khung chứa nó gửi khi đầy; trễ = giờ khung/khối đầu tiên chứa HẾT tiếng tách tới đầu kia − giờ thu xong. Gồm gói khung (20 ms người thân, khối ADPCM 31,6 ms kính), cầu VH, đệm chống giật 60 ms (app → kính), loopback. n = số tiếng tách dò được (5 trong ~4,6 s) |
+
+### Kết quả (2026-10-20, GPU 0, nhánh voice-v2-hardening, stack dựng mới, 1 lượt mỗi kịch bản, chuông 5 s)
+
+| Kịch bản | Kết quả | nhả nút → chuông app (ms) | nghe → active (ms) | nghe → khối audio đầu tới kính (ms) | trễ kính → app p50/p90 (ms) | trễ app → kính p50/p90 (ms) | ghi chú |
+|---|---|---|---|---|---|---|---|
+| call_mom | PASS | 2540 | 67 | 139 | 39 / 58 (n=5) | 77 / 77 (n=5) | gọi → chuông → nghe → tiếng 2 chiều → kính cúp → AB `ended`; đọc lại xong → chuông 1365; mic → app khung đầu 43 |
+| call_nam | PASS | 2500 | 47 | - | 48 / 58 (n=4) | 68 / 77 (n=4) | 2 người trùng tên → "Bạn muốn gọi ai: Nam Anh hay Nam Bình?" → "Nam Bình" → gọi; Nam Anh không nhận chuông; app cúp (`app_hangup`) → AB `ended` |
+| call_cancel_readback | PASS | - | - | - | - | - | bấm huỷ trong lúc đọc lại: AB không có call, người thân không nhận chuông, kính không nhận `call_state` (chờ 7 s) |
+| missed_then_message | PASS | 2345 | - | - | - | - | Mẹ không nghe → "chưa nghe máy, bạn muốn nhắn tin không?" (chuông → câu đó 5678 ms, gồm chuông 5 s) → "Có" → "Bạn muốn nhắn gì cho Mẹ?" → "Con sẽ về muộn" → tin tới Mẹ sau 2867 ms |
+| message_send_idle | PASS | - | - | - | - | - | "Nhắn tin cho mẹ là con đi ăn cơm nhé" → tin tới Mẹ sau 2899 ms (gồm đọc lại + cửa sổ huỷ) |
+| message_in_idle | PASS | - | - | - | - | - | Mẹ nhắn khi kính rảnh: kính đọc "Mẹ nhắn: …", tin tới → tiếng đầu 320 ms; AB ghi `read_at` |
+| message_in_busy | PASS | - | - | - | - | - | tin tới giữa lượt chat: xếp hàng, đọc ngay sau `reply_end` của lượt, không chen ngang, không mất; AB ghi `read_at` |
+| glasses_called_by_relative | PASS | 41 (app gọi → kính chuông) | 42 (bấm nghe → active) | 123 | 38 / 59 (n=5) | 77 / 77 (n=5) | Mẹ gọi kính → "Mẹ đang gọi. Bấm nút để nghe." → bấm → FCM `call_answered` + media WS → tiếng 2 chiều → app cúp → AB `ended` |
+| emergency_second_answers | PASS | 3717 | 41 | - | 38 / 58 (n=5) | 76 / 77 (n=5) | Mẹ (ưu tiên 0) không nghe → Nam Bình nghe (người 1 → người 2: 5297 ms ≈ chuông 5 s); tin "KHẨN CẤP: Cô Sáu cần giúp. Vị trí: …" tới cả hai; Nam Anh không nhận gì |
+| emergency_exhausted | PASS | - | - | - | - | - | không ai nghe: đúng 6 lượt chuông (3 vòng × 2 người) trong 30,9 s, kính nghe "Chưa liên lạc được người thân nào." và nhận `ended` (`emergency_exhausted`), chuỗi dừng |
+| emergency_stop_by_button | PASS | - | - | - | - | - | bấm nút khi đang chuông: Mẹ nhận `call_ended`, kính `ended`, không ai khác bị gọi (chờ 2 vòng chuông) |
+
+Giới hạn của số đo: cùng một máy (loopback), không qua mạng/Cloudflare; nguồn âm thanh là tiếng "tách" giả (không phải mic/loa kính, chưa có AEC); mẫu nhỏ (n ≤ 5 tiếng tách mỗi hướng,
+1 lượt mỗi kịch bản) nên p90 chỉ là gần đúng. Nhả nút → chuông ≈ 2,3–3,7 s là đọc lại + cửa sổ huỷ (làn D), không phải độ trễ truyền; đo "đọc lại xong → chuông" ở `call_mom` = 1,37 s,
+nên mục tiêu spec "≤ đọc lại + 1 s" chưa đạt chặt (còn ~0,4 s do cửa sổ huỷ đếm từ khối audio đầu của câu đọc lại, xem mục 5 `FIRMWARE_ENDPOINTS.md`). Chạy 5 lần `message_in_busy` liên tiếp đều PASS.
+Một lần chạy sớm có `message_in_busy` FAIL do bộ kiểm khớp "nhắn" với câu chuyện cười của Gemma (chứa chữ "nhắn") — đã siết thành "Mẹ nhắn:"; không phải lỗi luồng.
+
+Kịch bản phụ thuộc STT thật: "Nhắn cho mẹ…" bị nghe thành "Nhanh cho mẹ…" với giọng tổng hợp (rơi vào chat), nên kịch bản `message_send_idle` dùng "Nhắn tin cho mẹ…". Đây là hạn chế STT, ghi nhận không sửa trong C8.

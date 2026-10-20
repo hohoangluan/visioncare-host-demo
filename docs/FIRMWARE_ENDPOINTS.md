@@ -288,4 +288,48 @@ mọi hành vi khác giữ nguyên. Khung debug **không chờ khoá audio** (xe
 | `{"t":"say","turn","text"}` | mỗi câu được đưa vào TTS: lượt thường, `result-*`, outbox live nav, OCR đọc, cue đọc thay clip | `text:str`; `turn` là id lượt đang nói (`result-<id>` cho kết quả hành động) |
 | `{"t":"det","w","h","boxes":[{"kind","score","box":[x0,y0,x1,y1],"level"}],"hazard":{"level","dir","kind"}\|null,"sent":bool}` | mỗi khung live nav đã xử lý | `box` chuẩn hoá 0..1 theo `w,h` (ảnh đã giải mã); `level` từng hộp theo `hazard.level_of`; `hazard` null khi khung an toàn; `sent` = khung `hazard` có thật sự đi tới kính (qua chống làm phiền) |
 | `{"t":"ocr","w","h","boxes":[[x0,y0,x1,y1]],"cue":str\|null,"capture":bool}` | mỗi khung live OCR đã giải mã | `boxes` là **pixel** theo `w,h` (ảnh xám đã thu nhỏ, tối đa 800 px cạnh dài); `cue` = cue căn khung vừa gửi; `capture` = vừa ra lệnh chụp |
-| `{"t":"mode","obstacle":bool,"ocr":bool,"navigating":bool,"music":bool,"call":str\|null}` | ngay sau `hello_ok`; mỗi khi live bắt đầu/kết thúc; sau mỗi lượt và mỗi `result-*` | `obstacle` = live nav đang chạy, `ocr` = live OCR đang chạy, `navigating`/`music` = điện thoại đang dẫn đường/phát nhạc; `call` luôn `null` (plan 2) |
+| `{"t":"mode","obstacle":bool,"ocr":bool,"navigating":bool,"music":bool,"call":str\|null}` | ngay sau `hello_ok`; mỗi khi live bắt đầu/kết thúc; sau mỗi lượt và mỗi `result-*` | `obstacle` = live nav đang chạy, `ocr` = live OCR đang chạy, `navigating`/`music` = điện thoại đang dẫn đường/phát nhạc; `call` = `"ringing_out"\|"ringing_in"\|"active"\|null` (trạng thái cuộc gọi, mục 16) |
+
+## 16. Cuộc gọi và tin nhắn (qua internet, như Messenger)
+
+Gọi điện/nhắn tin đi qua server (kính ↔ VH ↔ app server ↔ app người thân), **không dùng SIM, SMS hay số điện thoại, không video**. Chỉ chạy khi phiên
+xác thực bằng **token RIÊNG của kính** (mục 2; token dùng chung vẫn vào được nhưng bị từ chối gọi/nhắn bằng câu "Kính cần token riêng để gọi điện.") và
+đang có phiên `WS /v2/session` (kính chỉ dùng POST thì nghe "Kính cần cập nhật để gọi điện."). Kính KHÔNG cần biết ai là người thân: nói "gọi cho mẹ" như mọi
+lệnh khác, server khớp tên.
+
+### 16.1. Khung mới
+
+| Hướng | Khung | Ý nghĩa |
+|---|---|---|
+| server → kính | text `{"t":"call_state","call":"<id>","state":"ringing_out"\|"ringing_in"\|"active"\|"ended","peer":"Mẹ","reason"?:"..."}` | trạng thái cuộc gọi. Gửi khi tạo, khi đổi, khi kết thúc (kèm `reason`). `call` là id của app server (có thể đổi từ id tạm sang id thật sau khi gọi xong, kính chỉ cần dùng id mới nhất) |
+| kính → server | binary `0x05` + ADPCM | **mic trong cuộc gọi** (chỉ khi `active`; ngoài `active` bị bỏ). Cùng định dạng `0x03`: IMA ADPCM 4-bit, mono, 16 kHz, khối 256 B (505 mẫu ≈ 31,6 ms). Có thể gửi một hay nhiều khối mỗi khung, mảnh lẻ được ghép lại. KHÔNG dùng `0x03` (đó là lượt lệnh) |
+| server → kính | binary `0x02` + ADPCM | tiếng đầu kia, như audio trả lời (bội số 256 B, kính phát ngay). Trong `active` kênh `0x02` chỉ còn tiếng cuộc gọi |
+| kính → server | text `{"t":"call_answer","call":"<id>"}` | bấm nút khi `ringing_in` = nghe (server không so id) |
+| kính → server | text `{"t":"call_hangup","call":"<id>"}` | bấm nút khi `ringing_out` hoặc `active` = cúp / huỷ / **dừng chuỗi khẩn cấp** |
+
+Mic PCM mono 16 kHz 16-bit chia khung **20 ms = 640 byte** ở phía app (server giải mã ADPCM rồi cắt); độ trễ thêm của cầu ở kính → app ≈ 1 ms, đệm chống giật
+app → kính mặc định 60 ms (`CALL_JITTER_MS`).
+
+### 16.2. Nút và trạng thái
+
+- `ringing_in` (người thân gọi tới): server đọc "{tên} đang gọi. Bấm nút để nghe." → bấm = `call_answer`. Kính đang bận hoặc không có phiên: server từ chối, người gọi nhận `call_ended` (`busy`/`glasses_offline`).
+- `ringing_out` (kính gọi đi, kể cả chuỗi khẩn cấp): bấm = `call_hangup`. Đừng gửi `turn_start`.
+- `active`: bấm = `call_hangup`. **Không gửi `turn_start` trong lúc gọi** (server cũng bỏ qua `turn_start` khi `ringing_out|active`). Server tự dừng mọi câu đang đọc, tạm dừng
+  chế độ tránh vật cản (live nav) và bật lại khi cúp; kính ngừng stream `0x04` khi `active` thì tốt hơn (server không gộp hazard vào cuộc gọi).
+- `ended` (kèm `reason`: `glasses_hangup|app_hangup|rejected|missed|timeout|emergency_exhausted|peer_disconnect|media_timeout|revoked|busy|...`): dừng mic `0x05`, trở về IDLE. Có lời đọc kèm
+  sau đó ("Mẹ chưa nghe máy. Bạn muốn nhắn tin không?") qua `reply result-*` như mục 4.1; lượt kế "Có." = nhắn tin.
+- Mất phiên WS giữa cuộc gọi: server cúp và báo app server; kính mở lại phiên thì không có cuộc gọi nào còn.
+- Cue riêng cho chuông/kết nối/kết thúc CHƯA có clip (`CUE_VERSION` không đổi): kính tự phát âm báo theo `call_state` nếu muốn; giọng đọc đã đủ cho người dùng.
+- Khẩn cấp ("cấp cứu, gọi người thân giúp tôi"): đọc "Đang gọi người thân khẩn cấp, bấm nút để huỷ.", sau cửa sổ huỷ là `ringing_out` kéo dài tối đa 3 vòng x số người
+  (mỗi người ≤ `CALL_RING_TIMEOUT_S`); người nghe thì `active`. Hết vòng: `ended` với `reason:"emergency_exhausted"` và câu "Chưa liên lạc được người thân nào.".
+
+### 16.3. Tin nhắn
+
+Không có khung riêng: lời nhắn đi bằng lượt lệnh bình thường ("nhắn tin cho mẹ là con về muộn"; "đọc tin nhắn"). Tin tới từ người thân được server đọc
+"{tên} nhắn: {nội dung}" bằng một `reply result-*` (mục 4.1) khi kính **rảnh** (không trong lượt, không OCR live, không cuộc gọi); đang bận thì xếp hàng và đọc sau,
+không chen ngang. Đọc xong server báo app server là đã đọc.
+
+### 16.4. Đã kiểm
+
+`tools/e2e_calls.py` (kính giả gửi `0x05` ADPCM, nhận `0x02`, bấm `call_answer`/`call_hangup`): bảng số đo ở `docs/E2E_FULL_FLOW.md` mục "Cuộc gọi, tin nhắn, khẩn cấp".
+**Chưa đo trên kính thật/Cloudflare, và firmware chưa gửi `0x05`/khử vọng (AEC) chưa kiểm.**
