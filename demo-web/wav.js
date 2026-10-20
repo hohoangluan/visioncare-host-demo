@@ -68,3 +68,70 @@ export function rms(samples) {
   for (let i = 0; i < samples.length; i++) sum += samples[i] * samples[i];
   return Math.sqrt(sum / samples.length);
 }
+
+// Header WAV cho luồng PCM16 chưa biết độ dài (đang thu): RIFF size và data size
+// đều 0xFFFFFFFF. `pipeline/stt_stream.py` dò "RIFF", đọc fmt rồi coi mọi byte
+// sau chunk `data` là mẫu, nên gửi header + khối PCM đầu trong cùng một khung 0x03.
+export function streamingWavHeader(sampleRate = TARGET_RATE) {
+  const view = new DataView(new ArrayBuffer(44));
+  const text = (offset, s) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
+  };
+  text(0, "RIFF");
+  view.setUint32(4, 0xffffffff, true);
+  text(8, "WAVE");
+  text(12, "fmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true); // PCM
+  view.setUint16(22, 1, true); // mono
+  view.setUint32(24, sampleRate, true);
+  view.setUint32(28, sampleRate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  text(36, "data");
+  view.setUint32(40, 0xffffffff, true);
+  return new Uint8Array(view.buffer);
+}
+
+// Hạ mẫu theo luồng: giữ phần dư giữa các lần gọi để biên khối không lệch pha.
+// Cùng cách lấy trung bình cửa sổ như `downsample`, nhưng cửa sổ thứ i luôn là
+// [floor(i*ratio), floor((i+1)*ratio)) tính từ mẫu đầu của cả luồng.
+export class StreamDownsampler {
+  constructor(fromRate, toRate = TARGET_RATE) {
+    this.ratio = fromRate / toRate;
+    this.buf = new Float32Array(0); // mẫu chưa dùng hết
+    this.consumed = 0; // số mẫu đã bỏ khỏi đầu luồng
+    this.outIndex = 0; // số mẫu ra đã sinh
+  }
+
+  /** Nhận Float32, trả Int16Array (có thể rỗng). `final` = xả nốt phần dư. */
+  push(samples, final = false) {
+    if (samples && samples.length) {
+      const merged = new Float32Array(this.buf.length + samples.length);
+      merged.set(this.buf);
+      merged.set(samples, this.buf.length);
+      this.buf = merged;
+    }
+    const total = this.consumed + this.buf.length;
+    const out = [];
+    for (;;) {
+      const start = Math.floor(this.outIndex * this.ratio);
+      let end = Math.floor((this.outIndex + 1) * this.ratio);
+      if (end > total) {
+        if (!final || start >= total) break;
+        end = total; // cửa sổ cuối thiếu: lấy phần còn lại
+      }
+      let sum = 0;
+      for (let j = start; j < end; j++) sum += this.buf[j - this.consumed];
+      const s = Math.max(-1, Math.min(1, sum / Math.max(1, end - start)));
+      out.push(s < 0 ? s * 0x8000 : s * 0x7fff);
+      this.outIndex++;
+    }
+    const keepFrom = Math.floor(this.outIndex * this.ratio);
+    if (keepFrom > this.consumed) {
+      this.buf = this.buf.slice(keepFrom - this.consumed);
+      this.consumed = keepFrom;
+    }
+    return Int16Array.from(out);
+  }
+}
