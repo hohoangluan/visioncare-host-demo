@@ -18,6 +18,7 @@ import cv2
 import numpy as np
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
+import config
 from lanes.ocr_live import _Mailbox, receive_frames
 from live import hazard, protocol
 from live.session import LiveSession, sessions
@@ -110,7 +111,8 @@ async def run(ws: WebSocket, session: LiveSession) -> None:
             result = await asyncio.to_thread(process_frame, det, tracker, frame)
             if result.level >= _HIGH_LEVEL:
                 clock.mark()  # TRƯỚC khi gửi: audio outbox phải dừng ngay, hazard đi trước
-            if anti.step(result.level):
+            # Mức dưới HAZARD_MIN_LEVEL coi như an toàn: không tới AntiAnnoy, không gửi kính.
+            if anti.step(result.level if result.level >= config.HAZARD_MIN_LEVEL else 0):
                 await ws.send_text(protocol.hazard(result.level, result.dir, result.kind))
                 logger.info("hazard level=%d dir=%s kind=%s", result.level, result.dir, result.kind)
             frames += 1

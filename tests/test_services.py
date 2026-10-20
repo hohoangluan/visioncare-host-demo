@@ -77,10 +77,10 @@ def test_navigation_start_speaks_the_destination_the_phone_confirmed(monkeypatch
 
     assert calls[0][0] == "api/v1/service/navigation/start"
     assert "Chợ Bến Thành" in out
-    assert "Đã mở chỉ đường" in out
+    assert "Đã gửi chỉ đường tới Chợ Bến Thành về điện thoại" in out
     # Maps opens through the launcher notification, which Android only
     # auto-opens with the screen off, so the reply has to say so.
-    assert "nhấn vào thông báo" in out
+    assert "Mở thông báo để đi bằng Google Maps" in out
 
 
 def test_navigation_start_refuses_without_a_destination(monkeypatch):

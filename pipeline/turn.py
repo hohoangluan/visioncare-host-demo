@@ -19,7 +19,6 @@ from dataclasses import dataclass, field
 
 import config
 from lanes import general, phone
-from live.session import sessions
 from pipeline import device_ctx, final_router, metrics, pending_action, vad
 from pipeline.final_router import Speculation, TurnContext
 from pipeline.intent_early import Decision
@@ -50,16 +49,15 @@ def _bypass(device: str, device_state: dict) -> Reply | None:
 
     Chỉ áp cho lượt KHÔNG có lời (no_speech). Lượt có lời đi qua bộ phân loại như thường — nó đã biết
     `music_playing`/`navigating` — nên "tăng âm lượng" lúc đang nghe nhạc là music_volume chứ không phải
-    dừng nhạc, và câu hỏi chat lúc đang dẫn đường không tắt chỉ đường. Dừng chỉ đường bằng nút phải đóng
-    cả live nav (khung `end`), nếu không cảnh báo vật cản chạy mãi sau khi lộ trình đã dừng (E2E 2026-10-19).
+    dừng nhạc, và câu hỏi chat lúc đang dẫn đường không tắt chỉ đường. Dẫn đường (điện thoại) và cảnh báo
+    vật cản (live nav) là hai chế độ độc lập: dừng chỉ đường KHÔNG đóng live nav, muốn tắt thì nói "tắt cảnh báo".
     """
     from lanes.phone import speech
 
     if device_state.get("music_playing"):
         return Reply(speech=speech("music_stop", "", {}), intent="music_stop", lane="D")
     if device_state.get("navigating"):
-        sessions.close_device(device, "nav")
-        return Reply(speech=speech("nav_stop", "", {}), intent="nav_stop", lane="C+D")
+        return Reply(speech=speech("nav_stop", "", {}), intent="nav_stop", lane="D")
     return None
 
 

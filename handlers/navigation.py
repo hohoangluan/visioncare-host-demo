@@ -4,9 +4,9 @@ from handlers.action_flow import forget, recall, run_action
 
 _ASK_DESTINATION = "Bạn muốn đi đâu? Vui lòng nói lại kèm tên địa điểm."
 
-# Địa chỉ nằm ở câu kết quả phía sau — đó mới là địa chỉ điện thoại thật sự mở,
+# Địa chỉ nằm ở câu kết quả phía sau — đó mới là địa chỉ điện thoại thật sự nhận,
 # nên nhắc ở đây nữa chỉ làm câu nói dài gấp đôi.
-_START_ACK = "Đang mở chỉ đường."
+_START_ACK = "Đang gửi chỉ đường về điện thoại."
 _OPENING_MAP = "Đang mở bản đồ trên điện thoại, bạn chờ một chút."
 
 _NOTHING_TO_STOP = "Hiện không có lộ trình nào đang chạy để dừng."

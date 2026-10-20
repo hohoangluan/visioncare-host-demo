@@ -238,7 +238,7 @@ def _fire_after_readback(ctx: TurnContext, intent: str, text: str, params: dict,
     mở đầu của `/process` / RTT ăn mất cửa sổ huỷ và lệnh nổ trước khi người dùng nghe xong. Lượt mới / kính
     ngắt trong lúc chờ sẽ huỷ (pending_action); chưa bao giờ armed thì lệnh không chạy (fail closed).
 
-    `deliver` None (mọi hành động trừ nav_start): câu kết quả/lỗi của điện thoại được đọc qua phiên WS
+    `deliver` None (mọi hành động): câu kết quả/lỗi của điện thoại được đọc qua phiên WS
     của kính (bỏ câu xác nhận đầu vì đã đọc lại). Trước đây bị vứt: người dùng nghe "Đang gọi cho mẹ." rồi im.
     """
     line = phone.readback(intent, params)
@@ -267,33 +267,7 @@ async def _lane_c(ctx: TurnContext, d: Decision, text: str, params: dict | None 
     if d.intent == "alert_off":
         sessions.close_device(ctx.device, "nav")
         return Reply(cues=["nav_alert_off"], intent=d.intent, lane="C")
-    if d.intent == "nav_stop":
-        sessions.close_device(ctx.device, "nav")
-        return Reply(speech=phone.speech("nav_stop", text, {}), intent=d.intent, lane="C+D")
-
-    if d.intent == "nav_start":
-        params = params if params is not None else await _params(ctx, "nav_start", text)
-        if not params.get("destination"):
-            phone.set_pending(ctx.device, "nav_start")
-            return Reply(cues=["ask_destination"], intent=d.intent, lane="D")
-        if not _trusted(d):
-            return _ask_back(ctx, d, params, "C+D")
-        if ctx.single_shot:
-            # Không WS: chỉ gửi lệnh mở chỉ đường tới điện thoại (kết quả không đọc
-            # lại được), nói câu xác nhận.
-            fired = _fire_after_readback(ctx, "nav_start", text, params)
-            if fired is None:
-                return Reply(intent=d.intent, lane="C+D")
-            return Reply(speech=[fired[0]], intent=d.intent, lane="C+D", on_audio_start=fired[1])
-        session = ctx.prewarmer.session("nav")
-        # Cảnh báo làn C bật ngay; mở lộ trình (làn D) chờ đọc lại điểm đến xong,
-        # kết quả đọc qua WS của làn C.
-        fired = _fire_after_readback(ctx, "nav_start", text, params, deliver=session.outbox.put)
-        if fired is None:
-            return Reply(intent=d.intent, lane="C+D")
-        return Reply(cues=["nav_alert_on"], speech=[fired[0]], live="nav", live_token=session.token,
-                     intent=d.intent, lane="C+D", on_audio_start=fired[1])
-
+    # Làn C chỉ còn cảnh báo vật cản; dẫn đường (nav_start/nav_stop) là hành động điện thoại ở làn D.
     session = ctx.prewarmer.session("nav")  # alert_on
     return Reply(cues=["nav_alert_on"], live="nav", live_token=session.token, intent=d.intent, lane="C")
 
@@ -329,7 +303,7 @@ async def route(ctx: TurnContext, d: Decision, text: str) -> Reply:
         if phone.is_yes(text):
             ctx.cancel_speculation()
             d = Decision(intent, source="confirmed", backend="gemma", confidence=1.0)
-            return await (_lane_c if intent == "nav_start" else _lane_d)(ctx, d, text, params)
+            return await _lane_d(ctx, d, text, params)
         if phone.is_no(text):
             ctx.cancel_speculation()
             return Reply(speech=["Đã huỷ."], intent=intent, lane="D")
@@ -349,7 +323,7 @@ async def route(ctx: TurnContext, d: Decision, text: str) -> Reply:
         # Điền chỗ trống bằng câu nói tự do -> không tin cậy, ép hỏi xác nhận.
         d = Decision(intent, source=d.source)
         ctx.cancel_speculation(keep_params=True)
-        return await (_lane_c if intent == "nav_start" else _lane_d)(ctx, d, text, params)
+        return await _lane_d(ctx, d, text, params)
 
     lane = d.lane
     ctx.cancel_speculation(keep_answer=lane == "A", keep_params=lane in ("C", "D"))
