@@ -1,0 +1,16 @@
+# Dữ liệu công khai tải về (điều khoản: chỉ đánh giá, không phân phối lại) — tải bằng download_datasets.sh / fetch_*.sh
+datas/
+# Kết quả thô, cache LLM, log (repo gốc cũng chặn mọi thư mục results/)
+results/
+# Sản phẩm train
+train/models/
+train/weights/
+train/runs/
+train/obstacle_yolo/
+train/state/
+train/*.log
+train/obstacle.yaml
+train/classes_vh.json
+train/dedup.json
+*.onnx
+*.pt
