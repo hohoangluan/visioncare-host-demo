@@ -8,6 +8,10 @@ Cần có file này vì hai lý do:
 - `getUserMedia` (camera/micro) chỉ chạy trên https hoặc localhost. Phục vụ
   trang ở đây rồi mở bằng http://localhost:8080 là đủ điều kiện.
 
+Ngoài HTTP còn chuyển tiếp WebSocket (`/api/v2/session` -> `/v2/session` của server
+kính): trang demo nối đúng như kính thật và nhận khung debug. Proxy không đọc khung,
+chỉ chuyển byte hai chiều sau cái bắt tay `Upgrade: websocket`.
+
 Chỉ dùng thư viện chuẩn: máy trình bày không cần cài thêm gì.
 
     python demo-web/serve.py                       # server kính ở 127.0.0.1:8000
@@ -27,6 +31,7 @@ import socket
 import ssl
 import subprocess
 import sys
+import threading
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit
 
@@ -48,6 +53,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.startswith(API_PREFIX):
+            if self.headers.get("Upgrade", "").lower() == "websocket":
+                return self._proxy_ws()
             return self._proxy()
         super().do_GET()
 
@@ -104,6 +111,54 @@ class Handler(SimpleHTTPRequestHandler):
             pass  # trình duyệt đóng tab giữa chừng
         finally:
             conn.close()
+
+    def _proxy_ws(self):
+        """Nối WebSocket của trình duyệt tới server kính bằng cách bơm byte hai chiều.
+
+        Không làm lại bắt tay: chuyển nguyên dòng request và header (chỉ đổi `Host`) để
+        server tự trả `101 Switching Protocols`; sau đó mọi byte đi qua như ống dẫn.
+        """
+        up = self.upstream
+        path = self.path[len(API_PREFIX) - 1:]
+        try:
+            raw = socket.create_connection((up.hostname, up.port or (443 if up.scheme == "https" else 80)), timeout=10)
+            if up.scheme == "https":
+                raw = ssl.create_default_context().wrap_socket(raw, server_hostname=up.hostname)
+            raw.settimeout(None)  # kết nối WS sống lâu: ping của trang giữ nhịp, không đặt hạn đọc
+        except OSError as exc:
+            self.send_error(502, f"Không nối được server kính: {exc}")
+            return
+
+        host = up.hostname + (f":{up.port}" if up.port else "")
+        head = [f"GET {path} HTTP/1.1", f"Host: {host}"]
+        head += [f"{k}: {v}" for k, v in self.headers.items() if k.lower() != "host"]
+        raw.sendall(("\r\n".join(head) + "\r\n\r\n").encode("latin-1"))
+
+        client = self.connection
+
+        def pump(src, dst):
+            try:
+                while True:
+                    data = src.recv(65536)
+                    if not data:
+                        break
+                    dst.sendall(data)
+            except OSError:
+                pass  # một đầu đóng đột ngột
+            finally:
+                # Đóng nửa còn lại để thread bên kia thoát khỏi recv().
+                for s in (src, dst):
+                    try:
+                        s.shutdown(socket.SHUT_RDWR)
+                    except OSError:
+                        pass
+
+        back = threading.Thread(target=pump, args=(raw, client), daemon=True)
+        back.start()
+        pump(client, raw)
+        back.join(timeout=2)
+        raw.close()
+        self.close_connection = True
 
     def log_message(self, fmt, *args):
         if not self.path.startswith(API_PREFIX + "health"):  # poll 10 giây/lần, bớt ồn
