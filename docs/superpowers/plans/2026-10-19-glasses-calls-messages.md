@@ -22,6 +22,30 @@
 - Số cố định từ spec: chuông `CALL_RING_TIMEOUT_S=30`; khẩn cấp tối đa 3 vòng; jitter `CALL_JITTER_MS=60`, bỏ khung trễ > 200 ms; PCM16LE 16 kHz mono khung 20 ms (640 B); mic kính khung `0x05`; `CALL_HALF_DUPLEX` mặc định 0, giảm 20 dB khi bật; trễ một chiều mục tiêu ≤ 400 ms qua Cloudflare.
 - Câu nói cố định (đúng nguyên văn): "Đang gọi cho {name}." · "Bạn muốn gọi ai: {a} hay {b}?" · "Chưa có người thân tên {name} trong danh sách." · "{name} chưa nghe máy. Bạn muốn nhắn tin không?" · "{name} đang gọi. Bấm nút để nghe." · "Nhắn cho {name}: {text}." · "{name} nhắn: {text}" · "Đang gọi người thân khẩn cấp, bấm nút để huỷ." · "Không có tin nhắn mới." · tin khẩn cấp "KHẨN CẤP: {owner} cần giúp. Vị trí: {map_url}".
 
+## Sửa đổi 2026-10-20 (controller, sau plan `2026-10-20-modes-demo-app-protocol.md`)
+
+- **Dẫn đường đã đổi:** `nav_start`/`nav_stop` giờ là làn D (gửi `maps_url` Google Maps về điện thoại, người dùng tự chạm); tránh vật cản là chế độ riêng
+  (`alert_on`/`alert_off`, chỉ kêu mức ≥ `HAZARD_MIN_LEVEL`=2). "Làn C dừng khi đang gọi" ở C5 nghĩa là tạm dừng chế độ tránh vật cản
+  (live `nav`) trong cuộc gọi và bật lại khi cúp nếu trước đó đang bật.
+- **Khung debug demo (D1):** khung `mode` có trường `call` (đang để null) — C5 phải điền trạng thái cuộc gọi (`ringing_out|ringing_in|active|null`)
+  và phát `mode` khi đổi; câu nói cuộc gọi đi qua TTS nên `say` tự có. Trang `demo-web` đã có chip "Cuộc gọi".
+- **Hợp đồng app:** C8 viết phần gọi điện/nhắn tin vào `app-demo-backend/docs/MOBILE_APP_PROTOCOL.md` mục "Gọi điện / nhắn tin với kính"
+  (đã có tiêu đề chờ), KHÔNG tạo file riêng `CALLS_MESSAGES_APP_CONTRACT.md`.
+- **Thêm Task C0 (VH, trước C5/C6): token theo từng kính (I6 từ review cuối plan 1).**
+
+### Task C0 (VH): Token theo từng kính, ràng buộc `device_id`
+
+**Files:** `pipeline/guard.py`, `config.py` (+ `.env.example` giá trị trống), `live/device_session.py` (`_hello`), `app.py` (các endpoint kính dùng `X-Device-Id`/`device`),
+`services/visioncare_client.py` (`device_id` gửi AB lấy từ kết quả xác thực, không từ client); Test `tests/test_device_tokens.py`.
+- `VISIONCARE_DEVICE_TOKENS` = đường dẫn file JSON `{"<device_id>": "<sha256 hex của token>"}` (git-ignored, ví dụ `data/device_tokens.example.json` không chứa token thật)
+  + `tools/device_token.py add <device_id>` sinh token ngẫu nhiên, in MỘT lần, ghi hash. Xác thực: hash token khớp đúng `device_id` đã khai → OK;
+  token khớp thiết bị khác → 4401/401. So sánh hằng thời gian.
+- Tương thích: token dùng chung cũ `VISIONCARE_DEVICE_CLIENT_TOKEN` vẫn chấp nhận khi `VISIONCARE_ALLOW_SHARED_DEVICE_TOKEN=1` (mặc định 1 để không gãy
+  kính/demo đang chạy; log cảnh báo một lần lúc khởi động). Gọi điện/nhắn tin/khẩn cấp (C5–C7) CHỈ chạy khi phiên xác thực bằng token riêng của kính
+  (`auth.per_device=True`); token chung → câu "Kính cần token riêng để gọi điện." và không gọi AB.
+- Đo: xác thực thêm < 0,1 ms (hash + dict).
+- [ ] Test: `test_per_device_token_ok`, `test_token_of_other_device_rejected`, `test_shared_token_cannot_call`. FAIL → cài → PASS. Commit.
+
 ## Review Focus
 
 1. **Hai đầu cùng cúp / mạng rớt giữa cuộc gọi**: trạng thái AB và VH khớp nhau (`ended`), không còn task cầu âm thanh treo. → test ở C5 (`test_bridge_peer_disconnect_ends_call`) và C2 (`test_hangup_idempotent`).
