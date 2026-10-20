@@ -9,6 +9,7 @@ chạy lại không tốn quota sol:
     python -m tools.intent_gold.build --stage variants    # TTS -> nhiễu -> Zipformer
     python -m tools.intent_gold.build --stage split       # chia dev/test, ghi 4 file đầu ra
     python -m tools.intent_gold.build --stage all
+    python -m tools.intent_gold.build --stage extend --labels message_send,message_read   # nhãn mới (Plan 2 C7)
 
 Thứ tự `all` khác thứ tự liệt kê trong kế hoạch ở một điểm có chủ ý: `adjudicate`
 chạy TRƯỚC `variants`. Biến thể STT mang nhãn của câu gốc, nên chỉ có nghĩa khi
@@ -53,12 +54,12 @@ REVIEW_CAP = 20
 # sai hành động thật (gọi nhầm người, đặt nhầm xe), nên review ưu tiên các nhãn này.
 LANE_D = frozenset({
     "contact_call", "emergency_call", "nav_start", "nav_stop", "ride_quote",
-    "ride_confirm", "music_play", "music_stop", "music_volume",
+    "ride_confirm", "music_play", "music_stop", "music_volume", "message_send", "message_read",
 })
 OCR_MODES = ("read", "summarize", "reread", "raw", "specialized")
 VARIANTS = ("clean", "stt_snr20", "stt_snr10", "stt_snr5")
 DEVICE_KEYS = ("music_playing", "navigating", "alerting", "ride_quote_pending")
-PARAM_KEYS = ("contact_name", "destination", "song")
+PARAM_KEYS = ("contact_name", "destination", "song", "text")
 
 # ── Schema ───────────────────────────────────────────────────────────────
 
@@ -124,7 +125,7 @@ _OCR_MODE_DOC = {
 
 
 def label_guide() -> str:
-    """Định nghĩa 17 nhãn + `ocr_mode` + `needs_web` + tham số + bối cảnh thiết bị."""
+    """Định nghĩa 19 nhãn + `ocr_mode` + `needs_web` + tham số + bối cảnh thiết bị."""
     labels = "\n".join(f"- {k}: {v}" for k, v in LABELS.items())
     modes = "\n".join(f"- {k}: {v}" for k, v in _OCR_MODE_DOC.items())
     return (
@@ -145,9 +146,16 @@ def label_guide() -> str:
         f"- ocr_mode (chỉ có nghĩa khi nhãn là ocr, các nhãn khác để \"read\"):\n{modes}\n"
         "- needs_web = true nếu trả lời cần tra thông tin MỚI trên mạng (thời tiết, tin "
         "tức, giá vàng, tỉ số, giờ mở cửa, sự kiện); nhãn khác chat thì false.\n"
-        "- params (làn D): contact_name khi contact_call; destination khi nav_start hoặc "
-        "ride_quote; song khi music_play. Trích ĐÚNG chữ người nói, không sửa; "
-        "không có thì null. Các nhãn khác: cả ba là null.\n"
+        "- message_send chỉ khi người nói YÊU CẦU kính nhắn tin/gửi lời nhắn cho người thân ngay. "
+        "Kể chuyện đã nhắn (\"hôm qua tôi nhắn cho mẹ rồi\"), hỏi về tin nhắn nói chung "
+        "(\"tin nhắn là gì\"), nói với người khác -> chat. \"Nhắn\" (message_send) khác \"gọi\" "
+        "(contact_call).\n"
+        "- message_read: yêu cầu đọc/nghe tin nhắn mới, hoặc hỏi có ai nhắn gì không (\"đọc tin "
+        "nhắn\", \"mẹ có nhắn gì không\"). \"Đọc tin tức\" là chat, đọc chữ trên giấy là ocr.\n"
+        "- params (làn D): contact_name khi contact_call hoặc message_send (người nhận); "
+        "destination khi nav_start hoặc ride_quote; song khi music_play; text khi message_send "
+        "(NỘI DUNG lời nhắn, không gồm phần \"nhắn cho X\"; null nếu chưa nói nội dung). Trích ĐÚNG "
+        "chữ người nói, không sửa; không có thì null. Các nhãn khác: cả bốn là null.\n"
         "- reason: một câu ngắn tiếng Việt."
     )
 
@@ -533,6 +541,136 @@ def build_gen_items(work: Path, source_items: list[dict]) -> tuple[list[dict], d
                                                                   for k, v in dropped.items()}}
 
 
+# ── Nhãn mới (Plan 2 C7): sinh thêm cho `message_send`/`message_read` + câu gây nhầm ──────────────
+#
+# Không chạy lại `split`: chia lại sẽ đổi phía dev/test của câu cũ (phân tầng + xáo theo nhãn). Bước `extend` chỉ
+# THÊM dòng vào gold_dev/gold_test (câu cũ không đổi phía, không đổi nội dung). Không có biến thể STT (quy mô nhỏ,
+# chế độ nhanh): những dòng này chỉ có `clean`. Trích tham số của nhãn mới (contact_name + text) đo cùng cách cũ.
+
+EXT_CELLS: dict[str, tuple[int, frozenset, str]] = {
+    "ext_send_full": (14, frozenset({"message_send"}),
+        "Lệnh nhắn tin ĐẦY ĐỦ người nhận + nội dung (message_send; contact_name, text): \"nhắn cho mẹ là tôi "
+        "về muộn\", \"gửi tin cho bố hôm nay con không qua\"... Đa dạng người nhận (mẹ, bố, chị Hoa, anh "
+        "Nam, bác sĩ) và động từ (nhắn, nhắn tin, gửi tin nhắn, gửi lời nhắn, báo giúp tôi)."),
+    "ext_send_notext": (10, frozenset({"message_send"}),
+        "Lệnh nhắn tin CHƯA nói nội dung (message_send; text=null): \"nhắn tin cho mẹ\", \"gửi tin nhắn cho anh "
+        "Nam\", \"tôi muốn nhắn cho bố\". Vài câu thiếu cả người nhận (\"nhắn tin\", \"gửi tin nhắn\"; "
+        "contact_name=null)."),
+    "ext_send_dialect": (12, frozenset({"message_send"}),
+        "Lệnh nhắn tin (message_send) với phương ngữ Bắc/Trung/Nam, chêm từ đệm (\"ờ\", \"à\", \"cho tôi\"), "
+        "nói sửa giữa chừng (\"nhắn cho mẹ à không cho chị\": theo ý cuối)."),
+    "ext_send_vs_call": (16, frozenset({"message_send", "contact_call"}),
+        "Cặp dễ nhầm NHẮN ↔ GỌI: một nửa là lệnh nhắn tin (message_send) và một nửa là lệnh gọi điện "
+        "(contact_call) cho CÙNG kiểu người nhận và cách nói gần giống nhau (\"nhắn cho mẹ\" / \"gọi cho "
+        "mẹ\", \"gửi tin cho bố\" / \"gọi điện cho bố\"). Điền params đúng nhãn."),
+    "ext_read": (16, frozenset({"message_read"}),
+        "Lệnh đọc/nghe tin nhắn mới hoặc hỏi có ai nhắn gì không (message_read): \"đọc tin nhắn\", \"có tin nhắn "
+        "mới không\", \"mẹ có nhắn gì không\", \"bố nhắn gì cho tôi chưa\", \"nghe lời nhắn\"."),
+    "ext_read_dialect": (12, frozenset({"message_read"}),
+        "Lệnh đọc/hỏi tin nhắn mới (message_read) phương ngữ Bắc/Trung/Nam, có từ đệm, câu cụt vẫn đủ ý "
+        "(\"tin nhắn\" một mình là chat, \"có tin nhắn không\" là message_read)."),
+    "ext_chat_msg": (14, frozenset({"message_send", "message_read"}),
+        "Câu NHẮC tới nhắn tin nhưng KHÔNG ra lệnh cho kính (chat): kể chuyện đã nhắn (\"hôm qua tôi nhắn cho "
+        "mẹ rồi\"), hỏi chung (\"nhắn tin có tốn tiền không\", \"tin nhắn là gì\"), kể người khác nhắn "
+        "(\"mẹ hay nhắn cho tôi buổi tối\"). Xen 3 câu lệnh thật làm đối chứng."),
+    "ext_read_vs_ocr": (12, frozenset({"message_read"}),
+        "Cặp dễ nhầm ĐỌC: lệnh đọc tin nhắn (message_read), đọc chữ trên giấy/biển báo (ocr), hỏi tin tức hôm "
+        "nay (chat, needs_web=true), đọc thư/báo (ocr). Trộn đều, câu gần giống nhau."),
+}
+
+
+def extend_generate(work: Path, cells: dict) -> dict:
+    cache_path = work / "ext_raw.jsonl"
+    done = {r["cell"] for r in read_jsonl(cache_path)}
+    todo = [(name, c) for name, c in cells.items() if name not in done]
+    system = label_guide() + "\n\n" + _GEN_STYLE
+    jobs = [(system, f"Ô: {name}\n{desc}\nSinh đúng {quota + 4} câu mới.", GENERATE_SCHEMA)
+            for name, (quota, _, desc) in todo]
+    replies = sol.ask_many(jobs, effort="low")
+    fails = sum(r is None for r in replies)
+    if jobs and fails > max(2, 0.3 * len(jobs)):
+        raise sol.SolError(f"extend: {fails}/{len(jobs)} ô hỏng — dừng, nghi router/quota")
+    for (name, _), reply in zip(todo, replies):
+        if reply is not None:
+            append_jsonl(cache_path, [{"cell": name, "items": reply["items"]}])
+    return {"cells_failed": fails}
+
+
+def extend_items(work: Path, cells: dict, existing_texts: set) -> list[dict]:
+    seen, items = set(existing_texts), []
+    for entry in read_jsonl(work / "ext_raw.jsonl"):
+        if entry["cell"] not in cells:
+            continue
+        kept = 0
+        for row in entry["items"]:
+            if kept >= cells[entry["cell"]][0]:
+                break
+            text = stt_style(row.get("text", ""))
+            device = clean_device(row.get("device"))
+            if not norm(text) or row.get("label") not in LABELS or norm(text) in seen:
+                continue
+            seen.add(norm(text))
+            item_id = make_id(text, device)
+            items.append({"id": item_id, "group": item_id, "text": text, "device": device, "old": row["label"],
+                          "hints": [], "origin": "sol_gen_ext", "cell": entry["cell"]})
+            kept += 1
+    write_jsonl(work / "ext_items.jsonl", items)
+    return items
+
+
+def extend(labels: list[str], per_label: int, work: Path, out: Path) -> dict:
+    """Sinh -> sol gán nhãn -> Gemma + phân xử -> THÊM vào gold_dev/gold_test theo băm (câu cũ không đổi phía)."""
+    bad = [x for x in labels if x not in LABELS]
+    if bad:
+        raise SystemExit(f"nhãn lạ: {bad}")
+    cells = {n: c for n, c in EXT_CELLS.items() if c[1] & set(labels)}
+    info = extend_generate(work, cells)
+    old = {name: read_jsonl(out / name) for name in ("gold_dev.jsonl", "gold_test.jsonl", "gold_review.jsonl")}
+    existing = {norm(r["source_text"] if "source_text" in r else r["text"])
+                for rows in old.values() for r in rows} | {norm(r["text"]) for rows in old.values() for r in rows}
+    items = extend_items(work, cells, existing)
+    info["items"] = len(items)
+    info["relabel"] = relabel(items, work)
+    info["adjudicate"] = adjudicate(items, work)
+    accepted = _accepted(items, work)
+    rows = [make_row(i, d, "clean", i["text"]) for i, d in accepted]
+    info["uncertain_dropped"] = len(items) - len(rows)
+
+    # Mỗi nhãn đích tối đa `per_label` dòng (chọn theo băm: ổn định khi chạy lại); nhãn khác (chat, ocr, contact_call
+    # sinh làm đối chứng) giữ nguyên số đã sinh.
+    by_label: dict[str, list[dict]] = {}
+    for r in rows:
+        by_label.setdefault(r["label"], []).append(r)
+    kept: list[dict] = []
+    for label, group in sorted(by_label.items()):
+        group.sort(key=lambda r: hashlib.sha1(r["group"].encode()).hexdigest())
+        kept.extend(group[:per_label] if label in labels else group)
+    # Phân tầng theo nhãn, 40% test, thứ tự theo băm -> kết quả chỉ phụ thuộc tập câu.
+    have = {r["group"] for rows_ in old.values() for r in rows_}
+    new_dev, new_test = [], []
+    by_label = {}
+    for r in kept:
+        if r["group"] not in have:
+            by_label.setdefault(r["label"], []).append(r)
+    carry = 0.0
+    for label in sorted(by_label):
+        group = sorted(by_label[label], key=lambda r: hashlib.sha1((r["group"] + str(SEED)).encode()).hexdigest())
+        want = TEST_RATIO * len(group) + carry
+        n_test = min(int(round(want)), len(group)) if len(group) > 1 else 0
+        carry = want - n_test
+        new_test.extend(group[:n_test])
+        new_dev.extend(group[n_test:])
+    write_jsonl(out / "gold_dev.jsonl", old["gold_dev.jsonl"] + new_dev)
+    write_jsonl(out / "gold_test.jsonl", old["gold_test.jsonl"] + new_test)
+    info["added"] = {"dev": len(new_dev), "test": len(new_test),
+                     "by_label": {k: len(v) for k, v in sorted(by_label.items())}}
+    log_path = out / "gold_build_log.json"
+    log = json.loads(log_path.read_text(encoding="utf-8")) if log_path.exists() else {}
+    log["extend_plan2_c7"] = info
+    write_json(log_path, log)
+    return info
+
+
 # ── Đồng thuận nhãn ──────────────────────────────────────────────────────
 
 def consensus(item: dict) -> dict:
@@ -782,7 +920,9 @@ def all_items(work: Path) -> list[dict]:
 def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__.split("\n")[0])
     ap.add_argument("--stage", required=True, choices=[
-        "relabel", "generate", "variants", "variants-shard", "adjudicate", "split", "all"])
+        "relabel", "generate", "variants", "variants-shard", "adjudicate", "split", "extend", "all"])
+    ap.add_argument("--labels", default="message_send,message_read", help="chỉ cho --stage extend")
+    ap.add_argument("--per-label", type=int, default=60, help="chỉ cho --stage extend: trần số câu mỗi nhãn mới")
     ap.add_argument("--work-dir", default=str(DATA / "gold_work"))
     ap.add_argument("--out-dir", default=str(DATA))
     ap.add_argument("--shard", default="0/1", help="k/n, chỉ cho variants-shard")
@@ -799,6 +939,11 @@ def main(argv=None):
         k, n = map(int, args.shard.split("/"))
         texts = json.loads((work / "variant_texts.json").read_text(encoding="utf-8"))
         return stt_variants.run_shard(texts, k, n, work / f"variants.shard{k}.jsonl")
+
+    if args.stage == "extend":
+        info = extend([x for x in args.labels.split(",") if x], args.per_label, work, out)
+        print(json.dumps(info, ensure_ascii=False)[:1200])
+        return info
 
     stats = Stats(work)
     stages = (["relabel", "generate", "relabel", "adjudicate", "variants", "split"]

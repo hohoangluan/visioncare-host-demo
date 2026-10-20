@@ -26,7 +26,7 @@ LANE = {
     "chat": "A", "space": "A", "hazard": "A",
     "ocr": "B", "money": "B", "find": "B",
     "nav_start": "D", "nav_stop": "D", "alert_on": "C", "alert_off": "C",
-    "contact_call": "D", "emergency_call": "D", "ride_quote": "D",
+    "contact_call": "D", "emergency_call": "D", "message_send": "D", "message_read": "D", "ride_quote": "D",
     "ride_confirm": "D", "music_play": "D", "music_stop": "D", "music_volume": "D",
 }
 
@@ -44,6 +44,11 @@ _RULES: tuple[tuple[re.Pattern, str, str], ...] = tuple(
         (r"nghe nhạc|phát nhạc|mở nhạc|bài hát|mở bài", "music_play", ""),
         (r"đặt xe|gọi xe|grab|taxi", "ride_quote", ""),
         (r"xác nhận đặt|huỷ chuyến|hủy chuyến|đồng ý chuyến", "ride_confirm", ""),
+        # Tin nhắn đứng TRƯỚC "gọi cho" và "đọc" (ocr): "đọc tin nhắn" không được thành ocr, "gửi tin nhắn cho mẹ"
+        # chứa "nhắn cho". `message_read` đứng trước `message_send` vì "đọc tin nhắn cho tôi" cũng chứa "nhắn cho".
+        (r"đọc (?:tin nhắn|lời nhắn)|(?:có|xem|nghe|kiểm tra) (?:tin nhắn|lời nhắn)|"
+         r"có (?:ai|ai đó) nhắn|có nhắn gì|nhắn gì (?:không|chưa)", "message_read", ""),
+        (r"nhắn tin|nhắn cho|nhắn giúp|nhắn giùm|nhắn lại cho|nhắn với|gửi (?:tin nhắn|tin|lời nhắn)", "message_send", ""),
         (r"gọi cho|gọi điện|gọi điện thoại", "contact_call", ""),
         (r"đọc lại", "ocr", "reread"),
         (r"tóm tắt", "ocr", "summarize"),
@@ -87,7 +92,7 @@ def needs_web_rule(text: str) -> bool:
 
 
 _BLOCKED_BY_KEYWORD = {
-    "contact_call", "emergency_call", "ride_quote", "ride_confirm", "music_play", "nav_start",
+    "contact_call", "emergency_call", "message_send", "ride_quote", "ride_confirm", "music_play", "nav_start",
 }
 
 

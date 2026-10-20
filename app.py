@@ -318,6 +318,23 @@ async def receive_call_event(request: Request) -> JSONResponse:
     return JSONResponse(out, status_code=status)
 
 
+@app.post("/internal/messages")
+async def receive_message_event(request: Request) -> JSONResponse:
+    """Callback tin nhắn của AB (`message_received`, `Idempotency-Key: message-<id>`). Cùng xác thực với
+    `/internal/calls`; luôn trả 2xx nhanh (AB bỏ tin sau 8 lần thử; tin chưa đọc VH lấy bù bằng `messages/unread`)."""
+    from live import messages
+
+    _require_callback_auth(request)
+    try:
+        body = await request.json()
+    except ValueError:
+        body = None
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=422, detail="Body must be a JSON object")
+    status, out = await messages.handle_event(body, request.headers.get("idempotency-key", ""))
+    return JSONResponse(out, status_code=status)
+
+
 def _stream_audio(
     speech_pieces: Iterable[str],
     idx: int,

@@ -3,7 +3,7 @@ from collections.abc import Iterator
 
 import config
 from handlers.action_flow import run_action
-from live import call_bridge
+from live import call_bridge, messages
 from pipeline import device_ctx
 from services import visioncare_client
 
@@ -23,6 +23,13 @@ _CALL_BUSY = "Kính đang có cuộc gọi."
 _CALL_NO_USER = "Kính chưa gắn với tài khoản để gọi điện."
 _EMERGENCY_NO_CONTACT = "Chưa cài người thân khẩn cấp trong ứng dụng."
 
+# Nhắn tin (C7). Câu "Đã gửi." và hai câu lỗi do mình thêm (spec không có): người khiếm thị cần biết tin đã đi.
+MSG_NEED_UPDATE = "Kính cần cập nhật để nhắn tin."
+MSG_NEED_OWN_TOKEN = "Kính cần token riêng để nhắn tin."
+MSG_NONE = "Không có tin nhắn mới."
+_MSG_SENT = "Đã gửi."
+_MSG_ASK_NAME = "Bạn muốn nhắn cho ai?"
+
 # Câu cố định của module này, để `pipeline/phrases.py` dựng sẵn audio. Riêng
 # nhóm khẩn cấp thì dựng sẵn là bắt buộc chứ không phải tối ưu: đó là lúc không
 # được để người dùng chờ thêm một giây nào cho việc tổng hợp giọng.
@@ -35,6 +42,11 @@ STATIC_SPEECH: tuple[str, ...] = (
     _CALL_BUSY,
     _CALL_NO_USER,
     _EMERGENCY_NO_CONTACT,
+    MSG_NEED_UPDATE,
+    MSG_NEED_OWN_TOKEN,
+    MSG_NONE,
+    _MSG_SENT,
+    _MSG_ASK_NAME,
 )
 
 
@@ -178,3 +190,91 @@ def handle_emergency_call(image: bytes, command_text: str, params: dict | None =
             visioncare_client.emergency_stop(call.emergency_id)
         except Exception:  # noqa: BLE001
             logger.warning("emergency_call: báo AB dừng sớm lỗi")
+
+
+# ── nhắn tin qua AB (Plan 2 C7) ──────────────────────────────────────────────────────────────
+
+_MSG_MAX = 1000  # giới hạn của AB (1–1000 ký tự); dài hơn thì cắt thay vì bị từ chối 400
+
+
+def handle_message_send(image: bytes, command_text: str, params: dict | None = None) -> Iterator[str]:
+    """Chạy trong thread nền của làn D SAU câu đọc lại "Nhắn cho {name}: {text}." và cửa sổ huỷ."""
+    params = params or {}
+    name = (params.get("contact_name") or "").strip()
+    text = (params.get("text") or "").strip()[:_MSG_MAX]
+    if not name:
+        yield _MSG_ASK_NAME
+        return
+    if not text:
+        from lanes import phone as lane  # nhập muộn: lanes.phone nhập module này
+
+        lane.set_pending_body(device_ctx.current.get(), name)
+        yield lane.body_question(name)
+        return
+    if not config.VISIONCARE_USER_ID:
+        yield _CALL_NO_USER
+        return
+    device = device_ctx.current.get()
+    reason = call_bridge.unavailable_reason(device, device_ctx.per_device.get())
+    if reason:  # phòng thủ: router đã chặn, nhưng phiên có thể rớt trong cửa sổ huỷ
+        yield MSG_NEED_UPDATE if reason == call_bridge.NEED_UPDATE else MSG_NEED_OWN_TOKEN
+        return
+    try:
+        visioncare_client.messages_send(config.VISIONCARE_USER_ID, name, text)
+    except visioncare_client.VisionCareAPIError as exc:
+        code = visioncare_client.error_code(exc)
+        candidates = visioncare_client.error_candidates(exc)
+        if code == "MULTIPLE_CONTACTS_FOUND" and len(candidates) >= 2:
+            from lanes import phone as lane
+
+            lane.set_pending_choice(device, "message_send", candidates, keep={"text": text})
+            yield f"Bạn muốn nhắn cho ai: {candidates[0]} hay {candidates[1]}?"
+        elif code == "CONTACT_NOT_FOUND":
+            yield f"Chưa có người thân tên {name} trong danh sách."
+        else:
+            logger.warning("message_send: AB từ chối (%s, HTTP %s)", code or "?", exc.status_code)
+            yield f"Không gửi được tin nhắn cho {name}, vui lòng thử lại."
+        return
+    except Exception:  # noqa: BLE001
+        logger.exception("message_send: lỗi bất ngờ khi gọi AB")
+        yield f"Không gửi được tin nhắn cho {name}, vui lòng thử lại."
+        return
+    yield _MSG_SENT
+
+
+def handle_message_read(image: bytes, command_text: str, params: dict | None = None) -> Iterator[str]:
+    """Đọc từng tin chưa đọc ("{name} nhắn: {text}") rồi đánh dấu đã đọc; không có thì "Không có tin nhắn mới."
+
+    Đánh dấu SAU khi tin đã được yield (generator chỉ chạy tiếp khi TTS lấy câu kế): bị huỷ giữa chừng thì
+    các tin chưa tới lượt vẫn chưa đọc ở AB."""
+    if not config.VISIONCARE_USER_ID:
+        yield _CALL_NO_USER
+        return
+    try:
+        unread = visioncare_client.messages_unread(config.VISIONCARE_USER_ID)
+    except Exception:  # noqa: BLE001
+        logger.exception("message_read: không lấy được tin chưa đọc")
+        yield "Không lấy được tin nhắn, vui lòng thử lại."
+        return
+    spoken = 0
+    for item in unread:
+        message_id = str(item.get("message_id") or "")
+        text = str(item.get("text") or "").strip()
+        if not message_id or not text or not messages.mark_spoken(message_id):
+            continue  # đã đọc (hàng đợi tin tới) hoặc tin rỗng
+        spoken += 1
+        try:
+            yield messages.speech(str(item.get("from_display_name") or ""), text)
+        except GeneratorExit:  # bị huỷ trước khi đọc xong: trả lại trạng thái chưa đọc
+            messages.unmark_spoken(message_id)
+            raise
+        mark_read(message_id)
+    if not spoken:
+        yield MSG_NONE
+
+
+def mark_read(message_id: str) -> None:
+    try:
+        visioncare_client.message_read(message_id, config.VISIONCARE_USER_ID or None)
+    except Exception:  # noqa: BLE001
+        logger.warning("message_read: báo AB đã đọc lỗi")  # AB giữ tin chưa đọc; lần sau đọc lại

@@ -228,4 +228,5 @@ def test_post_only_glasses_cannot_call(rig, monkeypatch):
         _hello(ws)
         assert call_bridge.unavailable_reason(DEV, True) is None
         assert call_bridge.unavailable_reason(DEV, False) == call_bridge.NEED_OWN_TOKEN
-    assert not rig.ab
+    # Vào phiên có token riêng thì VH lấy tin nhắn chưa đọc (C7); ngoài ra AB không bị gọi (không call/start).
+    assert not [p for p, _ in rig.ab if "/messages/unread" not in p]

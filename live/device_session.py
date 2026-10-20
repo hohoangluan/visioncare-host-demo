@@ -33,7 +33,7 @@ from collections.abc import Awaitable, Callable
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
 import config
-from live import call_bridge, protocol
+from live import call_bridge, messages, protocol
 from live.call_bridge import calls
 from live.session import sessions
 from live.ws_adapter import LiveSocket
@@ -110,6 +110,9 @@ class DeviceSession:
         self._audio_lock = asyncio.Lock()
         self._results: collections.deque[tuple[str, str]] = collections.deque()
         self._result_task: asyncio.Task | None = None
+        # Tin nhắn tới (C7): KHÔNG bị `_cancel_work` xoá (bấm nút không được làm mất tin); chỉ đọc khi kính rảnh.
+        self._messages: collections.deque[tuple[str, str, str]] = collections.deque()  # (id, người gửi, nội dung)
+        self._unread_task: asyncio.Task | None = None
         self._nav_suspended = False  # OCR live đã thay nav live: dựng lại nav khi OCR xong
         self._resume_task: asyncio.Task | None = None
         self.debug = False  # hello.debug: trang demo muốn nhận khung trace/say/det/ocr/mode
@@ -231,6 +234,7 @@ class DeviceSession:
                 ok["debug"] = True
             await self.send_json(ok)
             self.emit_mode()
+            self._fetch_unread()
             await self._loop()
         except (WebSocketDisconnect, RuntimeError):
             pass
@@ -304,7 +308,7 @@ class DeviceSession:
         call = calls.by_device(self.device)
         if call is not None and call.session is self:  # kính rớt/bị thay giữa cuộc gọi: cúp, báo AB, đóng đầu app
             await call.hangup("glasses_disconnect", by="glasses")
-        for task in [*self._debug_tasks, self._debug_pump]:
+        for task in [*self._debug_tasks, self._debug_pump, self._unread_task]:
             if task is not None:
                 task.cancel()
         await self._cancel_work(reason)
@@ -525,6 +529,9 @@ class DeviceSession:
         except asyncio.CancelledError:
             logger.info("v2 session turn %s: bị huỷ (trong run=%s)", turn.id, turn.cancelled_in_run)
             raise
+        finally:
+            # Task chưa xong ở đây: để vòng sau mới kiểm "kính rảnh" thì tin đang xếp hàng mới được đọc.
+            asyncio.get_running_loop().call_soon(self._kick_results)
 
     async def _send_reply(self, turn: _Turn, reply: Reply, released: float) -> None:
         try:
@@ -577,9 +584,49 @@ class DeviceSession:
         call = calls.by_device(self.device)
         return call is not None and call.session is self and call.state == call_bridge.ACTIVE
 
+    def _message_idle(self) -> bool:
+        """Kính rảnh để đọc tin tới: không có lượt đang chạy (từ lúc bấm nút tới hết câu trả lời), không OCR live,
+        không cuộc gọi (kể cả đang chuông). Tin tới lúc bận chờ ở `_messages`, đọc ngay khi hết bận."""
+        turn = self._turn
+        if turn is not None and turn.task is not None and not turn.task.done():
+            return False
+        live = self._live_session
+        if live is not None and live.mode == "ocr" and not live.closed.is_set():
+            return False
+        call = calls.by_device(self.device)
+        return call is None or call.state == call_bridge.ENDED
+
+    def enqueue_message(self, message_id: str, name: str, text: str) -> None:
+        """Tin nhắn của người thân (callback AB hoặc `unread` lúc vào phiên). Chạy trên event loop."""
+        if self._shut or messages.was_spoken(message_id) or any(m[0] == message_id for m in self._messages):
+            return
+        self._messages.append((message_id, name, text))
+        self._kick_results()
+
+    def _fetch_unread(self) -> None:
+        """Vừa vào phiên: lấy tin chưa đọc ở AB (callback có thể đã bị bỏ sau 8 lần thử) và xếp hàng như tin tới."""
+        if not (self.per_device and config.VISIONCARE_USER_ID):
+            return
+        self._unread_task = asyncio.get_running_loop().create_task(self._load_unread())
+
+    async def _load_unread(self) -> None:
+        from services import visioncare_client
+
+        try:
+            unread = await asyncio.to_thread(visioncare_client.messages_unread, config.VISIONCARE_USER_ID)
+        except Exception:  # noqa: BLE001 - AB tạm lỗi: tin vẫn chưa đọc, lần vào phiên sau lấy lại
+            logger.warning("v2 session %s: không lấy được tin chưa đọc", self.session_id)
+            return
+        for item in unread:
+            if item.get("message_id") and item.get("text"):
+                self.enqueue_message(str(item["message_id"]), str(item.get("from_display_name") or ""),
+                                     str(item["text"]))
+
     def _kick_results(self) -> None:
         """Bắt đầu đọc hàng đợi câu kết quả/tin nhắn — trừ khi đang trong cuộc gọi (không chen vào kênh 0x02)."""
-        if self._shut or not self._results or self._in_call():
+        if self._shut or self._in_call():
+            return
+        if not self._results and not (self._messages and self._message_idle()):
             return
         if self._result_task is None or self._result_task.done():
             self._result_task = asyncio.create_task(self._drain_results())
@@ -589,14 +636,33 @@ class DeviceSession:
         device_ctx.per_device.set(self.per_device)
         # Task này sinh từ thread Timer/làn D (context trống hoặc của phiên cũ): đặt lại móc `say` của phiên NÀY.
         device_ctx.say.set(self._say_hook if self.debug else None)
-        while self._results and not self._in_call():
-            request_id, text = self._results.popleft()
+        while not self._in_call():
+            msg = None
+            if self._results:
+                request_id, text = self._results.popleft()
+            elif self._messages and self._message_idle():
+                msg = self._messages.popleft()
+                if not messages.mark_spoken(msg[0]):
+                    continue  # đã đọc bằng "đọc tin nhắn" rồi
+                request_id, text = f"msg-{msg[0]}", messages.speech(msg[1], msg[2])
+            else:
+                break
             try:
                 await self._send_reply(_Turn(f"result-{request_id}"), Reply(speech=[text], intent="result", lane="D"),
                                        time.monotonic())  # _send_reply đã phát khung mode sau khi đọc
             except (WebSocketDisconnect, RuntimeError) as exc:
                 logger.info("v2 session %s: socket đứt khi đọc kết quả (%r)", self.session_id, exc)
                 return
+            except asyncio.CancelledError:  # bấm nút giữa chừng: tin chưa nghe trọn thì trả về hàng đợi
+                if msg is not None:
+                    messages.unmark_spoken(msg[0])
+                    self._messages.appendleft(msg)
+                raise
+            if msg is not None:
+                # Đã đọc xong: báo AB đánh dấu đã đọc, ở nền (lỗi thì thôi: AB giữ chưa đọc, lần sau đọc lại).
+                from handlers import phone as phone_handlers
+
+                self._evloop.run_in_executor(None, phone_handlers.mark_read, msg[0])
 
     async def _start_live(self, reply: Reply) -> None:
         was_nav = (self._live_session is not None and self._live_session.mode == "nav"
@@ -633,6 +699,7 @@ class DeviceSession:
             await runner(sock, live)
         finally:
             self.emit_mode()  # live kết thúc (runner đã nhả phiên)
+            asyncio.get_running_loop().call_soon(self._kick_results)  # tin nhắn xếp hàng trong lúc OCR live
             if live.mode == "ocr" and self._nav_suspended and not self._shut and not self._in_call():
                 self._resume_task = asyncio.get_running_loop().create_task(self._resume_nav(live))
 

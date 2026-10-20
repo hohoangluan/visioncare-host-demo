@@ -192,5 +192,36 @@
     "kept_lane_d": 1
   },
   "sol_calls_total": 23,
-  "seconds_total": 90.6
+  "seconds_total": 90.6,
+  "extend_plan2_c7": {
+    "cells_failed": 0,
+    "items": 106,
+    "relabel": {
+      "asked": 106,
+      "missing": 0
+    },
+    "adjudicate": {
+      "gemma": {
+        "asked": 106,
+        "failed": 0
+      },
+      "by_status": {
+        "agree": 98,
+        "sol_adjudicated": 8
+      },
+      "no_sol_label": 0
+    },
+    "uncertain_dropped": 0,
+    "added": {
+      "dev": 64,
+      "test": 42,
+      "by_label": {
+        "chat": 15,
+        "contact_call": 8,
+        "message_read": 31,
+        "message_send": 46,
+        "ocr": 6
+      }
+    }
+  }
 }

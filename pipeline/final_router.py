@@ -10,6 +10,7 @@ import logging
 from collections.abc import AsyncIterator, Callable
 
 import config
+from handlers import phone as phone_handlers
 from lanes import general, ocr_live, phone
 from live import call_bridge
 from live.session import sessions
@@ -277,13 +278,22 @@ def _call_blocker(ctx: TurnContext) -> str | None:
     return call_bridge.unavailable_reason(ctx.device, device_ctx.per_device.get())
 
 
+# Nhắn tin dùng chung điều kiện với gọi điện (phiên WS + token riêng, C0) nhưng nói "nhắn tin" thay vì "gọi điện".
+_MESSAGE_BLOCK = {
+    call_bridge.NEED_UPDATE: phone_handlers.MSG_NEED_UPDATE,
+    call_bridge.NEED_OWN_TOKEN: phone_handlers.MSG_NEED_OWN_TOKEN,
+}
+
+
 async def _lane_d(ctx: TurnContext, d: Decision, text: str, params: dict | None = None) -> Reply:
     intent = d.intent
-    if intent == "contact_call":
-        # Gọi điện cần phiên WS + token riêng của kính: chặn TRƯỚC khi hỏi tên / đọc lại để không nói "Đang gọi..." rồi im.
-        # (Khẩn cấp không chặn ở đây: nó rơi về luồng cũ trong handler.)
+    if intent in ("contact_call", "message_send", "message_read"):
+        # Gọi điện / nhắn tin cần phiên WS + token riêng của kính: chặn TRƯỚC khi hỏi tên / đọc lại để không nói
+        # "Đang gọi..." rồi im. (Khẩn cấp không chặn ở đây: nó rơi về luồng cũ trong handler.)
         blocked = _call_blocker(ctx)
         if blocked:
+            if intent != "contact_call":
+                blocked = _MESSAGE_BLOCK.get(blocked, blocked)
             return Reply(speech=[blocked], intent=intent, lane="D")
     if params is None:
         params = await _params(ctx, intent, text)
@@ -291,7 +301,13 @@ async def _lane_d(ctx: TurnContext, d: Decision, text: str, params: dict | None 
     if slot and not params.get(slot) and intent != "music_play":
         # music_play tự hỏi bằng câu riêng (gợi ý ca sĩ), giữ nguyên hành vi cũ.
         phone.set_pending(ctx.device, intent)
+        if intent in phone.ASK_TEXT:  # câu hỏi không có clip cue: đọc qua TTS (đã dựng sẵn)
+            return Reply(speech=[phone.ASK_TEXT[intent]], intent=intent, lane="D")
         return Reply(cues=[phone.ASK_CUE[intent]], intent=intent, lane="D")
+    if intent in phone.EXTRA_SLOT and not params.get(phone.EXTRA_SLOT[intent]):
+        # Có người nhận mà chưa có lời nhắn: hỏi lời nhắn (lượt sau nói thẳng nội dung).
+        phone.set_pending_body(ctx.device, params[slot])
+        return Reply(speech=[phone.body_question(params[slot])], intent=intent, lane="D", params=params)
     if intent not in phone.CONFIRM_INTENTS:
         # music_stop / music_volume: không nguy hiểm, chạy ngay như cũ.
         return Reply(speech=phone.speech(intent, text, params), intent=intent, lane="D", params=params)
@@ -321,15 +337,15 @@ async def route(ctx: TurnContext, d: Decision, text: str) -> Reply:
         # Câu khác: bỏ lệnh chờ, xử lý như lượt mới.
 
     # Lượt trước hỏi "Bạn muốn gọi ai: A hay B?": câu này chọn một người (khớp không rõ thì xử lý như lượt mới).
-    choice = phone.take_pending_choice(ctx.device)
+    choice = phone.take_pending_choice_full(ctx.device)
     if choice is not None:
-        intent, candidates = choice
+        intent, candidates, keep = choice
         picked = phone.match_choice(candidates, text)
         if picked is not None:
             ctx.cancel_speculation()
             # Người dùng tự chọn trong danh sách vừa đọc -> tin cậy; vẫn đọc lại + cửa sổ huỷ như mọi cuộc gọi.
             d = Decision(intent, source="confirmed", backend="gemma", confidence=1.0)
-            return await _lane_d(ctx, d, text, {phone.SLOT[intent]: picked})
+            return await _lane_d(ctx, d, text, {**keep, phone.SLOT[intent]: picked})
 
     # Lượt trước hỏi "... chưa nghe máy. Bạn muốn nhắn tin không?"
     offer = phone.take_pending_offer(ctx.device)
@@ -345,6 +361,18 @@ async def route(ctx: TurnContext, d: Decision, text: str) -> Reply:
 
     if not d.intent:
         return Reply(cues=["system_busy"])
+
+    # Lượt trước hỏi "Bạn muốn nhắn gì cho mẹ?": câu này (không phải lệnh khác) là lời nhắn; vẫn đọc lại + cửa sổ huỷ.
+    body_for = phone.take_pending_body(ctx.device)
+    if body_for is not None:
+        if phone.is_no(text):
+            ctx.cancel_speculation()
+            return Reply(speech=["Đã huỷ."], intent="message_send", lane="D")
+        if d.lane == "A":
+            ctx.cancel_speculation()
+            # Người dùng trả lời đúng câu vừa hỏi và sẽ nghe đọc lại -> tin cậy (không hỏi "phải không?" thêm lần nữa).
+            d = Decision("message_send", source="confirmed", backend="gemma", confidence=1.0)
+            return await _lane_d(ctx, d, text, {"contact_name": body_for, "text": phone._clean_text(text)})
 
     # Lượt trước hỏi "Bạn muốn đi đâu?": câu này chính là câu trả lời.
     pending = phone.take_pending(ctx.device)
