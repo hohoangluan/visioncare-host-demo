@@ -167,6 +167,28 @@ STT_MODEL_DIR = get("STT_MODEL_DIR", "./models/stt")
 # Thêm nữa còn phản tác dụng — 8 luồng chậm hơn cả 1 luồng vì tranh nhau lõi.
 STT_NUM_THREADS = int(get("STT_NUM_THREADS", "2"))
 
+# Giải mã STT: beam search + hotword lệnh (contextual biasing của sherpa-onnx), cùng model Zipformer.
+# Đo 2026-10-20 trên bàn đo câu lệnh (tools/bench_stt_cmd.py + bench_stt_report.py: 408 câu gold dev/test +
+# lệnh bổ sung x 3 giọng TTS x {sạch, SNR10+ADPCM}; 2.400 clip) so với greedy cũ, mỗi lần đổi một biến:
+#   cấu hình           đúng-lệnh dev-s/dev-n/test-s/test-n   intent                     WER VietMed  p90 lượt cuối
+#   greedy             80,5/78,2/84,2/81,1                   87,6/83,9/87,4/87,2        14,73        ~88 ms
+#   beam4 (không hw)   80,5/78,5/83,8/82,5                   87,6/83,9/87,4/87,6        14,36        ~110 ms (hoà, p=0,42)
+#   hotword 2.0, 4 đường   82,1/79,7/86,3/86,3               88,0/84,8/88,0/88,2        14,36        112 ms (+24)
+#   + tên người thân   84,1/82,1/88,0/88,0                   88,0/84,8/88,0/88,2        14,36        113 ms (+25)  <- chọn
+# Câu bất đồng (cộng 4 ô): từ khoá lệnh +64/-4, intent +33/-16 (p=0,021), WER VietMed 17 clip tốt/7 tệ.
+# Hotword điểm 1,0 yếu, 3,0 thêm 2 câu chat bị chèn lệnh, 5,0 phá WER (+1,3 điểm) và chèn 13 câu chat.
+# Model khác đều thua: ChunkFormer-large (WER VietMed 17,98), Zipformer-vi 70M (16,2), Omnilingual 300M và
+# Moonshine-vi (trễ ~1000 và ~400 ms). Chi tiết: .superpowers/sdd/2026-10-19-glasses-calls-messages/stt-opt-report.md
+# `greedy_search` để quay lại cách cũ (hotword chỉ có tác dụng với modified_beam_search).
+STT_DECODING = get("STT_DECODING", "modified_beam_search")
+STT_BEAM_PATHS = int(get("STT_BEAM_PATHS", "4"))
+STT_HOTWORDS_SCORE = float(get("STT_HOTWORDS_SCORE", "2.0"))
+# Bật danh sách từ lệnh cố định (pipeline.stt.COMMAND_HOTWORDS), hoặc tệp riêng mỗi dòng một cụm CHỮ HOA.
+STT_HOTWORDS = get("STT_HOTWORDS", "1") != "0"
+STT_HOTWORDS_FILE = get("STT_HOTWORDS_FILE", "")
+# Hotword theo người dùng (tên người thân từ care_links, `stt.set_user_hotwords`): tên đúng 90-92% -> 97-98%.
+STT_USER_HOTWORDS = get("STT_USER_HOTWORDS", "1") != "0"
+
 TTS_VOICE = get("TTS_VOICE", "Ngọc Linh")
 TTS_STYLE = get("TTS_STYLE", "tu_nhien")
 
