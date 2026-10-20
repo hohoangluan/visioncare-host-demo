@@ -59,9 +59,11 @@ class StreamingTranscriber:
     `_decode()`, mà mỗi lượt `/v2/turn` chỉ có một lượt giải chạy cùng lúc.
     """
 
-    def __init__(self, content_type: str | None = None, vad=None) -> None:
+    def __init__(self, content_type: str | None = None, vad=None, hotwords=None) -> None:
         # `vad`: pipeline.vad.Segmenter (hoặc None = giải cả buffer như trước).
         self._vad = vad
+        # Tên người thân ưu tiên cho lượt này; mặc định lấy danh sách đã đặt bằng `stt.set_user_hotwords`.
+        self._hotwords = tuple(hotwords) if hotwords is not None else stt.user_hotwords()
         params = _content_params(content_type)
         self._block_align = _sane_block(params.get("block"))
         self._rate = _sane_rate(params.get("rate"))
@@ -205,11 +207,7 @@ class StreamingTranscriber:
             samples = stt._resample(samples, self._rate)
             if self._vad is not None:
                 samples = samples[key[0]:key[1]]  # chỉ giải đoạn có tiếng
-            recognizer = stt._load_asr()
-            stream = recognizer.create_stream()
-            stream.accept_waveform(stt._TARGET_SAMPLE_RATE, samples)
-            recognizer.decode_stream(stream)
-            self._decoded_at, self._text = key, stt._normalize(stream.result.text)
+            self._decoded_at, self._text = key, stt._normalize(stt.decode_samples(samples, self._hotwords))
             return self._text
 
     def partial(self) -> str:
