@@ -482,11 +482,14 @@ function sizeOverlay() {
 }
 new ResizeObserver(sizeOverlay).observe($("stage"));
 
+// Màu vẽ box lấy từ token CSS (styles.css :root) để canvas và giao diện luôn cùng một bảng màu.
+const cssVar = (name) => getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 const LV = {
-  low: { color: "#A9BFB2", width: 2, dash: [], alpha: 0.75 },
-  2: { color: "#FFB066", width: 3, dash: [10, 6], alpha: 1 },
-  3: { color: "#FF8080", width: 5, dash: [], alpha: 1 },
+  low: { color: cssVar("--lv-low"), width: 2, dash: [], alpha: 0.75 },
+  2: { color: cssVar("--lv-2"), width: 3, dash: [10, 6], alpha: 1 },
+  3: { color: cssVar("--lv-3"), width: 5, dash: [], alpha: 1 },
 };
+const INK = cssVar("--on-warn"), OCR_INK = cssVar("--cyan");
 const lvStyle = (level) => (level >= 3 ? LV[3] : level === 2 ? LV[2] : LV.low);
 
 function drawOverlay() {
@@ -503,7 +506,7 @@ function drawOverlay() {
       const st = lvStyle(b.level || 0);
       ctx.globalAlpha = st.alpha;
       ctx.setLineDash(st.dash.map((v) => v * d));
-      ctx.strokeStyle = "rgba(2,10,5,.7)"; // viền tối dưới nét màu: đọc được trên mọi nền
+      ctx.strokeStyle = "rgba(2,10,59,.7)"; // viền tối dưới nét màu: đọc được trên mọi nền
       ctx.lineWidth = (st.width + 3) * d;
       ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
       ctx.strokeStyle = st.color;
@@ -517,7 +520,7 @@ function drawOverlay() {
       const ly = y0 - th >= 0 ? y0 - th : y0;
       ctx.fillStyle = st.color;
       ctx.fillRect(x0, ly, tw, th);
-      ctx.fillStyle = "#07240F";
+      ctx.fillStyle = INK;
       ctx.textBaseline = "middle";
       ctx.fillText(label, x0 + 6 * d, ly + th / 2 + d);
     }
@@ -529,10 +532,10 @@ function drawOverlay() {
       const x0 = (x0p / ov.ocr.w) * W, x1 = (x1p / ov.ocr.w) * W, y0 = (y0p / ov.ocr.h) * H, y1 = (y1p / ov.ocr.h) * H;
       ctx.fillStyle = "rgba(9,187,200,.18)";
       ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
-      ctx.strokeStyle = "rgba(2,10,5,.7)";
+      ctx.strokeStyle = "rgba(2,10,59,.7)";
       ctx.lineWidth = 5 * d;
       ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
-      ctx.strokeStyle = "#09BBC8";
+      ctx.strokeStyle = OCR_INK; // Cyan chỉ dùng trên nền video tối
       ctx.lineWidth = 2.5 * d;
       ctx.strokeRect(x0, y0, x1 - x0, y1 - y0);
     }
