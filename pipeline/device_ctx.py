@@ -19,6 +19,12 @@ current: contextvars.ContextVar[str] = contextvars.ContextVar(
     "device_id", default=config.VISIONCARE_DEVICE_ID
 )
 
+# Phiên/request này xác thực bằng token RIÊNG của kính `current` (không phải token dùng chung)?
+# Mặc định False = an toàn: gọi điện/nhắn tin/khẩn cấp (Plan 2 C5–C7) chỉ chạy khi True.
+# Nơi xác thực (`DeviceSession.run`, endpoint HTTP) đặt cùng lúc với `current`; thread nền thừa kế qua `run_in_thread`.
+per_device: contextvars.ContextVar[bool] = contextvars.ContextVar("per_device", default=False)
+_PER_DEVICE = per_device  # `use(..., per_device=)` che tên tham số
+
 # Id lượt đang chạy, để mọi dòng log của lượt mang theo (pipeline/metrics.TurnLogFilter).
 turn: contextvars.ContextVar[str] = contextvars.ContextVar("turn_id", default="")
 
@@ -45,11 +51,16 @@ def announce(text: str) -> None:
 
 
 @contextlib.contextmanager
-def use(device: str) -> Iterator[None]:
+def use(device: str, per_device: bool = False) -> Iterator[None]:
+    """Chạy khối dưới kính `device`. Đổi kính luôn bỏ `per_device` (mặc định False): quyền "token riêng"
+    là của kính đã xác thực, không được rò sang kính khác. Nơi tạo thread/timer cho cùng kính phải
+    chụp `per_device.get()` lúc tạo rồi truyền vào đây (xem `PendingAction`, `run_action`)."""
     token = current.set(device or config.VISIONCARE_DEVICE_ID)
+    pd_token = _PER_DEVICE.set(bool(per_device))
     try:
         yield
     finally:
+        _PER_DEVICE.reset(pd_token)
         current.reset(token)
 
 

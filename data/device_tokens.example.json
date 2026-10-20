@@ -1,0 +1,3 @@
+{
+  "glasses-123": "<sha256 hex của token; sinh bằng tools/device_token.py add glasses-123>"
+}

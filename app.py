@@ -548,7 +548,7 @@ async def process(
     (chạy ở thread TTS) nói câu chào rồi mới chờ kết quả lượt. Chờ ở thread chứ
     không ở event loop, và không thêm await nào trên đường nóng.
     """
-    device = _device_id(request.headers)
+    device = _device_id(request)
     device_ctx.current.set(device)
     started = time.monotonic()
     idx = _next_process_index()
@@ -656,8 +656,13 @@ async def process(
 _v2_counter = 0
 
 
-def _device_id(headers) -> str:
-    return headers.get("x-device-id") or config.VISIONCARE_DEVICE_ID
+def _device_id(request: Request) -> str:
+    """Id kính ĐÃ xác thực (token riêng -> kính chủ token; token chung -> `X-Device-Id` do client khai)
+    và đặt `per_device` vào ContextVar để C5–C7 biết có được gọi điện/nhắn tin hay không."""
+    auth = guard.request_auth(request)
+    device_ctx.current.set(auth.device_id)  # per_device luôn đi cùng đúng kính của nó, không để lệch cặp
+    device_ctx.per_device.set(auth.per_device)
+    return auth.device_id
 
 
 @app.on_event("startup")
@@ -704,7 +709,7 @@ async def image_lane(request: Request) -> Response:
         parts.append(chunk)
     data = b"".join(parts)
     if data:
-        image_buffer.put(_device_id(request.headers), request.headers.get("x-turn-id", ""), data)
+        image_buffer.put(_device_id(request), request.headers.get("x-turn-id", ""), data)
     return Response(status_code=204)
 
 
@@ -842,7 +847,7 @@ async def turn_lane(request: Request) -> Response:
     from live.session import sessions
     from pipeline import pending_action
 
-    device = _device_id(request.headers)
+    device = _device_id(request)
     device_ctx.current.set(device)
     turn_id = request.headers.get("x-turn-id", "")
     cue_ok = cues.supported(request.headers.get("x-cue-version"))
@@ -886,11 +891,13 @@ async def live_lane(ws: WebSocket, token: str = "") -> None:
 
     # Token kính trước, rồi mới tới token phiên một lần: sai/thiếu đều đóng 4401
     # và không đụng tới `sessions` (không đốt token phiên của người khác).
-    if not guard.token_ok(ws.headers):
+    auth = guard.authenticate(ws.headers, ws.headers.get("x-device-id") or None)
+    if auth is None:
         await ws.close(code=4401)
         return
     session = sessions.claim(token)
-    if session is None:
+    # Token riêng chỉ mở được phiên live của chính kính đó.
+    if session is None or (auth.per_device and session.device != auth.device_id):
         await ws.close(code=4401)
         return
     await ws.accept()

@@ -253,6 +253,13 @@ CLOUDFLARE_ACCOUNT_ID = get("CLOUDFLARE_ACCOUNT_ID", "")
 # Bảo vệ endpoint kính (Task 9): trần kích thước + rate limit qua tunnel công khai.
 # Token kính nằm ở VISIONCARE_DEVICE_CLIENT_TOKEN (rỗng = mọi endpoint kính trả 503).
 VISIONCARE_DEVICE_CLIENT_TOKEN = get("VISIONCARE_DEVICE_CLIENT_TOKEN", "")
+# Token theo từng kính (Plan 2 / C0): đường dẫn file JSON `{"<device_id>": "<sha256 hex của token>"}`
+# (git-ignored; sinh bằng `tools/device_token.py add <device_id>`). Rỗng = không có token riêng.
+# Đường dẫn tương đối tính từ gốc dự án.
+VISIONCARE_DEVICE_TOKENS = get("VISIONCARE_DEVICE_TOKENS", "")
+# 1 (mặc định) = token dùng chung cũ vẫn được chấp nhận để không gãy kính/demo đang chạy; phiên đó
+# `per_device=False` nên KHÔNG được gọi điện/nhắn tin/khẩn cấp. 0 = chỉ token riêng.
+VISIONCARE_ALLOW_SHARED_DEVICE_TOKEN = get("VISIONCARE_ALLOW_SHARED_DEVICE_TOKEN", "1") == "1"
 DEVICE_MAX_IMAGE_BYTES = int(get("DEVICE_MAX_IMAGE_BYTES", "2000000"))
 DEVICE_MAX_AUDIO_S = float(get("DEVICE_MAX_AUDIO_S", "30"))
 # Trần cả body /process (multipart ảnh+audio): ảnh + audio PCM16 16 kHz mono tối đa

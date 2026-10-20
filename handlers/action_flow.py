@@ -245,10 +245,11 @@ def run_action(
     generated_request_id = str(uuid.uuid4())
     request_payload = {**payload, "request_id": generated_request_id}
     device = device_ctx.current.get()
+    per_device = device_ctx.per_device.get()  # callback chạy ở luồng khác: chụp lại để khôi phục
 
     def on_result(data: dict) -> None:
         # Callback tới từ luồng của app server: phải cập nhật đúng kính đã gọi.
-        with device_ctx.use(device):
+        with device_ctx.use(device, per_device):
             note_result(operation, data)
 
     action_callbacks.register(

@@ -43,6 +43,8 @@ class PendingAction:
     def __init__(self, device: str, fn: Callable[[], None], label: str):
         self.device = device
         self.label = label
+        # Chụp lúc tạo: Timer chạy ở thread mới, mất ContextVar. Chỉ giữ khi lệnh đặt cho đúng kính của luồng này.
+        self.per_device = device_ctx.per_device.get() and device == device_ctx.current.get()
         self.fired = threading.Event()
         self.cancelled = threading.Event()
         self._fn = fn
@@ -61,7 +63,7 @@ class PendingAction:
         # `run_background` copy nhầm kính mặc định và lệnh gọi/chỉ đường đi về sai kính
         # (bench_load 2026-10-19: GLASSES_DEVICE_NOT_LINKED device_id=glasses-123).
         try:
-            with device_ctx.use(self.device):
+            with device_ctx.use(self.device, self.per_device):
                 self._fn()
         except Exception:
             log.exception("làn D: lệnh chờ %s lỗi", self.label)
