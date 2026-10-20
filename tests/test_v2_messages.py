@@ -77,7 +77,7 @@ def test_message_send_readback_then_sends(mrig):
         assert not _starts(mrig, "/messages/send")  # câu đọc lại vừa xong, cửa sổ huỷ còn mở
         assert _wait(lambda: _starts(mrig, "/messages/send"))
         body = _starts(mrig, "/messages/send")[0]
-        assert body["user_id"] == "user-100" and body["contact_alias"] == "mẹ"
+        assert "user_id" not in body and body["glasses_device_id"] == DEV and body["contact_alias"] == "mẹ"
         assert body["text"] == "tôi về muộn nhé" and len(body["request_id"]) >= 32
         assert "device_id" not in body  # AB khai extra="forbid"
         _recv_result_reply(ws)  # "Đã gửi."
@@ -120,6 +120,7 @@ def test_message_read_reads_unread(mrig):
         assert _said(mrig, "Mẹ nhắn: con ăn cơm chưa") and _said(mrig, "Bố nhắn: bố đón con lúc năm giờ")
         assert _wait(lambda: {p for p, _ in mrig.ab if p.endswith("/read")} >= {
             "/api/v1/service/messages/m-1/read", "/api/v1/service/messages/m-2/read"})
+        assert all(b == {"glasses_device_id": DEV} for p, b in mrig.ab if p.endswith("/read"))
 
 
 def test_message_read_none(mrig):
@@ -142,6 +143,8 @@ def test_incoming_message_announced_when_idle(mrig):
         assert res["turn"] == "result-msg-m-1" and audio > 500
         assert _said(mrig, "Mẹ nhắn: con ăn cơm chưa")
         assert _wait(lambda: any(p.endswith("/messages/m-1/read") for p, _ in mrig.ab))
+        # báo đã đọc chạy ở executor: phải mang đúng kính của phiên (không rơi về VISIONCARE_DEVICE_ID mặc định)
+        assert [b for p, b in mrig.ab if p.endswith("/messages/m-1/read")] == [{"glasses_device_id": DEV}]
         n = len(mrig.spoken)
         assert _incoming(mrig).status_code == 200  # AB thử lại
         ws.send_text('{"t":"ping"}')
@@ -182,4 +185,5 @@ def test_hello_fetches_unread(mrig):
         _hello(ws)
         res, _, _ = _recv_result_reply(ws)
         assert res["turn"] == "result-msg-m-5" and _said(mrig, "Chị Hoa nhắn: chị gửi tiền rồi nhé")
-        assert config.VISIONCARE_USER_ID == "user-100"
+        unread = [b for p, b in mrig.ab if p.endswith("/messages/unread")]
+        assert unread and all(b == {"glasses_device_id": DEV} for b in unread)  # chủ kính do AB suy từ kính

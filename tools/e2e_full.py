@@ -601,6 +601,8 @@ async def sc_music(c):
 
 
 async def sc_emergency(c):
+    """ĐƯỜNG DỰ PHÒNG khẩn cấp (SIM): kính chưa có token riêng/phiên thì `emergency_call` đi `emergency/call` tới điện thoại
+    chủ kính (SMS [SOS] + gọi). Đường chính qua internet (AB gọi người thân) được kiểm ở tools/e2e_calls.py."""
     return await command_scenario(c, "emergency", "Cấp cứu, gọi người thân giúp tôi.", "emergency_call", expect_report="ok")
 
 
@@ -692,6 +694,9 @@ async def sc_alert(c):
     mark = c.plog.mark()
     t = await g.say("Bật cảnh báo vật cản.")
     r = result("alert_live_survives_chat", False, first_audio_ms=t.ms("first_audio"))
+    if street is None:
+        r["notes"] = "thiếu ảnh vật cản mức >= 2 (--street / E2E_STREET_IMAGE): không kiểm được live nav"
+        return r
     if t.live != "nav":
         r["notes"] = f"reply.live={t.live!r} cues={t.cues} (mong 'nav')"
         return r
@@ -703,8 +708,8 @@ async def sc_alert(c):
         haz = await g.wait_for(lambda e: e["k"] == "json" and e["f"].get("t") == "hazard", 10, t.base)
         if cam is None:
             problems.append("không có khung cam")
-        if street and haz is None:
-            problems.append("không có hazard")
+        if haz is None:
+            problems.append("không có hazard: ảnh --street không đạt mức vật cản >= 2 (hoặc live nav không chạy)")
         n = len(g.events)
         n_t = time.perf_counter() - 1.0
         chat = await g.say("Kể cho tôi một câu chuyện cười ngắn.")
@@ -720,7 +725,7 @@ async def sc_alert(c):
         n4 = len(g.events)
         src["f"] = street
         again = await g.wait_for(lambda e: e["k"] == "json" and e["f"].get("t") == "hazard", 6, n4)
-        if street and again is None:
+        if again is None:
             problems.append("sau lượt chat live nav không còn phát hazard (đã chết?)")
         cmds = [x["action"] for x in c.plog.commands(mark)]
         if cmds:
@@ -790,8 +795,8 @@ async def sc_ocr_live(c):
 
 
 SCENARIOS = {
-    "call_mom": sc_call_mom, "call_nam": sc_call_nam, "call_cancel": sc_cancel_frame,
-    "call_cancel_newturn": sc_cancel_newturn, "call_cancel_disconnect": sc_cancel_disconnect,
+    # Gọi điện đã chuyển sang AB + WS /v2/call (không còn lệnh `contact_call` tới điện thoại): kịch bản gọi/huỷ gọi nằm ở
+    # tools/e2e_calls.py. sc_call_mom/sc_call_nam/sc_cancel_* giữ lại bên dưới chỉ để tham khảo, KHÔNG nằm trong SCENARIOS.
     "ride": sc_ride, "ride_cancel": sc_ride_cancel, "music": sc_music, "nav": sc_nav, "alert": sc_alert, "emergency": sc_emergency, "chat": sc_chat,
     "ocr_direct": sc_ocr_direct, "ocr_live": sc_ocr_live,
 }
@@ -865,8 +870,8 @@ def main():
     ap.add_argument("--compose-project", default="vh-e2e-full")
     ap.add_argument("--scenario", help="JSON kịch bản cho phone_sim (danh bạ, độ trễ...)")
     ap.add_argument("--no-callback", action="store_true", help="AB không gọi callback VH (VH chỉ poll)")
-    ap.add_argument("--street", default=os.environ.get("E2E_STREET_IMAGE", "/tmp/seevia_clone/public/images/ai-street.jpg"),
-                    help="ảnh đường phố có xe/người cho kịch bản nav (hazard)")
+    ap.add_argument("--street", default=os.environ.get("E2E_STREET_IMAGE", str(ROOT / "tools" / "assets" / "hazard_level2.jpg")),
+                    help="ảnh có vật cản mức >= HAZARD_MIN_LEVEL (2) cho kịch bản alert; mặc định ảnh nhỏ nằm trong repo")
     ap.add_argument("--vh-env", dest="vh_env", default=str(next((p for p in (ROOT / ".env", SEEVIA / "visioncare-host-demo" / ".env") if p.exists()), ROOT / ".env")))
     ap.add_argument("--ab-env", dest="ab_env", default=str(SEEVIA / ".env"))
     ap.add_argument("--workdir", default=str(ROOT / "results" / "e2e_full"))

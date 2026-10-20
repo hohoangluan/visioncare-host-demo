@@ -93,7 +93,7 @@ _KINSHIP = {"mẹ", "bố", "ba", "má", "cha", "chị", "anh", "em", "cô", "ch
 _NAME_STOP = {"là", "rằng", "ơi", "nhé", "nha", "về", "đang", "sắp", "hôm", "ngày", "tôi", "mai", "nay", "đã", "đừng",
               "hãy", "nói", "bảo", "rồi", "ở", "có", "không", "đi", "cho", "với"}
 _MESSAGE_HEAD = re.compile(
-    r"(?:nhắn|gửi)(?: tin(?: nhắn)?| lời nhắn)?(?: nhắn)?(?: giúp| giùm)?(?: lại)?(?: cho| với)?\s+(.+)", re.I,
+    r"^nhanh cho\s+(.+)|(?:nhắn|gửi)(?: tin(?: nhắn)?| lời nhắn)?(?: nhắn)?(?: giúp| giùm)?(?: lại)?(?: cho| với)?\s+(.+)", re.I,
 )
 _TEXT_LEAD = re.compile(r"^(?:là|rằng|nói|bảo|:|rằng là)\s+", re.I)
 _TAIL = re.compile(r"\s+(?:giúp tôi|giùm tôi|cho tôi|với|nhé|nha|đi|ngay|luôn)\s*$", re.I)
@@ -128,7 +128,7 @@ def fallback_message(text: str) -> dict:
     match = _MESSAGE_HEAD.search(text or "")
     if not match:
         return {}
-    words = match.group(1).split()
+    words = (match.group(1) or match.group(2) or "").split()
     if not words:
         return {}
     take = 1

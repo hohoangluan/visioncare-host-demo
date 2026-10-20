@@ -1070,3 +1070,15 @@ def test_httpx_logs_do_not_carry_the_search_key(monkeypatch, caplog):
 
     assert logging.getLogger("httpx").getEffectiveLevel() >= logging.WARNING
     assert logging.getLogger("httpcore").getEffectiveLevel() >= logging.WARNING
+
+
+def test_stt_misheard_alert_and_message_rules():
+    """Minor 1-2: STT nghe "bật cảnh báo vật cản" thành "cảnh báo bất cản" và "Nhắn cho" thành "Nhanh cho"."""
+    for text in ("cảnh báo bất cản", "Cảnh báo bất cản", "bật cảnh báo bất cản", "mở cảnh báo vất cản", "cảnh báo vật cản"):
+        assert keyword_rule(text.lower())[0] == "alert_on", text
+    assert keyword_rule("tắt cảnh báo bất cản")[0] == "alert_off"
+    assert keyword_rule("có vật cản không")[0] == "hazard"  # hỏi vẫn là hazard
+    assert keyword_rule("nhanh cho mẹ là con về muộn")[0] == "message_send"
+    assert (keyword_rule("gọi nhanh cho bố") or ("",))[0] != "message_send"  # "nhanh cho" không ở đầu câu: giao Gemma
+    from lanes import phone as lane
+    assert lane.fallback_message("Nhanh cho mẹ là con về muộn") == {"contact_name": "mẹ", "text": "con về muộn"}

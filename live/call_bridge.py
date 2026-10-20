@@ -89,6 +89,9 @@ StateHook = Callable[["Call"], Awaitable[None]]
 _bg: set[asyncio.Task] = set()  # giữ tham chiếu task nền (asyncio chỉ giữ yếu)
 
 
+_EMERGENCY_STOP_REASONS = ("glasses_hangup", "timeout")  # chỉ hai lý do này dừng chuỗi khẩn cấp ở AB
+
+
 class GlassesBusy(Exception):
     """Kính đã có một cuộc gọi chưa kết thúc."""
 
@@ -185,7 +188,14 @@ class Call:
         self.loop = asyncio.get_running_loop()
         self._send_audio, self._send_state, self._on_state, self.session = send_audio, send_state, on_state, session
         if self.state != ENDED:
-            self._timer(self.ring_window, self._ring_expired)
+            self._cancel_timers("ring")  # gắn lại sau khi phiên rớt: giữ ĐÚNG hạn cũ, không cộng thêm cả cửa sổ chuông
+            self._timer(max(0.1, self.expires_at - time.monotonic()), self._ring_expired)
+
+    def detach_glasses(self) -> None:
+        """Kính rớt phiên khi chuỗi khẩn cấp còn đang chuông: chỉ tách đầu kính, GIỮ cuộc gọi, timer và token của chuỗi
+        (Ruling C4: chuỗi không dừng khi kính mất phiên; phiên mới của kính gắn lại bằng `attach_glasses`)."""
+        self._send_audio = self._send_state = self._on_state = None
+        self.session = None
 
     async def announce(self) -> None:
         """Báo kính trạng thái đầu tiên (`ringing_out|ringing_in`) và cho phiên cập nhật khung mode."""
@@ -442,9 +452,14 @@ class Call:
     async def _ab_hangup(self, reason: str, was_ringing: bool = False) -> None:
         try:
             if self.emergency_id and was_ringing:
-                # Bấm nút / rớt phiên khi chuỗi còn đang chuông: dừng CẢ chuỗi (cuộc đang chuông AB tự huỷ),
-                # không chỉ cúp một cuộc rồi để AB gọi tiếp người kế.
-                await _ab_post(self.device, f"api/v1/service/emergency/{self.emergency_id}/stop", {})
+                # Chủ kính bấm nút / hết hạn chuỗi: dừng CẢ chuỗi (cuộc đang chuông AB tự huỷ), không chỉ cúp một cuộc
+                # rồi để AB gọi tiếp người kế. Lý do khác (rớt phiên...) KHÔNG dừng: người dùng có thể vẫn cần giúp.
+                if reason in _EMERGENCY_STOP_REASONS:
+                    out = await _ab_post(self.device, f"api/v1/service/emergency/{self.emergency_id}/stop", {})
+                    data = (out or {}).get("data") or {}
+                    if data.get("state") == "answered" and data.get("call_id"):
+                        # Đua: người thân vừa nghe máy lúc ta bấm dừng; AB giữ cuộc `active` -> cúp để không mồ côi 2 giờ.
+                        await _ab_post(self.device, f"api/v1/service/call/{data['call_id']}/hangup", {"reason": reason})
             elif not self.call_id.startswith("local-"):
                 await _ab_post(self.device, f"api/v1/service/call/{self.call_id}/hangup", {"reason": reason})
         except Exception as exc:  # noqa: BLE001 - AB tự đánh `ended`/`missed` theo hạn chuông
@@ -567,7 +582,8 @@ class CallRegistry:
         with self._lock:
             self._by_id.pop(call.call_id, None)
             call.call_id = call_id
-            self._by_id[call_id] = call
+            if call.state != ENDED:  # đã kết thúc (huỷ sớm): vẫn đổi id để hangup dùng đúng id, nhưng không ghi lại vào sổ
+                self._by_id[call_id] = call
         if peer:
             call.peer = peer
 

@@ -38,6 +38,18 @@ from urllib.parse import urlsplit
 ROOT = os.path.dirname(os.path.abspath(__file__))
 API_PREFIX = "/api/"
 
+# Danh sách trắng đường dẫn được chuyển tiếp (so khớp CHÍNH XÁC, sau khi bỏ query). `/internal/*` (callback AB ->
+# VH) tuyệt đối không qua đây: proxy chạy cùng máy với VH nên IP nguồn luôn là 127.0.0.1 và vòng chặn IP của
+# callback sẽ bị vượt khi chạy `--lan`; chỉ còn `VISIONCARE_CALLBACK_TOKEN` thì quá yếu.
+ALLOWED_API_PATHS = frozenset({
+    "/process", "/v2/turn", "/v2/image", "/v2/session", "/v2/live", "/v2/call", "/health",
+})
+
+
+def api_path_allowed(request_path: str) -> bool:
+    """`request_path` dạng `/api/<đường dẫn>[?query]`: True nếu đường dẫn đích nằm trong danh sách trắng."""
+    return urlsplit(request_path[len(API_PREFIX) - 1:]).path in ALLOWED_API_PATHS
+
 # Header theo từng chặng (RFC 9110 §7.6.1): không được chuyển tiếp nguyên.
 _HOP_BY_HOP = {
     "connection", "keep-alive", "proxy-authenticate", "proxy-authorization",
@@ -53,6 +65,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_GET(self):
         if self.path.startswith(API_PREFIX):
+            if not api_path_allowed(self.path):
+                return self.send_error(404)
             if self.headers.get("Upgrade", "").lower() == "websocket":
                 return self._proxy_ws()
             return self._proxy()
@@ -60,6 +74,8 @@ class Handler(SimpleHTTPRequestHandler):
 
     def do_POST(self):
         if self.path.startswith(API_PREFIX):
+            if not api_path_allowed(self.path):
+                return self.send_error(404)
             return self._proxy()
         self.send_error(405)
 

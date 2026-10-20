@@ -61,10 +61,12 @@ _PREFIX = (
     "thiết bị: đang chỉ đường -> nav_stop, đang phát nhạc -> music_stop, đang cảnh báo -> alert_off.\n"
     "Ví dụ:\n"
     "\"Siêu thị gần nhất ở đâu\" -> chat (chỉ hỏi vị trí). \"Chỉ đường tới siêu thị\" -> nav_start.\n"
-    "\"Quét xem phía trước có vật cản không\" -> hazard. \"Bật cảnh báo vật cản\" -> alert_on.\n"
+    "\"Quét xem phía trước có vật cản không\" -> hazard. \"Bật cảnh báo vật cản\" -> alert_on. "
+    "\"Cảnh báo bất cản\" (nghe nhầm của \"bật cảnh báo vật cản\") -> alert_on.\n"
     "\"Gọi nhanh cho bố\" -> contact_call. \"Tìm giúp cái thẻ xe\" -> find.\n"
     "\"Nhắn cho mẹ là tôi về muộn\" -> message_send. \"Mẹ có nhắn gì không\" -> message_read. "
-    "\"Hôm qua tôi nhắn cho mẹ rồi\" -> chat.\n"
+    "\"Hôm qua tôi nhắn cho mẹ rồi\" -> chat. "
+    "\"Nhanh cho mẹ là con về muộn\" (nghe nhầm của \"Nhắn cho\") -> message_send.\n"
     "\"Kể nghe chuyện ma\" -> chat.\n"
 )
 

@@ -285,7 +285,7 @@ class CallStack(base.Stack):
         env = {**os.environ, **vh_env}
         env.update(CUDA_VISIBLE_DEVICES=str(a.gpu), VISIONCARE_HOST_URL=self.ab_url,
                    VISIONCARE_CLIENT_TOKEN=public_token, VISIONCARE_DEVICE_ID="e2e-wrong-default",
-                   VISIONCARE_CALLBACK_TOKEN=cb_token, VISIONCARE_USER_ID=owner_pub,
+                   VISIONCARE_CALLBACK_TOKEN=cb_token,  # không đặt VISIONCARE_USER_ID: AB suy chủ từ glasses_device_id
                    VISIONCARE_DEVICE_TOKENS=str(tokens), CALL_RING_TIMEOUT_S=str(a.ring_s))
         self.vh_log.unlink(missing_ok=True)
         p = self._spawn([PY, "-m", "uvicorn", "app:app", "--host", "127.0.0.1", "--port", str(a.vh_port),

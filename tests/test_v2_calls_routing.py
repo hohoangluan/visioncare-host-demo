@@ -40,12 +40,11 @@ def _err(status, code, **details):
 
 @pytest.fixture
 def rig(tmp_path, monkeypatch, world):  # noqa: F811
-    """Kính DEV có token riêng + user cấu hình + AB giả ghi lại mọi request."""
+    """Kính DEV có token riêng (KHÔNG có user chung: AB suy chủ từ glasses_device_id) + AB giả ghi lại mọi request."""
     path = tmp_path / "device_tokens.json"
     path.write_text(json.dumps({DEV: hashlib.sha256(TOK.encode()).hexdigest()}))
     monkeypatch.setattr(config, "VISIONCARE_DEVICE_TOKENS", str(path))
     monkeypatch.setattr(config, "VISIONCARE_CALLBACK_TOKEN", CB_TOKEN)
-    monkeypatch.setattr(config, "VISIONCARE_USER_ID", "user-100")
     monkeypatch.setattr(config, "CALL_HALF_DUPLEX", False)
     monkeypatch.setitem(phone.HANDLERS, "contact_call", phone_handlers.handle_contact_call)
     monkeypatch.setitem(phone.HANDLERS, "emergency_call", phone_handlers.handle_emergency_call)
@@ -60,7 +59,7 @@ def rig(tmp_path, monkeypatch, world):  # noqa: F811
     sent: list[tuple[str, dict]] = []
 
     def ab(request: httpx.Request) -> httpx.Response:
-        body = json.loads(request.content) if request.content else {}
+        body = json.loads(request.content) if request.content else dict(request.url.params)  # GET: ghi query
         sent.append((request.url.path, body))
         for suffix, (status, out) in replies.items():
             if request.url.path.endswith(suffix):
@@ -131,7 +130,7 @@ def test_contact_call_starts_ab_call_after_readback(rig):
         assert _wait(lambda: _starts(rig, "/call/start"))
         start = _starts(rig, "/call/start")[0]
         call = calls.by_device(DEV)
-        assert start["user_id"] == "user-100" and start["glasses_device_id"] == DEV
+        assert "user_id" not in start and start["glasses_device_id"] == DEV
         assert start["contact_alias"] == "mẹ" and start["emergency"] is False
         assert start["media_token"] == call.media_token and len(start["media_token"]) >= 8
         assert "device_id" not in start  # AB khai extra="forbid": không chèn trường lạ
@@ -176,7 +175,7 @@ def test_emergency_start_and_stop_on_press(rig):
         start = _starts(rig, "/emergency/start")[0]
         call = calls.by_device(DEV)
         tokens = start["media_tokens"]
-        assert start["user_id"] == "user-100" and start["glasses_device_id"] == DEV
+        assert "user_id" not in start and start["glasses_device_id"] == DEV
         assert 24 <= len(tokens) <= 30 and len(set(tokens)) == len(tokens) and tokens[0] == call.media_token
         assert call.emergency and _wait(lambda: call.emergency_id == "em-1" and call.call_id == "e-c1")
         # mọi token của chuỗi mở được cuộc gọi này (VH không biết trước call_id lượt sau)
@@ -187,6 +186,74 @@ def test_emergency_start_and_stop_on_press(rig):
         assert _wait(lambda: any(p.endswith("/emergency/em-1/stop") for p, _ in rig.ab))
         assert not any(p.endswith("/call/e-c1/hangup") for p, _ in rig.ab)
         assert calls.by_device(DEV) is None
+
+
+def test_emergency_survives_session_drop_and_reattaches(rig):
+    """Ruling C4: kính rớt phiên khi chuỗi khẩn cấp còn chuông KHÔNG dừng chuỗi (không `emergency/stop`);
+    phiên mới của kính gắn lại, người thân nghe máy sau đó vẫn nối được; bấm nút lúc này mới dừng chuỗi."""
+    rig.replies["/emergency/start"] = _ok({"emergency_id": "em-7", "state": "running", "call_id": "e-d1",
+                                           "relative": {"display_name": "Mẹ"}, "contacts": 2})
+    _say(rig, "cứu tôi với", "emergency_call")
+    with rig.client.websocket_connect("/v2/session") as ws:
+        _hello(ws)
+        _send_turn(ws, "D1")
+        _recv_until_end(ws, "D1")
+        _until_state(ws, RINGING_OUT)
+        call = calls.by_device(DEV)
+        assert _wait(lambda: call.emergency_id == "em-7" and call.call_id == "e-d1")
+    # socket kính đóng (rớt mạng): phiên shutdown
+    assert _wait(lambda: call.session is None)
+    time.sleep(0.3)
+    assert call.state == RINGING_OUT and calls.by_device(DEV) is call
+    assert not any("/stop" in p or p.endswith("/hangup") for p, _ in rig.ab)
+    with rig.client.websocket_connect("/v2/session") as ws2:
+        _hello(ws2)
+        _until_state(ws2, RINGING_OUT)  # gắn lại: kính biết chuỗi vẫn đang chuông
+        assert call.session is not None
+        assert _event(rig, "call_answered", "e-d2", emergency=True, peer_display_name="Bố").status_code == 200
+        _until_state(ws2, ACTIVE)
+        assert call.peer == "Bố"
+    assert not any("/stop" in p for p, _ in rig.ab)
+
+
+def test_emergency_stop_race_answered_hangs_up_active_call(rig):
+    """Minor 7: bấm dừng đúng lúc người thân nghe máy -> AB trả `answered` + call_id -> VH cúp thêm cuộc còn active."""
+    rig.replies["/emergency/start"] = _ok({"emergency_id": "em-5", "state": "running", "call_id": "e-r1",
+                                           "relative": {"display_name": "Mẹ"}, "contacts": 2})
+    rig.replies["/emergency/em-5/stop"] = _ok({"emergency_id": "em-5", "state": "answered", "call_id": "e-r2"})
+    _say(rig, "cứu tôi với", "emergency_call")
+    with rig.client.websocket_connect("/v2/session") as ws:
+        _hello(ws)
+        _send_turn(ws, "R1")
+        _recv_until_end(ws, "R1")
+        _until_state(ws, RINGING_OUT)
+        assert _wait(lambda: calls.by_device(DEV).emergency_id == "em-5")
+        ws.send_text(json.dumps({"t": "call_hangup"}))
+        assert _until_state(ws, ENDED)["reason"] == "glasses_hangup"
+        assert _wait(lambda: any(p.endswith("/call/e-r2/hangup") for p, _ in rig.ab))
+    assert _wait(lambda: DEV not in device_session._registry)  # phiên dọn xong trước khi loop của test đóng
+
+
+def test_emergency_button_after_reattach_stops_chain(rig):
+    """Sau khi gắn lại, bấm nút vẫn dừng cả chuỗi như thường."""
+    rig.replies["/emergency/start"] = _ok({"emergency_id": "em-8", "state": "running", "call_id": "e-f1",
+                                           "relative": {"display_name": "Mẹ"}, "contacts": 2})
+    _say(rig, "cứu tôi với", "emergency_call")
+    with rig.client.websocket_connect("/v2/session") as ws:
+        _hello(ws)
+        _send_turn(ws, "F1")
+        _recv_until_end(ws, "F1")
+        _until_state(ws, RINGING_OUT)
+        call = calls.by_device(DEV)
+        assert _wait(lambda: call.emergency_id == "em-8")
+    assert _wait(lambda: call.session is None)
+    with rig.client.websocket_connect("/v2/session") as ws2:
+        _hello(ws2)
+        _until_state(ws2, RINGING_OUT)
+        ws2.send_text(json.dumps({"t": "call_hangup"}))
+        assert _until_state(ws2, ENDED)["reason"] == "glasses_hangup"
+        assert _wait(lambda: any(p.endswith("/emergency/em-8/stop") for p, _ in rig.ab))
+    assert _wait(lambda: DEV not in device_session._registry)
 
 
 def test_emergency_chain_rebinds_next_call_and_exhausted(rig, monkeypatch):
@@ -230,3 +297,16 @@ def test_post_only_glasses_cannot_call(rig, monkeypatch):
         assert call_bridge.unavailable_reason(DEV, False) == call_bridge.NEED_OWN_TOKEN
     # Vào phiên có token riêng thì VH lấy tin nhắn chưa đọc (C7); ngoài ra AB không bị gọi (không call/start).
     assert not [p for p, _ in rig.ab if "/messages/unread" not in p]
+
+
+def test_bind_after_ended_does_not_resurrect_call(rig):
+    """Minor 5: huỷ sớm rồi mới `bind` id của AB thì Call ENDED không được quay lại sổ (rò bộ nhớ)."""
+    call = calls.create(None, DEV, "Mẹ", "to_relative")
+    call.hangup_threadsafe("glasses_hangup", by="glasses")  # chưa có phiên/loop: đánh ENDED + gỡ khỏi sổ ngay
+    assert call.state == ENDED and calls.get(call.call_id) is None
+    calls.bind(call, "ab-late", "Mẹ")
+    assert call.call_id == "ab-late" and calls.get("ab-late") is None and calls.by_device(DEV) is None
+    live = calls.create(None, DEV, "Mẹ", "to_relative")
+    calls.bind(live, "ab-live")
+    assert calls.get("ab-live") is live  # cuộc còn sống vẫn ghi bình thường
+    live.hangup_threadsafe("test", by="ab")

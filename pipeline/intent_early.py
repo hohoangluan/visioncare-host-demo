@@ -36,7 +36,9 @@ _RULES: tuple[tuple[re.Pattern, str, str], ...] = tuple(
     for pattern, intent, mode in (
         (r"cấp cứu|khẩn cấp|cứu tôi|cứu với|sos", "emergency_call", ""),
         (r"tắt(?: chức năng)? cảnh báo|dừng cảnh báo|ngừng cảnh báo|ngừng nhắc vật cản|đừng (?:báo|nhắc) (?:vật cản|chướng ngại)", "alert_off", ""),
-        (r"bật cảnh báo|mở cảnh báo", "alert_on", ""),
+        # STT hay nghe "vật cản" thành "bất cản/vất cản/bậc cản" và làm rơi chữ "bật": vẫn là bật chế độ, không phải
+        # hỏi hazard (luật `vật cản` ở dưới dẫn sang hazard). Đứng sau alert_off nên "tắt cảnh báo bất cản" vẫn là tắt.
+        (r"bật cảnh báo|mở cảnh báo|(?:bật |mở )?cảnh báo (?:vật|bất|vất|bậc) cản", "alert_on", ""),
         (r"dừng chỉ đường|tắt chỉ đường|dừng dẫn đường|tắt dẫn đường", "nav_stop", ""),
         (r"dẫn đường|chỉ đường|dẫn tôi|đưa tôi tới|đưa tôi đến|tìm đường|^(?:hãy )?đi (?:tới|đến)", "nav_start", ""),
         (r"tắt nhạc|dừng nhạc|ngừng nhạc|dừng nghe nhạc|ngừng nghe nhạc", "music_stop", ""),
@@ -48,7 +50,8 @@ _RULES: tuple[tuple[re.Pattern, str, str], ...] = tuple(
         # chứa "nhắn cho". `message_read` đứng trước `message_send` vì "đọc tin nhắn cho tôi" cũng chứa "nhắn cho".
         (r"đọc (?:tin nhắn|lời nhắn)|(?:có|xem|nghe|kiểm tra) (?:tin nhắn|lời nhắn)|"
          r"có (?:ai|ai đó) nhắn|có nhắn gì|nhắn gì (?:không|chưa)", "message_read", ""),
-        (r"nhắn tin|nhắn cho|nhắn giúp|nhắn giùm|nhắn lại cho|nhắn với|gửi (?:tin nhắn|tin|lời nhắn)", "message_send", ""),
+        # STT hay nghe "Nhắn cho" thành "Nhanh cho": chỉ nhận ở ĐẦU câu để "gọi nhanh cho bố" vẫn là contact_call.
+        (r"^nhanh cho|nhắn tin|nhắn cho|nhắn giúp|nhắn giùm|nhắn lại cho|nhắn với|gửi (?:tin nhắn|tin|lời nhắn)", "message_send", ""),
         (r"gọi cho|gọi điện|gọi điện thoại", "contact_call", ""),
         (r"đọc lại", "ocr", "reread"),
         (r"tóm tắt", "ocr", "summarize"),

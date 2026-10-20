@@ -108,9 +108,6 @@ def handle_contact_call(image: bytes, command_text: str, params: dict | None = N
     if not name:
         yield _ASK_CONTACT
         return
-    if not config.VISIONCARE_USER_ID:
-        yield _CALL_NO_USER
-        return
     device = device_ctx.current.get()
     reason = call_bridge.unavailable_reason(device, device_ctx.per_device.get())
     if reason:  # phòng thủ: router đã chặn trước khi đọc lại, nhưng phiên có thể rớt trong cửa sổ huỷ
@@ -123,7 +120,7 @@ def handle_contact_call(image: bytes, command_text: str, params: dict | None = N
         return
     failure = f"Không thể gọi cho {name}, vui lòng thử lại."
     try:
-        data = visioncare_client.call_start(config.VISIONCARE_USER_ID, name, call.media_token)
+        data = visioncare_client.call_start(name, call.media_token)
     except visioncare_client.VisionCareAPIError as exc:
         call_bridge.calls.discard(call)
         code = visioncare_client.error_code(exc)
@@ -135,6 +132,8 @@ def handle_contact_call(image: bytes, command_text: str, params: dict | None = N
             yield f"Bạn muốn gọi ai: {candidates[0]} hay {candidates[1]}?"
         elif code == "CONTACT_NOT_FOUND":
             yield f"Chưa có người thân tên {name} trong danh sách."
+        elif code == "GLASSES_DEVICE_NOT_LINKED":
+            yield _CALL_NO_USER
         else:
             logger.warning("contact_call: AB từ chối start (%s, HTTP %s)", code or "?", exc.status_code)
             yield failure
@@ -155,9 +154,11 @@ def handle_contact_call(image: bytes, command_text: str, params: dict | None = N
 def handle_emergency_call(image: bytes, command_text: str, params: dict | None = None) -> Iterator[str]:
     """Khẩn cấp = AB gọi lần lượt người thân đã cài (tối đa 3 vòng), VH giữ MỘT `Call` đại diện cả chuỗi.
 
-    Kính chưa có phiên/token riêng thì rơi về luồng cũ (gọi qua điện thoại): khẩn cấp không được im lặng vì thiếu cập nhật."""
+    DỰ PHÒNG CÓ CHỦ Ý (quyết định người dùng): kính chưa có phiên/token riêng (đường internet không dùng được) thì rơi về
+    đường SIM cũ (`emergency/call`: SMS `[SOS]` + gọi qua điện thoại chủ kính). Chỉ khẩn cấp có lưới này; gọi/nhắn thường
+    không bao giờ dùng SIM. Khẩn cấp không được im lặng vì thiếu cập nhật."""
     device = device_ctx.current.get()
-    if not config.VISIONCARE_USER_ID or call_bridge.unavailable_reason(device, device_ctx.per_device.get()):
+    if call_bridge.unavailable_reason(device, device_ctx.per_device.get()):
         yield from handle_emergency(image, command_text, params)
         return
     try:
@@ -167,7 +168,7 @@ def handle_emergency_call(image: bytes, command_text: str, params: dict | None =
         return
     tokens = [call.media_token, *call_bridge.calls.add_tokens(call, max(1, config.EMERGENCY_MEDIA_TOKENS) - 1)]
     try:
-        data = visioncare_client.emergency_start(config.VISIONCARE_USER_ID, tokens)
+        data = visioncare_client.emergency_start(tokens)
     except visioncare_client.VisionCareAPIError as exc:
         call_bridge.calls.discard(call)
         code = visioncare_client.error_code(exc)
@@ -187,7 +188,9 @@ def handle_emergency_call(image: bytes, command_text: str, params: dict | None =
         yield call_bridge.EMERGENCY_NONE_REACHED
     elif _ended_early(call) and call.emergency_id:  # bấm nút dừng trước khi AB trả `emergency_id`: dừng chuỗi bù
         try:
-            visioncare_client.emergency_stop(call.emergency_id)
+            data = visioncare_client.emergency_stop(call.emergency_id)
+            if data.get("state") == "answered" and data.get("call_id"):  # đua với người vừa nghe máy: cúp cuộc còn active
+                visioncare_client.call_hangup(str(data["call_id"]), "glasses_hangup")
         except Exception:  # noqa: BLE001
             logger.warning("emergency_call: báo AB dừng sớm lỗi")
 
@@ -211,16 +214,13 @@ def handle_message_send(image: bytes, command_text: str, params: dict | None = N
         lane.set_pending_body(device_ctx.current.get(), name)
         yield lane.body_question(name)
         return
-    if not config.VISIONCARE_USER_ID:
-        yield _CALL_NO_USER
-        return
     device = device_ctx.current.get()
     reason = call_bridge.unavailable_reason(device, device_ctx.per_device.get())
     if reason:  # phòng thủ: router đã chặn, nhưng phiên có thể rớt trong cửa sổ huỷ
         yield MSG_NEED_UPDATE if reason == call_bridge.NEED_UPDATE else MSG_NEED_OWN_TOKEN
         return
     try:
-        visioncare_client.messages_send(config.VISIONCARE_USER_ID, name, text)
+        visioncare_client.messages_send(name, text)
     except visioncare_client.VisionCareAPIError as exc:
         code = visioncare_client.error_code(exc)
         candidates = visioncare_client.error_candidates(exc)
@@ -231,6 +231,8 @@ def handle_message_send(image: bytes, command_text: str, params: dict | None = N
             yield f"Bạn muốn nhắn cho ai: {candidates[0]} hay {candidates[1]}?"
         elif code == "CONTACT_NOT_FOUND":
             yield f"Chưa có người thân tên {name} trong danh sách."
+        elif code == "GLASSES_DEVICE_NOT_LINKED":
+            yield _CALL_NO_USER
         else:
             logger.warning("message_send: AB từ chối (%s, HTTP %s)", code or "?", exc.status_code)
             yield f"Không gửi được tin nhắn cho {name}, vui lòng thử lại."
@@ -247,11 +249,8 @@ def handle_message_read(image: bytes, command_text: str, params: dict | None = N
 
     Đánh dấu SAU khi tin đã được yield (generator chỉ chạy tiếp khi TTS lấy câu kế): bị huỷ giữa chừng thì
     các tin chưa tới lượt vẫn chưa đọc ở AB."""
-    if not config.VISIONCARE_USER_ID:
-        yield _CALL_NO_USER
-        return
     try:
-        unread = visioncare_client.messages_unread(config.VISIONCARE_USER_ID)
+        unread = visioncare_client.messages_unread()
     except Exception:  # noqa: BLE001
         logger.exception("message_read: không lấy được tin chưa đọc")
         yield "Không lấy được tin nhắn, vui lòng thử lại."
@@ -275,6 +274,6 @@ def handle_message_read(image: bytes, command_text: str, params: dict | None = N
 
 def mark_read(message_id: str) -> None:
     try:
-        visioncare_client.message_read(message_id, config.VISIONCARE_USER_ID or None)
+        visioncare_client.message_read(message_id)
     except Exception:  # noqa: BLE001
         logger.warning("message_read: báo AB đã đọc lỗi")  # AB giữ tin chưa đọc; lần sau đọc lại

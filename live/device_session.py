@@ -23,6 +23,7 @@ khi kính đã rớt mạng hay bấm lại.
 import asyncio
 import collections
 import contextlib
+import contextvars
 import json
 import logging
 import secrets
@@ -235,6 +236,9 @@ class DeviceSession:
             await self.send_json(ok)
             self.emit_mode()
             self._fetch_unread()
+            pending = calls.by_device(self.device)
+            if pending is not None and pending.session is None and pending.state != call_bridge.ENDED:
+                self._attach_call(pending)  # chuỗi khẩn cấp còn chuông từ phiên trước: gắn lại đầu kính
             await self._loop()
         except (WebSocketDisconnect, RuntimeError):
             pass
@@ -306,8 +310,11 @@ class DeviceSession:
             return
         self._shut = True
         call = calls.by_device(self.device)
-        if call is not None and call.session is self:  # kính rớt/bị thay giữa cuộc gọi: cúp, báo AB, đóng đầu app
-            await call.hangup("glasses_disconnect", by="glasses")
+        if call is not None and call.session is self:  # kính rớt/bị thay giữa cuộc gọi
+            if call.emergency and call.state == call_bridge.RINGING_OUT:
+                call.detach_glasses()  # chuỗi khẩn cấp còn chuông: KHÔNG dừng (Ruling C4); phiên mới gắn lại ở `run`
+            else:  # cúp, báo AB, đóng đầu app
+                await call.hangup("glasses_disconnect", by="glasses")
         for task in [*self._debug_tasks, self._debug_pump, self._unread_task]:
             if task is not None:
                 task.cancel()
@@ -354,8 +361,11 @@ class DeviceSession:
     # ---------- cuộc gọi (plan 2 C5) ----------
     def _attach_call(self, call) -> None:
         """Chạy trên event loop: gắn đầu kính của `call` vào phiên này rồi báo `call_state` đầu tiên."""
+        if call.session is self:
+            return  # đã gắn (cuộc mới tạo lúc phiên vào + gắn lại ở `run`)
         if self._shut:
-            call.hangup_threadsafe("glasses_disconnect", by="glasses")
+            if not call.emergency:  # khẩn cấp: để nguyên cho phiên kế tiếp gắn lại
+                call.hangup_threadsafe("glasses_disconnect", by="glasses")
             return
         call.attach_glasses(self._send_call_audio, self.send_json, self._on_call_state, session=self)
         task = asyncio.get_running_loop().create_task(call.announce())
@@ -605,15 +615,16 @@ class DeviceSession:
 
     def _fetch_unread(self) -> None:
         """Vừa vào phiên: lấy tin chưa đọc ở AB (callback có thể đã bị bỏ sau 8 lần thử) và xếp hàng như tin tới."""
-        if not (self.per_device and config.VISIONCARE_USER_ID):
+        if not self.per_device:
             return
         self._unread_task = asyncio.get_running_loop().create_task(self._load_unread())
 
     async def _load_unread(self) -> None:
         from services import visioncare_client
 
+        device_ctx.current.set(self.device)  # AB suy chủ kính từ glasses_device_id; không có user chung cho cả server
         try:
-            unread = await asyncio.to_thread(visioncare_client.messages_unread, config.VISIONCARE_USER_ID)
+            unread = await asyncio.to_thread(visioncare_client.messages_unread)
         except Exception:  # noqa: BLE001 - AB tạm lỗi: tin vẫn chưa đọc, lần vào phiên sau lấy lại
             logger.warning("v2 session %s: không lấy được tin chưa đọc", self.session_id)
             return
@@ -662,7 +673,9 @@ class DeviceSession:
                 # Đã đọc xong: báo AB đánh dấu đã đọc, ở nền (lỗi thì thôi: AB giữ chưa đọc, lần sau đọc lại).
                 from handlers import phone as phone_handlers
 
-                self._evloop.run_in_executor(None, phone_handlers.mark_read, msg[0])
+                # `run_in_executor` KHÔNG chép contextvars: chép tay để `mark_read` mang đúng kính của phiên này
+                # (AB suy chủ tin từ glasses_device_id; thiếu là rơi về VISIONCARE_DEVICE_ID mặc định -> 404).
+                self._evloop.run_in_executor(None, contextvars.copy_context().run, phone_handlers.mark_read, msg[0])
 
     async def _start_live(self, reply: Reply) -> None:
         was_nav = (self._live_session is not None and self._live_session.mode == "nav"

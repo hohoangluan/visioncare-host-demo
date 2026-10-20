@@ -40,6 +40,26 @@ for _noisy in ("httpx", "httpcore"):
     logging.getLogger(_noisy).setLevel(logging.WARNING)
 metrics.install_log_filter()
 
+
+class _RedactTokenQuery(logging.Filter):
+    """Che giá trị `token=`/`access_token=` trên query trong access log của uvicorn: `WS /v2/call?token=<media_token>`
+    (và `/v2/session?token=`) không được để lộ token vào file log, dù token dùng một lần."""
+
+    _PATTERN = re.compile(r"((?:^|[?&;])(?:access_)?token=)[^&\s\"']*", re.I)
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if isinstance(record.args, tuple):
+            record.args = tuple(self._PATTERN.sub(r"\1***", a) if isinstance(a, str) else a for a in record.args)
+        elif isinstance(record.msg, str):
+            record.msg = self._PATTERN.sub(r"\1***", record.msg)
+        return True
+
+
+# Logger gắn filter (không phải handler): uvicorn tự cấu hình handler, còn logger này thì tồn tại từ lúc import.
+# Dòng `WebSocket /v2/call?token=... [accepted]` đi qua `uvicorn.error` (không phải `uvicorn.access`), nên gắn cả hai.
+for _name in ("uvicorn.access", "uvicorn.error"):
+    logging.getLogger(_name).addFilter(_RedactTokenQuery())
+
 app = FastAPI(title="Blind-Assist Audio Server")
 app.add_middleware(guard.ProcessBodyGuard)
 
