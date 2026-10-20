@@ -328,7 +328,11 @@ def test_queued_result_survives_call_and_emergency_missed_silent(env):
         _until_state(glasses, ENDED)
         call2 = calls.create("c-em2", DEV, "Mẹ", "to_relative", emergency=True)
         _until_state(glasses, RINGING_OUT)
+        # chuỗi khẩn cấp: một người không nghe thì AB gọi người kế -> Call đại diện vẫn chuông (C6),
+        # chỉ `emergency_exhausted` mới kết thúc
         assert _event(env, "call_missed", "c-em2", emergency=True).status_code == 200
+        assert call2.state == RINGING_OUT
+        assert _event(env, "emergency_exhausted", "c-em2", emergency=True).status_code == 200
         _until_state(glasses, ENDED)
         assert not any(r[1].startswith("Mẹ chưa nghe máy") for r in session._results)
 
@@ -351,7 +355,8 @@ def test_glasses_hangup_notifies_ab(env):
         assert _until_state(glasses, ENDED)["reason"] == "glasses_hangup"
         assert _wait(lambda: any(p.endswith("/call/c-hang/hangup") for p, _ in env.ab))
         body = dict(env.ab)["/api/v1/service/call/c-hang/hangup"]
-        assert body["reason"] == "glasses_hangup" and body["device_id"] == DEV
+        # AB khai hangup extra="forbid": chỉ `reason`, không chèn device_id/request_id (C6)
+        assert body == {"reason": "glasses_hangup"}
         assert calls.by_device(DEV) is None and call.state == ENDED
 
 

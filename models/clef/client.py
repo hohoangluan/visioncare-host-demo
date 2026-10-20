@@ -21,7 +21,7 @@ logger = logging.getLogger("blind_assist")
 LABELS: dict[str, str] = {
     "chat": "hỏi đáp, trò chuyện, hỏi giờ, thời tiết, tin tức, hỏi mình đang ở đâu, "
             "hỏi một nơi nào đó Ở ĐÂU/chỗ nào (chỉ hỏi vị trí, không nhờ dẫn), "
-            "nói chuyện về việc gọi cho ai đó mà không ra lệnh gọi, hoặc câu không thuộc nhóm nào khác",
+            "nói chuyện về việc gọi/nhắn cho ai đó mà không ra lệnh, hoặc câu không thuộc nhóm nào khác",
     "space": "hỏi phía trước/xung quanh CÓ GÌ, tả khung cảnh",
     "hazard": "hỏi/kiểm tra MỘT LẦN phía trước có AN TOÀN không, có vật cản/chướng ngại vật không "
               "(không phải bật chế độ cảnh báo liên tục)",
@@ -34,6 +34,8 @@ LABELS: dict[str, str] = {
     "alert_on": "bật chế độ cảnh báo vật cản liên tục khi đi đường (câu có 'bật'/'mở', không có điểm đến)",
     "alert_off": "tắt cảnh báo vật cản",
     "contact_call": "gọi điện cho một người trong danh bạ",
+    "message_send": "nhắn tin / gửi lời nhắn cho người thân (ra lệnh nhắn ngay; kể chuyện đã nhắn thì là chat)",
+    "message_read": "đọc / nghe tin nhắn mới, hỏi có ai nhắn gì không",
     "emergency_call": "gọi cấp cứu, khẩn cấp, SOS, cứu tôi",
     "ride_quote": "đặt xe, gọi Grab đi đâu đó",
     "ride_confirm": "xác nhận hoặc huỷ chuyến xe vừa báo giá",

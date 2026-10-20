@@ -63,6 +63,8 @@ _PREFIX = (
     "\"Siêu thị gần nhất ở đâu\" -> chat (chỉ hỏi vị trí). \"Chỉ đường tới siêu thị\" -> nav_start.\n"
     "\"Quét xem phía trước có vật cản không\" -> hazard. \"Bật cảnh báo vật cản\" -> alert_on.\n"
     "\"Gọi nhanh cho bố\" -> contact_call. \"Tìm giúp cái thẻ xe\" -> find.\n"
+    "\"Nhắn cho mẹ là tôi về muộn\" -> message_send. \"Mẹ có nhắn gì không\" -> message_read. "
+    "\"Hôm qua tôi nhắn cho mẹ rồi\" -> chat.\n"
     "\"Kể nghe chuyện ma\" -> chat.\n"
 )
 

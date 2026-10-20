@@ -115,3 +115,23 @@ McNemar intent B vs A: 0 : 1 và 0 : 1 (p 1,0; cùng một câu dao động). Lu
 gold_test (MỘT lần, kèm đối chứng aux cùng lúc, gate 0,999): B acc 0,953 p50 74 p90 83 FP 0 ask 0,105, needs_web 14/19 (đoán web 6, gold 11), ocr_mode 5/5; A acc 0,944 p50 81 p90 144 FP 0 ask 0,125, needs_web 13/19 (đoán web 9), ocr_mode 4/5. Luật không tệ hơn aux nhưng THIẾU web (bỏ sót 5/11 câu cần tra).
 
 Kết luận: GIỮ `INTENT_AUX=rules` (mặc định); `gemma` quay về lượt phụ. Chat/ocr 120-125 -> 60 ms. Rủi ro: luật bỏ sót câu cần tra web ngoài mẫu từ khoá (recall web test 6/11) — thêm từ khoá khi gặp.
+
+## Plan 2 C7 — nhãn mới `message_send` / `message_read` (2026-10-20, Gemma UIT, concurrency 1, --params, gate 0,999)
+Thêm 2 nhãn vào `LABELS` (19 nhãn) + 1 dòng ví dụ trong prompt (`pipeline/intent_classifier.py`) + luật đoán sớm (`intent_early._RULES`, `message_*` đứng trước `gọi cho` và `đọc`; `message_send` thuộc `_BLOCKED_BY_KEYWORD`).
+Gold: `python -m tools.intent_gold.build --stage extend --labels message_send,message_read --per-label 60` (sol sinh theo 8 "ô" gồm câu gây nhầm nhắn↔gọi, chat nhắc tới tin nhắn, đọc tin nhắn↔ocr↔tin tức; sol gán nhãn + Gemma + sol phân xử).
+Bước `extend` CHỈ THÊM dòng (dev 160 -> 224, test 107 -> 149; 160/107 dòng cũ giữ nguyên nội dung và phía), không chia lại. Không có biến thể STT cho dòng mới (chế độ nhanh).
+Dòng mới: message_send 46 (dev 28 / test 18), message_read 31 (18 / 13), đối chứng chat 15, contact_call 8, ocr 6; 98 agree + 8 sol_adjudicated, 0 uncertain.
+
+| | dev trước (160) | dev sau, 160 dòng cũ | test trước (107) | test sau, 107 dòng cũ |
+|---|---|---|---|---|
+| acc | 0,944 | 0,938 | 0,944 | 0,953 |
+| McNemar (sau vs trước) | | 0 : 1 (p 1,0) | | 1 : 0 (p 1,0) |
+| action_fp @0,999 | 0 | 2 (cả hai là dòng `stt_snr10` méo) | 0 | 0 |
+| p50 / p90 (ms) | 67 / 79 | 74 / 80 | 69 / 79 | 74 / 81 |
+
+Nhãn cũ không giảm có ý nghĩa thống kê. p50 +7 ms (≤ +10 ms cho phép; prompt dài thêm 2 nhãn + 1 ví dụ).
+Hai FP dev sau cổng đều có từ trước nhưng nằm DƯỚI cổng ở lần đo trước: `qf4598156e7:stt_snr10` "Phát sóng short" (gold emergency_call, đoán music_play; conf 0,874 -> 0,9999, vốn đã dao động 0,998-0,999 ở Task 4d) và `qaea07dce98:stt_snr10` (nav_start đúng nhãn, sai destination do STT; conf 0,9946 -> 0,9997). Không phải lỗi do nhãn mới; dòng `clean` không có FP nào sau cổng.
+
+Nhãn mới (dòng thêm, không cổng): dev message_send recall 25/28, precision 25/25; message_read recall 17/18, precision 17/17; test message_send 18/18 (precision 18/19), message_read 13/13 (13/13). Tham số message_send đúng cả contact_name lẫn text 25/25 (dev, chỉ tính câu đoán đúng nhãn).
+Ca nhầm đáng chú ý: test "Bấm gọi em mai ngay giúp anh" (gold contact_call) -> message_send conf 0,9905 < 0,999 nên bị cổng hỏi lại ("Nhắn cho em mai phải không?"), không tự gửi; dev 3 câu message_send -> chat (lời nhắn đảo ngữ "Nhắn hộ tớ cho bà cháu ăn cơm rồi ạ", phương ngữ "mạ", nói sửa giữa chừng) — rơi về chat là hướng AN TOÀN (không gửi tin).
+Chạy test MỘT lần (không chỉnh prompt sau khi thấy test). Số dòng mới nhỏ (≤ 46/nhãn): sai số chuẩn recall ±5-8 điểm; đừng đọc các tỉ lệ trên như số tổng quát hoá.

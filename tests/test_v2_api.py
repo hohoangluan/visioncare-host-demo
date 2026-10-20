@@ -15,7 +15,7 @@ from lanes import ocr_live, phone
 from live import hazard, text_align
 from live.session import sessions
 from models import clef, llm
-from pipeline import adpcm, cues, intent_early, stt, tts
+from pipeline import adpcm, cues, final_router, intent_early, stt, tts
 from pipeline.image_buffer import image_buffer
 
 client = TestClient(app)
@@ -88,6 +88,9 @@ def world(monkeypatch):
 
     for name in list(phone.HANDLERS):
         monkeypatch.setitem(phone.HANDLERS, name, fake_handler(name))
+    # Gọi điện cần phiên WS + token riêng (Plan 2 C6); các test làn D ở đây dùng token chung/POST và kiểm cổng an toàn,
+    # không kiểm đường gọi (xem test_v2_calls_routing.py nơi khôi phục cổng thật).
+    monkeypatch.setattr(final_router, "_call_blocker", lambda ctx: None)
 
     action_flow.reset_state()
     phone._CONFIRM.clear()
