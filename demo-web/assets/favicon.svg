@@ -4,7 +4,7 @@
     <linearGradient id="fvS" x1="15" y1="18" x2="34" y2="43" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#09BBC8"/><stop offset="1" stop-color="#405FFA"/></linearGradient>
     <linearGradient id="fvV" x1="27" y1="31" x2="52" y2="26" gradientUnits="userSpaceOnUse"><stop offset="0" stop-color="#405FFA"/><stop offset="1" stop-color="#8A80E6"/></linearGradient>
   </defs>
-  <path d="M3.5,0 H12.5 C14.4,0 16,1.6 16,3.5 V12.5 C16,14.4 14.4,16 12.5,16 H3.5 C1.6,16 0,14.4 0,12.5 V3.5 C0,1.6 1.6,0 3.5,0 Z" fill="#07240F"/>
+  <path d="M3.5,0 H12.5 C14.4,0 16,1.6 16,3.5 V12.5 C16,14.4 14.4,16 12.5,16 H3.5 C1.6,16 0,14.4 0,12.5 V3.5 C0,1.6 1.6,0 3.5,0 Z" fill="#041466"/>
   <g transform="translate(-0.78,-0.78) scale(0.27)">
     <path d="M38,17 L28,17 C19.5,17 13.5,20.5 13.5,25.5 C13.5,30 18,31.6 24.5,33.2 C31,34.8 33.5,37 32.5,40.6 C31.4,44.4 27,46.2 22.5,46.2 C18.4,46.2 15.6,44 13.8,41" stroke="url(#fvS)" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="9.5"/>
     <path d="M27,31 C31.8,33.6 35,38 38.2,45.6 C39.4,48.6 41.6,48.6 42.8,45.6 L52.5,25" stroke="url(#fvV)" fill="none" stroke-linecap="round" stroke-linejoin="round" stroke-width="9.5"/>
