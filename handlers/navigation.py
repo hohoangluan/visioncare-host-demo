@@ -7,7 +7,7 @@ _ASK_DESTINATION = "Bạn muốn đi đâu? Vui lòng nói lại kèm tên đị
 # Địa chỉ nằm ở câu kết quả phía sau — đó mới là địa chỉ điện thoại thật sự nhận,
 # nên nhắc ở đây nữa chỉ làm câu nói dài gấp đôi.
 _START_ACK = "Đang gửi chỉ đường về điện thoại."
-_OPENING_MAP = "Đang mở bản đồ trên điện thoại, bạn chờ một chút."
+_STILL_SENDING = "Đang gửi chỉ đường về điện thoại, bạn chờ một chút."
 
 _NOTHING_TO_STOP = "Hiện không có lộ trình nào đang chạy để dừng."
 _STOP_ACK = "Đang dừng chỉ đường."
@@ -18,7 +18,7 @@ _STOP_PROGRESS = ("Vẫn đang dừng chỉ đường, bạn chờ một chút."
 STATIC_SPEECH: tuple[str, ...] = (
     _ASK_DESTINATION,
     _START_ACK,
-    _OPENING_MAP,
+    _STILL_SENDING,
     _NOTHING_TO_STOP,
     _STOP_ACK,
     _STOP_FAILURE,
@@ -45,7 +45,7 @@ def handle_start(image: bytes, command_text: str, params: dict | None = None) ->
         failure=f"Không thể bắt đầu điều hướng đến {destination}, vui lòng thử lại.",
         progress=(
             f"Vẫn đang tìm đường tới {destination}.",
-            _OPENING_MAP,
+            _STILL_SENDING,
         ),
     )
 

@@ -97,8 +97,8 @@ kính không yêu cầu** xuống đúng socket, cùng dạng với lượt thư
 ```
 
 Kết quả nhiều câu thì các câu sau mang `turn` = `result-<request_id>.1`, `.2`... Kính xử lý như mọi `reply` (phát, có thể báo
-`played`) và **không** coi đó là trả lời cho lượt bấm gần nhất. Ngoại lệ: kết quả mở lộ trình của `nav_start` được đọc trong live
-nav (mục 6), không qua `result-*`. Kính chỉ dùng HTTP (`/v2/turn`, `/process`) không có phiên WS nên **không nhận được** khung này
+`played`) và **không** coi đó là trả lời cho lượt bấm gần nhất. Kết quả `nav_start` ("Đã gửi chỉ đường tới ... về điện thoại. Mở thông báo để đi bằng Google Maps.") cũng đi qua
+`result-*` như mọi lệnh khác (dẫn đường không còn là live). Kính chỉ dùng HTTP (`/v2/turn`, `/process`) không có phiên WS nên **không nhận được** khung này
 và không nghe kết quả lệnh.
 
 ### 4.2 Hàng đợi audio theo phiên
@@ -115,7 +115,7 @@ không bao giờ xen khối `0x02` vào nhau, nên kính chỉ phát tuần tự
 
 ## 5. Đọc lại lệnh, bấm huỷ, xác nhận "...phải không?"
 
-Với lệnh có tác dụng phụ (gọi điện, khẩn cấp, đặt xe, mở chỉ đường):
+Với lệnh có tác dụng phụ (gọi điện, khẩn cấp, đặt xe, gửi chỉ đường về điện thoại):
 
 1. **Đọc lại**: server trả `reply` + audio đọc lại ("Đang gọi cho mẹ.", khẩn cấp: "Đang gọi người thân khẩn cấp, bấm nút để huỷ.").
    Kính phát ngay như mọi audio.
@@ -191,7 +191,7 @@ kính   (bấm nút hỏi giờ: turn_start mới, nav vẫn chạy, hazard vẫ
 
 | Endpoint | Việc | Lỗi |
 |---|---|---|
-| `POST /process` | **đường cũ**: multipart `audio` (+ `image` tuỳ chọn), trả audio stream, luôn 200 (lỗi cũng thành câu nói). Chạy chung pipeline v2 (`single_shot`: OCR đọc thẳng ảnh, chỉ đường chỉ gửi lệnh mở bản đồ, không có live). Hợp đồng chi tiết: `docs/HUONG_DAN_SERVER.md` | 401, 413 (trước khi parse), 429, 503 |
+| `POST /process` | **đường cũ**: multipart `audio` (+ `image` tuỳ chọn), trả audio stream, luôn 200 (lỗi cũng thành câu nói). Chạy chung pipeline v2 (`single_shot`: OCR đọc thẳng ảnh, chỉ đường chỉ gửi lộ trình về điện thoại, không có live). Hợp đồng chi tiết: `docs/HUONG_DAN_SERVER.md` | 401, 413 (trước khi parse), 429, 503 |
 | `POST /v2/image` | ảnh lượt (header `X-Turn-Id`, `X-Device-Id`), 204 | 401, 413, 429, 503 |
 | `POST /v2/turn` | audio ADPCM chunked, trả audio; header `X-Cue`, `X-Live`, `X-Live-Token`; kính khai `X-Cue-Version` | 401, 429, 503 |
 | `WS /v2/live` | live theo token một lần (`X-Live-Token`) cho kính dùng HTTP | đóng 4401 |
@@ -273,7 +273,7 @@ Nhấn nút ở bất kỳ trạng thái nào: dừng phát, gửi `turn_start` 
 
 `tools/e2e_full.py` (kính giả qua `WS /v2/session` -> VH -> app server -> phone_sim), `5963ad5`, 1 lượt mỗi kịch bản, tất cả PASS:
 `call_mom`, `call_nam` (điện thoại báo `MULTIPLE_CONTACTS_FOUND`, người dùng nghe được), `ride` (`ride_quote` rồi `ride_confirm`), `music`
-(có lời = đổi âm lượng, bấm không lời = dừng), `nav` (hazard, chat giữa chừng không tắt nav, bấm nút dừng gửi `end`), `emergency`,
+(có lời = đổi âm lượng, bấm không lời = dừng), `nav` (dẫn đường: lệnh `navigation_start` + `maps_url`, không live; bấm nút = `navigation_stop`), `alert` (hazard, chat giữa chừng không tắt cảnh báo), `emergency`,
 `call_cancel` (điện thoại không nhận lệnh nào). Nhả nút -> tiếng đầu 502–560 ms; lệnh -> kết quả được đọc 483–992 ms. Bảng đầy đủ: `docs/E2E_FULL_FLOW.md`.
 
 ## 15. Debug (chỉ demo)
