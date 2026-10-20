@@ -25,35 +25,68 @@ audio `0x03` là WAV PCM16 16 kHz mono stream dần (header RIFF kích thước 
 PCM ~100 ms), rồi `turn_end`. Âm thanh server trả về là `0x02` IMA-ADPCM 16 kHz khối 256 byte
 (không header), giải mã bằng `adpcm.js` và phát liên tục qua WebAudio.
 
-## Chạy
+## Chạy với server thật
 
-Trên **máy đặt server** (server kính chạy ở cổng 8000, hoặc `--upstream` trỏ chỗ khác):
+Ba bước, theo thứ tự (ví dụ chạy tất cả trên một máy):
 
 ```bash
-python demo-web/serve.py --lan
+# 1) Server kính (VH). Cổng tạm, KHÔNG dùng 18888 nếu đó là cổng đang phục vụ kính thật.
+#    Chọn GPU trống (nvidia-smi); lần đầu dựng sẵn câu TTS ~3 phút, sau đó ~25 s.
+GPU=2 PORT=18990 ./run.sh                    # token/khoá đọc từ .env, không cần source
+
+# 2) Trang demo + proxy. --upstream trỏ vào server ở bước 1.
+python demo-web/serve.py --upstream http://127.0.0.1:18990        # http://localhost:8080
+#    Máy khác (laptop BGK, điện thoại) mở trang: thêm --lan, xem bên dưới.
+
+# 3) Mở trình duyệt, vào Cài đặt, dán token thiết bị rồi Lưu.
 ```
 
-Lệnh in ra `https://<IP-LAN>:8443`. Trên máy client (laptop, điện thoại) mở địa chỉ đó, bấm
-*Nâng cao → Tiếp tục* (chứng chỉ tự ký), cho phép camera + micro. Chạy trên một máy:
-`python demo-web/serve.py` rồi mở `http://localhost:8080`.
+- **Khung debug không cần cờ phía server.** Trang tự gửi `hello` có `"debug": true`; server bật khung
+  `trace`/`say`/`det`/`ocr`/`mode` chỉ cho phiên đó (kính thật không gửi nên không đổi gì). Server cũ
+  chưa có D1 thì trang vẫn chạy như một kính bình thường nhưng hiện nhãn "Server chưa bật khung debug".
+- **Token thiết bị** = giá trị `VISIONCARE_DEVICE_CLIENT_TOKEN` trong `.env` của server (trang lưu ở
+  trình duyệt, không gửi đi đâu khác). Sai/thiếu thì server đóng phiên `4401` và trang báo "Token sai".
+- **Máy khác dùng trang:** chạy trên máy đặt server `python demo-web/serve.py --lan --upstream ...`.
+  `--lan` nghe `0.0.0.0` và bật https với chứng chỉ tự ký (in ra `https://<IP-LAN>:8443`), vì trình
+  duyệt chỉ cho camera/micro trên `https` hoặc `localhost`. Mở địa chỉ đó, bấm *Nâng cao → Tiếp tục*,
+  cho phép camera + micro.
+- **Proxy WebSocket:** trang nối `/api/v2/session` cùng nguồn gốc; `serve.py` bắt `Upgrade: websocket`
+  ở `/api/...`, mở TCP tới upstream (`/v2/session`), chuyển nguyên request/header (đổi `Host`) rồi bơm
+  byte hai chiều bằng hai thread. Không cần CORS, chỉ dùng thư viện chuẩn. HTTP thường (`/health`...)
+  cũng đi qua `/api/*`.
 
 ```
- trình duyệt ──https/wss──▶ serve.py :8443 ──http/ws──▶ server kính :8000
+ trình duyệt ──https/wss──▶ serve.py :8443 ──http/ws──▶ server kính (VH) :18990
   camera+micro+loa           trang + /api/* (HTTP)         /v2/session, /health
                              + /api/v2/session (WS)
 ```
 
-`serve.py` chuyển tiếp **cả WebSocket**: bắt `Upgrade: websocket` ở `/api/...`, mở TCP tới
-upstream, chuyển nguyên dòng request và header (đổi `Host`) rồi bơm byte hai chiều bằng hai
-thread, nên trang cùng nguồn gốc, không cần CORS. Chỉ dùng thư viện chuẩn.
+Lệnh dẫn đường, gọi điện, nhạc... cần **app server (AB)** nối với điện thoại: `VISIONCARE_HOST_URL` trong
+`.env` của server trỏ tới đó. Không có AB thì lượt vẫn ra `trace`/`say` đúng nhưng kết quả `result-*`
+không bao giờ về (server nói câu lỗi/hết giờ). Hỏi đáp, tránh vật cản và đọc chữ không cần AB.
 
-Trình duyệt chỉ cho camera/micro trên `https` hoặc `localhost`, nên máy khác phải dùng `--lan`.
+### Việc nên thử trong buổi demo
 
-### Bật khung debug trên server thật
+| Nói | Thấy gì |
+|---|---|
+| "Trước mặt tôi có gì?" | Timeline đủ 5 bước, các câu `say` gom vào một bong bóng, tiếng đầu sau X ms |
+| "Bật chế độ tránh vật cản" | Chip *Tránh vật cản* sáng, box vật cản vẽ theo mức, mức ≥ 2 thì viền nháy + mũi tên + bíp |
+| "Đọc chữ giúp tôi" | Ảnh rõ: đọc thẳng. Ảnh mờ/lệch: chip hướng dẫn ("Quay trái"...), box chữ cyan, "Đã chụp ảnh nét", rồi bong bóng "SeeVia · trực tiếp" |
+| "Dẫn đường" → "Bạn muốn đi đâu?" → "Chợ Bến Thành" → "Đúng" | Nhiều lượt: "Đang chờ trả lời: …" nối bằng đường kẻ đứt; xong có "Kết quả từ điện thoại" |
 
-Cần phần debug của server (task D1): hello có `debug:true` → `hello_ok.debug` và các khung
-`trace`/`say`/`det`/`ocr`/`mode`. Server chưa có thì trang vẫn chạy như một kính bình thường nhưng
-hiện nhãn "Server chưa bật khung debug" ở đầu trang và các bảng để trống.
+Câu cảnh báo vật cản chỉ kêu khi mức ≥ `HAZARD_MIN_LEVEL` (mặc định 2); box mức 0–1 vẫn hiện nhưng mờ.
+
+### Kiểm nhanh không cần trình duyệt
+
+`realcheck.py` phát các WAV 16 kHz mono qua đúng đường của trang (proxy, header WAV stream, khối
+~100 ms đúng nhịp) tới server thật và in mọi khung debug nhận được:
+
+```bash
+~/.venvs/seevia/bin/python demo-web/realcheck.py --url http://127.0.0.1:8080 \
+    --wav qa.wav alert_on.wav --image street.jpg --settle 8
+```
+
+Token lấy từ `.env` của repo (hoặc `--token`); `--direct --url http://127.0.0.1:18990` nối thẳng, bỏ proxy.
 
 ## Demo offline, không cần server
 
@@ -68,7 +101,7 @@ hỏi cảnh, đọc chữ trực tiếp (có cue, `capture`), bật cảnh báo
 `sent`), gọi điện có xác nhận hai lượt (`pending`) kèm `result-*`, nhạc, tắt cảnh báo. Nó đếm
 byte ảnh/audio nhận được nên chứng minh luồng thật chạy qua proxy.
 
-`selftest.py` dựng cả hai ở cổng tạm và kiểm hợp đồng bằng client Python (không cần trình duyệt):
+`selftest.py` dựng cả hai (server giả + proxy) ở cổng tạm và kiểm hợp đồng bằng client Python (không cần trình duyệt):
 
 ```bash
 ~/.venvs/seevia/bin/python demo-web/selftest.py
@@ -85,6 +118,9 @@ byte ảnh/audio nhận được nên chứng minh luồng thật chạy qua pro
   dưới trần 300 KB.
 - "Độ trễ khung" là ước lượng: ghép kết quả `det`/`ocr` với khung cũ nhất chưa có kết quả; khung
   bị server bỏ khi bận làm số này cao hơn thực tế.
+- Câu live (cảnh báo/OCR) mang `turn` của lượt đã mở live: sau `reply_end` của lượt đó trang đưa chúng
+  sang bong bóng riêng "SeeVia · trực tiếp" (đúng thứ tự thời gian); câu lặp liền nhau như "Quay sang
+  trái." gộp thành "… ×N". Timeline chỉ giữ 2 câu đầu của lượt (còn lại "+N câu nữa").
 - Phiên rớt thì tự mở lại theo backoff 0,5 → 8 s; `4401` (sai token) và `4000` (bị phiên khác
   thay) không tự mở lại.
 
@@ -98,5 +134,5 @@ trình duyệt, chỉ để tập dượt luồng bấm-nghe. Câu đó **không
 
 `index.html`, `styles.css` (token màu theo bộ nhận diện, WCAG AA), `app.js`, `adpcm.js`
 (giải mã ADPCM), `wav.js` (header WAV stream, hạ mẫu theo luồng), `mock.js`, `serve.py`,
-`fake_server.py`, `selftest.py`, `assets/` (logo SVG, font Montserrat + JetBrains Mono tự
+`fake_server.py`, `selftest.py`, `realcheck.py`, `assets/` (logo SVG, font Montserrat + JetBrains Mono tự
 host để chạy offline).

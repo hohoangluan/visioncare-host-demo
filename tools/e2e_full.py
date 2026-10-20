@@ -262,7 +262,8 @@ class Glasses:
 
         self.ws = await websockets.connect(self.url.replace("http", "ws", 1) + "/v2/session", max_size=None)
         await self.ws.send(json.dumps({"t": "hello", "device": self.device, "token": self.token,
-                                       "cue_version": CUE_VERSION, "fw": "e2e", "accept": "ima_adpcm"}))
+                                       "cue_version": CUE_VERSION, "fw": "e2e", "accept": "ima_adpcm",
+                                       "debug": True}))  # khung debug (say/trace) để kiểm câu nói
         first = json.loads(await asyncio.wait_for(self.ws.recv(), 15))
         assert first["t"] == "hello_ok", first
         self._reader = asyncio.create_task(self._read())
@@ -628,73 +629,64 @@ def blank_frame() -> bytes:
 
 
 async def sc_nav(c):
-    """Dẫn đường -> hazard -> bấm nút = dừng chỉ đường (`_bypass`), kiểm cả khung `end` và hazard sau đó."""
+    """Dẫn đường = chỉ gửi lộ trình về ĐT (không live): lệnh navigation_start + maps_url, câu kết quả, chat giữa chừng, bấm nút = navigation_stop.
+
+    Hazard/live nav nằm ở kịch bản `alert`."""
     g = c.g
-    street = qvga(Path(c.street).read_bytes()) if c.street else None
     mark, t1, t2, asked = await fire(c, "Dẫn tôi đến chợ Bến Thành.")
-    r = result("nav_hazard_stop", False, asked_back=asked, first_audio_ms=t1.ms("first_audio"))
-    if t2.live != "nav":
-        r["notes"] = f"reply.live={t2.live!r}, cues={t2.cues} (mong 'nav')"
-        return r
+    r = result("nav_send_stop", False, asked_back=asked, first_audio_ms=t1.ms("first_audio"))
+    problems = []
+    if t2.live is not None:
+        problems.append(f"reply.live={t2.live!r} (dẫn đường không còn mở live)")
     cmd = await wait_cmd(c, mark, "navigation_start", 9.0)
     if cmd is None:
-        r["notes"] = "không có lệnh navigation_start tới ĐT"
+        r["notes"] = "; ".join(problems + ["không có lệnh navigation_start tới ĐT"])
         return r
     r["cmd_ms"] = round((cmd["wall"] - t2.release_wall) * 1000)
-    r["result_ms"], _ = await result_spoken(c, mark, cmd, 10.0) if c.plog.phone_path else (None, None)
-    if r["result_ms"] is None and c.plog.phone_path:
-        r["flag"] = "kết quả mở lộ trình KHÔNG được đọc"
-    cam = await g.wait_for(lambda e: e["k"] == "json" and e["f"].get("t") == "cam", 8, t2.base)
-    if cam is None:
-        r["notes"] = "không có khung `cam` sau reply_end"
-        return r
-    stop, src = asyncio.Event(), {"f": street}
-    feeder = asyncio.create_task(_feed_street(g, src, stop))
-    problems = []
-    try:
-        haz0 = await g.wait_for(lambda e: e["k"] == "json" and e["f"].get("t") == "hazard", 10, t2.base)
-        if street and haz0 is None:
-            problems.append("không có hazard từ khung đường phố")
-        # câu hỏi thường lúc đang dẫn đường: phân loại bình thường, KHÔNG tắt chỉ đường (nav live + ĐT)
-        n1 = len(g.events)
-        chat = await g.say("Kể cho tôi một câu chuyện cười ngắn.")
-        if g.frames("end", n1):
-            problems.append("câu chat giữa chừng làm live nav kết thúc")
-        extra = [x["action"] for x in c.plog.commands(mark) if x["action"] != "navigation_start"]
-        if extra:
-            problems.append(f"câu chat giữa chừng sinh lệnh {extra}")
-        n2 = len(g.events)
-        stop_t = await g.say(SILENCE)  # chỉ bấm nút = dừng chỉ đường
-        stop_cmd = await wait_cmd(c, mark, "navigation_stop", 9.0)
-        end_frame = await g.wait_for(lambda e: e["k"] == "json" and e["f"].get("t") == "end", 4, n2)
-        if stop_cmd is None:
-            problems.append("không có lệnh navigation_stop tới ĐT")
-        else:
-            r["stop_ms"] = round((stop_cmd["wall"] - stop_t.release_wall) * 1000)
-            if c.plog.phone_path and not stop_cmd["params"].get("navigation_id"):
-                problems.append("navigation_stop thiếu navigation_id")
-        if end_frame is None:
-            # sau khi dừng chỉ đường mà cảnh báo vật cản vẫn chạy = lỗi (live nav không bị đóng bởi _bypass).
-            # Hazard bị chống-làm-phiền nén nên thử bằng khung trống (reset) rồi đường phố lại.
-            src["f"] = blank_frame()
-            await asyncio.sleep(6.5)
-            n4 = len(g.events)
-            src["f"] = street
-            again = await g.wait_for(lambda e: e["k"] == "json" and e["f"].get("t") == "hazard", 5, n4)
-            if again is not None:
-                problems.append("sau 'dừng chỉ đường' KHÔNG có khung end và cảnh báo vật cản VẪN chạy (live nav không bị đóng)")
-            else:
-                problems.append("sau 'dừng chỉ đường' không có khung end (hazard đã im)")
-    finally:
-        stop.set()
-        await feeder
+    if c.plog.phone_path:
+        url = cmd.get("maps_url") or ""
+        if "google.com/maps/dir" not in url or "destination=" not in url:
+            problems.append(f"payload thiếu maps_url Google Maps (maps_url={url!r})")
+        r["result_ms"], _ = await result_spoken(c, mark, cmd, 10.0)
+        if r["result_ms"] is None:
+            problems.append("kết quả gửi chỉ đường KHÔNG được đọc")
+    # câu kết quả (khung `say` của result-*): phải nói "đã gửi về điện thoại, mở thông báo", không nói ĐT tự mở bản đồ
+    end = await g.wait_for(lambda e: e["k"] == "json" and e["f"].get("t") == "reply_end"
+                           and str(e["f"].get("turn", "")).startswith("result-"), 10, t2.base)
+    if end is None:
+        problems.append("không có lượt result-* (kết quả chưa được đọc)")
+    else:
+        txt = " ".join(f["text"] for f in g.frames("say", t2.base) if f["turn"] == end["f"]["turn"])
+        r["result_text"] = txt
+        if not (txt.startswith("Đã gửi chỉ đường tới") and "về điện thoại" in txt
+                and "Mở thông báo để đi bằng Google Maps" in txt):
+            problems.append(f"câu kết quả lạ: {txt!r}")
+    if g.frames("cam", t2.base):
+        problems.append("có khung `cam` sau nav_start (dẫn đường không được mở live)")
+    # hỏi thường lúc đang dẫn đường: không sinh lệnh nào thêm
+    chat = await g.say("Kể cho tôi một câu chuyện cười ngắn.")
+    if chat.first_audio is None:
+        problems.append("câu chat giữa chừng không có tiếng")
+    extra = [x["action"] for x in c.plog.commands(mark) if x["action"] != "navigation_start"]
+    if extra:
+        problems.append(f"câu chat giữa chừng sinh lệnh {extra}")
+    stop_t = await g.say(SILENCE)  # chỉ bấm nút = dừng chỉ đường
+    stop_cmd = await wait_cmd(c, mark, "navigation_stop", 9.0)
+    if stop_cmd is None:
+        problems.append("không có lệnh navigation_stop tới ĐT")
+    else:
+        r["stop_ms"] = round((stop_cmd["wall"] - stop_t.release_wall) * 1000)
+        if c.plog.phone_path and not stop_cmd["params"].get("navigation_id"):
+            problems.append("navigation_stop thiếu navigation_id")
     r["pass"] = not problems
-    r["notes"] = "; ".join(problems) or "nav_start -> hazard -> chat giữa chừng (nav sống) -> bấm nút -> navigation_stop + end"
+    r["notes"] = "; ".join(problems) or "nav_start -> navigation_start + maps_url + câu kết quả (không live) -> chat -> bấm nút -> navigation_stop"
     return r
 
 
 async def sc_alert(c):
-    """Chỉ bật cảnh báo vật cản (không có chỉ đường trên ĐT): lượt chat giữa chừng KHÔNG được tắt live, không sinh lệnh."""
+    """Chỉ bật cảnh báo vật cản (không có chỉ đường trên ĐT): lượt chat giữa chừng KHÔNG được tắt live, không sinh lệnh.
+
+    Ảnh đường phố phải có vật cản đạt mức >= HAZARD_MIN_LEVEL (2) thì mới có khung hazard (box mức 0-1 không kêu)."""
     g = c.g
     street = qvga(Path(c.street).read_bytes()) if c.street else None
     mark = c.plog.mark()

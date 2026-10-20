@@ -274,8 +274,8 @@ def test_button_stop_navigation_keeps_obstacle_live(world):  # noqa: F811
         _silent_turn(world)
         ws.send_text(json.dumps({"t": "turn_start", "turn": "B", "t_press_ms": 0}))
         ws.send_text(json.dumps({"t": "turn_end", "turn": "B", "t_release_ms": 0}))
-        _recv_until_end(ws, "B")  # khung `end` của live nav mà tới thì hàm này ném lỗi
-        assert sessions.active("ws-navbtn") is not None  # dừng chỉ đường không tắt cảnh báo vật cản
+        _recv_until_end(ws, "B")  # có khung `end` thì hàm này ném lỗi; điều kiện chính là dòng dưới
+        assert sessions.active("ws-navbtn") is not None  # bấm nút = dừng chỉ đường trên ĐT, KHÔNG tắt cảnh báo vật cản
         assert ("navigation_stop" in [n for n, _ in calls["actions"]]) or ("nav_stop" in [n for n, _ in calls["actions"]])
 
 

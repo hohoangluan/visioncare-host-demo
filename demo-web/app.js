@@ -287,14 +287,25 @@ function showTrace(f) {
 
 const history = (() => {
   const root = $("history");
-  const groups = new Map(); // id -> {el, user, sv, pending}
+  const groups = new Map(); // id -> {el, user, sv, pending, ended}
   let pendingGroup = null; // lượt đang chờ câu trả lời ở lượt sau
   let liveGroup = null;
 
+  // Bám đáy khi người xem chưa cuộn lên. Ô lịch sử co lại khi thẻ timeline phía trên cao thêm
+  // (trace tới sau lượt đầu), mà scrollTop không đổi nên phải bám lại theo kích thước.
+  // Sự kiện scroll tới trễ một nhịp, lúc đó nội dung có thể đã dài thêm: chỉ cuộn LÊN mới bỏ bám.
+  let pinned = true;
+  let prevTop = 0;
+  root.addEventListener("scroll", () => {
+    const atBottom = root.scrollHeight - root.scrollTop - root.clientHeight < 40;
+    if (root.scrollTop < prevTop) pinned = atBottom;
+    else if (atBottom) pinned = true;
+    prevTop = root.scrollTop;
+  });
+  new ResizeObserver(() => { if (pinned) root.scrollTop = root.scrollHeight; }).observe(root);
   const stick = (fn) => {
-    const near = root.scrollHeight - root.scrollTop - root.clientHeight < 80;
     fn();
-    if (near) root.scrollTop = root.scrollHeight;
+    if (pinned) root.scrollTop = root.scrollHeight;
   };
   const add = (el) => {
     $("history-empty")?.remove();
@@ -316,7 +327,7 @@ const history = (() => {
         const user = h("div", "bubble user dim", h("span", "who", "Bạn"), h("p", "", "Đang nghe…"));
         const el = h("article", "turn", user);
         add(el);
-        groups.set(id, { el, user, sv: null, pending: null });
+        groups.set(id, { el, user, sv: null, pending: null, ended: false });
         liveGroup = null;
       });
     },
@@ -337,19 +348,27 @@ const history = (() => {
         pendingGroup = g;
       });
     },
+    /** `reply_end` của lượt: câu nói sau đó mang cùng `turn` là của live (nav/OCR), không phải của lượt này. */
+    endTurn(id) {
+      const g = groups.get(id);
+      if (g) g.ended = true;
+    },
     say(turn, text) {
       if (!text) return;
       stick(() => {
         const base = String(turn || "").replace(/\.\d+$/, "");
+        const result = base.startsWith("result-");
         let g = groups.get(base) || groups.get(turn);
+        // Live mang id lượt đã mở nó: sau reply_end phải sang bong bóng riêng, nếu không
+        // nó chui lên bong bóng cũ (sai thứ tự thời gian) và phình mãi.
+        if (g && g.ended && !result) g = null;
         if (!g) {
-          const result = base.startsWith("result-");
-          if (!result && liveGroup) g = liveGroup;
+          if (!result && liveGroup && liveGroup.turn === base) g = liveGroup;
           else {
             const sv = svBubble(result ? "Kết quả từ điện thoại" : "SeeVia · trực tiếp", result ? "is-result" : "is-live");
             const el = h("article", "turn", sv);
             add(el);
-            g = { el, user: null, sv };
+            g = { el, user: null, sv, turn: base };
             if (result) groups.set(base, g); else liveGroup = g;
           }
         }
@@ -357,7 +376,17 @@ const history = (() => {
           g.sv = svBubble("SeeVia");
           g.pending ? g.el.insertBefore(g.sv, g.pending) : g.el.append(g.sv);
         }
-        g.sv.append(h("p", "", text));
+        // Cue lặp liền nhau ("Quay sang trái." mỗi khung) gộp thành một dòng có số lần.
+        const last = g.sv.lastElementChild;
+        if (last && last.tagName === "P" && last.dataset.text === text) {
+          const n = (Number(last.dataset.n) || 1) + 1;
+          last.dataset.n = String(n);
+          last.textContent = `${text} ×${n}`;
+        } else {
+          const p = h("p", "", text);
+          p.dataset.text = text;
+          g.sv.append(p);
+        }
       });
     },
     sayMock(text) {
@@ -653,7 +682,7 @@ function setConn(state, text) {
 }
 
 // Trạng thái lượt hiện tại — gắn với id do trình duyệt tự sinh, như kính.
-const cur = { id: null, pressAt: 0, releaseAt: 0, firstAudio: false };
+const cur = { id: null, pressAt: 0, releaseAt: 0, firstAudio: false, said: 0 };
 let turnSeq = 0;
 
 const session = {
@@ -759,13 +788,21 @@ const session = {
         break;
       case "say":
         history.say(f.turn, f.text);
-        if (f.turn === cur.id && f.text) {
+        // Chỉ câu của chính lượt này (trước reply_end); câu live sau đó chỉ vào lịch sử.
+        if (f.turn === cur.id && f.text && timeline.el("reply").dataset.state !== "done") {
           const d = timeline.el("reply").querySelector(".step-detail");
           if (d.firstChild && d.firstChild.nodeType === 3) d.replaceChildren();
-          d.append(h("span", "quote", `“${f.text}” `));
+          cur.said += 1;
+          if (cur.said <= 2) d.append(h("span", "quote", `“${f.text}” `));
+          else { // câu đọc dài (OCR): timeline chỉ giữ 2 câu đầu, phần còn lại xem ở lịch sử
+            let more = d.querySelector(".more");
+            if (!more) d.append((more = h("span", "pill more", "")));
+            more.textContent = `+${cur.said - 2} câu nữa (xem lịch sử)`;
+          }
         }
         break;
       case "reply_end":
+        history.endTurn(f.turn);
         if (f.turn === cur.id) {
           const el = timeline.el("reply");
           el.dataset.state = "done";
@@ -860,7 +897,7 @@ async function pressStart() {
 
   speaker.stop(); // bấm = dừng mọi thứ đang phát
   const id = `w${Date.now().toString(36)}${(turnSeq++).toString(36)}`;
-  Object.assign(cur, { id, pressAt: performance.now(), releaseAt: 0, firstAudio: false });
+  Object.assign(cur, { id, pressAt: performance.now(), releaseAt: 0, firstAudio: false, said: 0 });
   session.sendJson({ t: "turn_start", turn: id, t_press_ms: Math.round(performance.now()) });
 
   rec.ds = new StreamDownsampler(media.rate, TARGET_RATE);

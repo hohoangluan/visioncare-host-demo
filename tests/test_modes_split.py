@@ -109,6 +109,15 @@ def test_nav_phrases():
     )
 
 
+def test_navigation_speech_never_says_phone_opens_the_map():
+    """Dẫn đường chỉ GỬI lộ trình về điện thoại (người dùng tự chạm thông báo): không câu cố định nào nói ĐT tự mở bản đồ."""
+    from handlers import navigation
+
+    assert all("mở bản đồ" not in s for s in navigation.STATIC_SPEECH)
+    assert navigation._STILL_SENDING in navigation.STATIC_SPEECH
+    assert "gửi chỉ đường về điện thoại" in navigation._STILL_SENDING
+
+
 def _live_hazards(monkeypatch, boxes):
     """Chạy một khung qua live nav với detector giả; trả các khung hazard nhận được."""
     class FakeYolo:

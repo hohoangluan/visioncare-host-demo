@@ -530,7 +530,7 @@ def test_process_routes_through_v2(world):
 
 
 def test_process_nav_no_live(world):
-    """Làn C trên /process: chỉ gửi lệnh điện thoại + câu xác nhận, không mở phiên live."""
+    """nav_start trên /process (làn D): chỉ gửi chỉ đường về điện thoại + câu xác nhận, không mở phiên live."""
     rec, labels, calls = world
     rec.text = "DẪN TÔI TỚI CHỢ BẾN THÀNH"
     labels["dẫn tôi tới chợ bến thành"] = _gemma("nav_start")
