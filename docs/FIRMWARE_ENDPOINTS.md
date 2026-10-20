@@ -280,7 +280,7 @@ Nhấn nút ở bất kỳ trạng thái nào: dừng phát, gửi `turn_start` 
 
 Dành cho trang demo của giám khảo, **kính thật không dùng và không cần xử lý**. Khai `"debug": true` trong `hello` (đúng kiểu boolean `true`)
 thì `hello_ok` có thêm `"debug": true` và server gửi thêm các khung JSON text dưới đây. Không khai thì không có khung nào trong mục này,
-mọi hành vi khác giữ nguyên. Khung debug **không chờ khoá audio** (xen được giữa hai khối `0x02`), không chặn đường hazard và lỗi gửi bị bỏ qua.
+mọi hành vi khác giữ nguyên. Khung debug **không chờ khoá audio** (xen được giữa hai khối `0x02`), không chặn đường hazard và lỗi gửi bị bỏ qua. Hàng đợi khung debug có chặn: `det`/`ocr` chỉ giữ khung mới nhất khi đường truyền chậm (khung cũ bị bỏ), `say`/`mode` tối đa 64 khung chờ; khung JPEG hỏng không sinh `det`.
 
 | Khung | Khi nào | Trường |
 |---|---|---|

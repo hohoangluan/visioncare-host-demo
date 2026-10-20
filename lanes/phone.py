@@ -262,7 +262,7 @@ def set_pending_confirm(device: str, intent: str, params: dict) -> None:
 
 def pending_question(device: str) -> str | None:
     """Câu đang chờ lượt sau trả lời ("Bạn muốn đi đâu?" / "... phải không?"), KHÔNG lấy ra. Chỉ để hiện debug."""
-    from pipeline import cues  # nhập muộn: cues không cần cho đường nóng của module này
+    from pipeline import cues  # nhập muộn cho gọn phụ thuộc; chỉ dùng cho khung debug
 
     now = time.monotonic()
     with _PENDING_LOCK:

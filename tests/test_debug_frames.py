@@ -79,8 +79,8 @@ def test_debug_nav_frame_has_boxes_and_sent(world, monkeypatch):  # noqa: F811
 
     monkeypatch.setattr(hazard, "detector", lambda: FakeYolo())
     rec, labels, _ = world
-    rec.text = "DẪN TÔI TỚI CHỢ BẾN THÀNH"
-    labels["dẫn tôi tới chợ bến thành"] = _gemma("nav_start")
+    rec.text = "BẬT CẢNH BÁO VẬT CẢN"
+    labels["bật cảnh báo vật cản"] = _gemma("alert_on")
     with client.websocket_connect("/v2/session") as ws:
         _hello_debug(ws, device="dbg-nav")
         ws.receive_text(), ws.receive_text()  # hello_ok + mode
@@ -151,3 +151,61 @@ def test_pending_question_reports_what_the_next_turn_answers():
     assert phone.pending_question("pq").endswith("phải không?")
     phone._CONFIRM.clear()
     phone._PENDING.clear()
+
+
+def test_debug_say_covers_result_frames_pushed_from_other_threads(world):  # noqa: F811
+    """`result-*` của lệnh có cổng xác nhận chạy từ thread Timer (context trống): vẫn phải có khung `say`."""
+    import threading
+
+    from live import device_session
+
+    with client.websocket_connect("/v2/session") as ws:
+        _hello_debug(ws, device="dbg-res")
+        ws.receive_text(), ws.receive_text()  # hello_ok + mode
+        pusher = threading.Thread(target=device_session.push_result, args=("dbg-res", "Đang gọi cho Nam.", "req-7"))
+        pusher.start()
+        pusher.join()
+        said = []
+        while True:  # luôn kết thúc ở reply_end của lượt result (không treo kể cả khi thiếu `say`)
+            msg = ws.receive()
+            if msg.get("text"):
+                frame = json.loads(msg["text"])
+                if frame["t"] == "say":
+                    said.append(frame)
+                if frame["t"] == "reply_end":
+                    break
+    assert said and said[0]["turn"] == "result-req-7" and said[0]["text"] == "Đang gọi cho Nam."
+
+
+def test_debug_backlog_never_delays_hazard_frame():
+    """Trang demo đọc chậm: khung det/ocr dồn lại không được xếp trước hazard trong khoá gửi chung."""
+    import asyncio
+
+    from live.device_session import DeviceSession
+
+    class SlowWs:
+        def __init__(self):
+            self.sent = []
+
+        async def send_text(self, text):
+            await asyncio.sleep(0.05)  # mỗi khung debug mất 50 ms (đường tunnel chậm)
+            self.sent.append(json.loads(text))
+
+    async def go():
+        ws = SlowWs()
+        session = DeviceSession(ws, None)
+        session.debug = True
+        for i in range(200):  # 200 khung det = 10 s nếu xếp hàng hết
+            session.emit_debug({"t": "det", "i": i})
+            session.emit_debug({"t": "ocr", "i": i})
+        await asyncio.sleep(0.01)  # một khung debug đã đang gửi dở
+        started = time.monotonic()
+        await session.send_text(json.dumps({"t": "hazard", "level": 3}))
+        waited = time.monotonic() - started
+        await asyncio.sleep(0.4)
+        return ws.sent, waited
+
+    sent, waited = asyncio.run(go())
+    assert waited < 0.15, waited  # chỉ chờ nhiều nhất khung debug đang bay
+    dets = [f for f in sent if f["t"] == "det"]
+    assert len(dets) <= 3 and dets[-1]["i"] == 199  # khung cũ bị bỏ, khung mới nhất vẫn tới

@@ -51,6 +51,8 @@ HELLO_TIMEOUT_S = 10.0
 AUDIO_CONTENT_TYPE = "audio/x-adpcm-ima; rate=16000; channels=1; block=256"
 RESPONSE_FORMAT = "adpcm_stream"  # khối 256 byte trần: không header RIFF qua WS
 _MAX_DEVICE_LEN = 64
+_DEBUG_QUEUE_MAX = 64
+_DEBUG_LATEST = ("det", "ocr")  # khung tốc độ cao: chậm thì bỏ khung cũ, giữ mới nhất
 
 ReplyAudio = Callable[..., Awaitable[tuple[dict, object]]]
 
@@ -107,7 +109,12 @@ class DeviceSession:
         self._nav_suspended = False  # OCR live đã thay nav live: dựng lại nav khi OCR xong
         self._resume_task: asyncio.Task | None = None
         self.debug = False  # hello.debug: trang demo muốn nhận khung trace/say/det/ocr/mode
-        self._debug_tasks: set[asyncio.Task] = set()
+        # Hàng đợi khung debug CÓ CHẶN (dùng chung _send_lock với hazard nên không được dồn): say/mode xếp hàng
+        # tối đa _DEBUG_QUEUE_MAX khung, det/ocr chỉ giữ khung MỚI NHẤT mỗi loại; một task bơm gửi từng khung một.
+        self._debug_q: collections.deque[dict] = collections.deque(maxlen=_DEBUG_QUEUE_MAX)
+        self._debug_latest: dict[str, dict] = {}
+        self._debug_pump: asyncio.Task | None = None
+        self._debug_tasks: set[asyncio.Task] = set()  # trace (1 khung/lượt, gửi riêng để đi trước reply)
 
     # ---------- gửi ----------
     async def send_json(self, obj: dict) -> None:
@@ -126,9 +133,21 @@ class DeviceSession:
         """Gửi một khung debug mà KHÔNG chờ: gọi trên event loop. Tắt debug / lỗi gửi thì bỏ qua."""
         if not self.debug or self._shut:
             return
-        task = self._evloop.create_task(self._send_debug(obj))
-        self._debug_tasks.add(task)
-        task.add_done_callback(self._debug_tasks.discard)
+        if obj.get("t") in _DEBUG_LATEST:
+            self._debug_latest[obj["t"]] = obj
+        else:
+            self._debug_q.append(obj)
+        if self._debug_pump is None or self._debug_pump.done():
+            self._debug_pump = self._evloop.create_task(self._pump_debug())
+
+    async def _pump_debug(self) -> None:
+        """Gửi lần lượt từng khung debug; mỗi lúc chỉ có MỘT khung debug đang chờ khoá gửi chung với hazard."""
+        while self._debug_q or self._debug_latest:
+            if self._debug_q:
+                obj = self._debug_q.popleft()
+            else:
+                obj = self._debug_latest.pop(next(iter(self._debug_latest)))
+            await self._send_debug(obj)
 
     async def _send_debug(self, obj: dict) -> None:
         try:
@@ -176,7 +195,12 @@ class DeviceSession:
         except Exception:  # noqa: BLE001
             logger.exception("v2 session %s: dựng khung trace lỗi", self.session_id)
             return
-        await self._send_debug(frame)
+        # Không chờ gửi xong: reply (đường độ trễ số 1) không được chậm vì trang demo. Task xếp vào hàng đợi khoá
+        # gửi TRƯỚC reply (nhường một vòng loop để nó kịp xin khoá) nên vẫn đi trước.
+        task = self._evloop.create_task(self._send_debug(frame))
+        self._debug_tasks.add(task)
+        task.add_done_callback(self._debug_tasks.discard)
+        await asyncio.sleep(0)
 
     async def error(self, code: str) -> None:
         try:
@@ -268,8 +292,9 @@ class DeviceSession:
         if self._shut:
             return
         self._shut = True
-        for task in list(self._debug_tasks):
-            task.cancel()
+        for task in [*self._debug_tasks, self._debug_pump]:
+            if task is not None:
+                task.cancel()
         await self._cancel_work(reason)
 
     # ---------- huỷ ----------
@@ -482,6 +507,8 @@ class DeviceSession:
 
     async def _drain_results(self) -> None:
         device_ctx.current.set(self.device)
+        # Task này sinh từ thread Timer/làn D (context trống hoặc của phiên cũ): đặt lại móc `say` của phiên NÀY.
+        device_ctx.say.set(self._say_hook if self.debug else None)
         while self._results:
             request_id, text = self._results.popleft()
             try:
