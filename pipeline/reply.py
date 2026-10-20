@@ -17,6 +17,8 @@ class Reply:
     # Nhãn cuối, chỉ để log/bench.
     intent: str = ""
     lane: str = ""
+    # Tham số làn D đã rút ra (vd. {"destination": "..."}), chỉ để hiện ở khung debug của demo.
+    params: dict = field(default_factory=dict)
     # Làn D: gọi khi khối audio ĐỌC LẠI đầu tiên đã được giao cho kính (socket / StreamingResponse). Đối số là
     # số giây audio đứng trước câu đọc lại phía transport (vd. "Đã tiếp nhận yêu cầu" + đệm của /process).
     # Lệnh chờ chỉ bắt đầu đếm ngược từ đây (`pending_action.arm`), không phải từ lúc `route()`.

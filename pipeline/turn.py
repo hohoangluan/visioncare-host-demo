@@ -37,6 +37,8 @@ class TurnResult:
     transcript: str = ""
     released_at: float = 0.0  # mốc nhả nút (body đóng)
     timings: dict = field(default_factory=dict)
+    source: str = ""  # nguồn quyết định ý định (khung debug `trace`)
+    confidence: float | None = None  # None: không có bộ phân loại chấm (luật từ khoá / không tiếng)
 
 
 def _button_stop(device_state: dict) -> bool:
@@ -231,4 +233,5 @@ async def run(
         "lane": reply.lane, "source": decision.source, "confidence": decision.confidence,
         **{k: round(v, 4) for k, v in timings.items()}, "glasses": glasses,
     })
-    return TurnResult(reply, text, released, timings)
+    confidence = decision.confidence if decision.backend and decision.confidence_known else None
+    return TurnResult(reply, text, released, timings, decision.source, confidence)

@@ -260,6 +260,23 @@ def set_pending_confirm(device: str, intent: str, params: dict) -> None:
         _CONFIRM[device] = (intent, params, time.monotonic())
 
 
+def pending_question(device: str) -> str | None:
+    """Câu đang chờ lượt sau trả lời ("Bạn muốn đi đâu?" / "... phải không?"), KHÔNG lấy ra. Chỉ để hiện debug."""
+    from pipeline import cues  # nhập muộn cho gọn phụ thuộc; chỉ dùng cho khung debug
+
+    now = time.monotonic()
+    with _PENDING_LOCK:
+        confirm, pending = _CONFIRM.get(device), _PENDING.get(device)
+    if confirm is not None and now - confirm[2] <= _CONFIRM_TTL_S:
+        try:
+            return ask_confirm(confirm[0], confirm[1])
+        except KeyError:
+            return None
+    if pending is not None and now - pending[2] <= _PENDING_TTL_S:
+        return cues.fallback_text(ASK_CUE.get(pending[0], ""))
+    return None
+
+
 def take_pending_confirm(device: str) -> tuple[str, dict] | None:
     with _PENDING_LOCK:
         item = _CONFIRM.pop(device, None)
