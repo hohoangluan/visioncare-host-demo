@@ -45,3 +45,6 @@ node_modules/
 # Cache trung gian của tools/intent_gold (dựng lại được, có thể lớn)
 data/intent/gold_work/
 results/
+
+# Hash token riêng từng kính (mẫu: data/device_tokens.example.json)
+data/device_tokens.json

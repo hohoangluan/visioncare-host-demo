@@ -19,6 +19,11 @@ current: contextvars.ContextVar[str] = contextvars.ContextVar(
     "device_id", default=config.VISIONCARE_DEVICE_ID
 )
 
+# Phiên/request này xác thực bằng token RIÊNG của kính `current` (không phải token dùng chung)?
+# Mặc định False = an toàn: gọi điện/nhắn tin/khẩn cấp (Plan 2 C5–C7) chỉ chạy khi True.
+# Nơi xác thực (`DeviceSession.run`, endpoint HTTP) đặt cùng lúc với `current`; thread nền thừa kế qua `run_in_thread`.
+per_device: contextvars.ContextVar[bool] = contextvars.ContextVar("per_device", default=False)
+
 # Id lượt đang chạy, để mọi dòng log của lượt mang theo (pipeline/metrics.TurnLogFilter).
 turn: contextvars.ContextVar[str] = contextvars.ContextVar("turn_id", default="")
 

@@ -90,6 +90,7 @@ class DeviceSession:
         self.ws = ws
         self._reply_audio = reply_audio
         self.device = ""
+        self.per_device = False  # xác thực bằng token riêng của kính (C0); chỉ khi đó mới gọi điện/nhắn tin
         self.cue_version = 0
         self.session_id = secrets.token_hex(6)
         self._send_lock = asyncio.Lock()
@@ -217,6 +218,7 @@ class DeviceSession:
         if old is not None and old is not self:
             await old.replace()
         device_ctx.current.set(self.device)  # task con thừa kế
+        device_ctx.per_device.set(self.per_device)
         if self.debug:
             device_ctx.say.set(self._say_hook)  # thread TTS (copy context) báo từng câu vào TTS
         try:
@@ -252,18 +254,21 @@ class DeviceSession:
             await self._close(4400)
             return False
         token = hello.get("token")
-        if not guard.token_ok(token if isinstance(token, str) and token else self.ws.headers):
+        claimed = str(hello.get("device") or "")[:_MAX_DEVICE_LEN]
+        auth = guard.authenticate(token if isinstance(token, str) and token else self.ws.headers, claimed or None)
+        if auth is None:  # sai token, hoặc token của kính khác khai device này
             await self._close(4401)
             return False
-        device = str(hello.get("device") or config.VISIONCARE_DEVICE_ID)[:_MAX_DEVICE_LEN]
+        device = auth.device_id[:_MAX_DEVICE_LEN]
         self.device = device
+        self.per_device = auth.per_device
         self.debug = hello.get("debug") is True
         try:
             self.cue_version = int(hello.get("cue_version") or 0)
         except (TypeError, ValueError):
             self.cue_version = 0
-        logger.info("v2 session %s: hello device=%s fw=%s accept=%s", self.session_id, device,
-                    str(hello.get("fw", ""))[:32], str(hello.get("accept", ""))[:80])
+        logger.info("v2 session %s: hello device=%s per_device=%s fw=%s accept=%s", self.session_id, device,
+                    self.per_device, str(hello.get("fw", ""))[:32], str(hello.get("accept", ""))[:80])
         return True
 
     async def _close(self, code: int) -> None:
@@ -507,6 +512,7 @@ class DeviceSession:
 
     async def _drain_results(self) -> None:
         device_ctx.current.set(self.device)
+        device_ctx.per_device.set(self.per_device)
         # Task này sinh từ thread Timer/làn D (context trống hoặc của phiên cũ): đặt lại móc `say` của phiên NÀY.
         device_ctx.say.set(self._say_hook if self.debug else None)
         while self._results:

@@ -72,14 +72,15 @@ class VisionCareAPIError(Exception):
 def call_service_api(endpoint_path: str, payload: dict) -> dict:
     """Gửi POST request tới VisionCare Host Public Service API (`/api/v1/service/...`).
 
-    Tự động chèn `device_id` và `request_id` (UUID4) nếu chưa có, và thêm
+    Tự động chèn `device_id` (luôn là kính đã xác thực) và `request_id` (UUID4) nếu chưa có, và thêm
     các header xác thực Bearer token.
     """
     url = f"{config.VISIONCARE_HOST_URL.rstrip('/')}/{endpoint_path.lstrip('/')}"
 
     request_payload = dict(payload)
-    if "device_id" not in request_payload:
-        request_payload["device_id"] = device_ctx.current.get()
+    # Luôn là kính đã xác thực của luồng này (`device_ctx.current` do `guard.authenticate` quyết), không nhận
+    # `device_id` do nơi gọi/client khai trong payload: tránh gọi AB nhân danh kính khác (C0).
+    request_payload["device_id"] = device_ctx.current.get()
     if "request_id" not in request_payload:
         request_payload["request_id"] = str(uuid.uuid4())
 
