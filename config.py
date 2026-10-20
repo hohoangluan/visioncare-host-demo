@@ -349,6 +349,8 @@ HAZARD_MIN_SCORE = float(get("HAZARD_MIN_SCORE", "0.35"))
 HAZARD_NUM_THREADS = int(get("HAZARD_NUM_THREADS", "4"))
 HAZARD_REPEAT_S = float(get("HAZARD_REPEAT_S", "2"))
 HAZARD_LEVEL1_GAP_S = float(get("HAZARD_LEVEL1_GAP_S", "5"))
+# Mức thấp nhất được gửi cho kính. 2 = bỏ mức 1 (vật xa/ngoài lối đi) cho đỡ ồn; 1 = gửi cả mức 1.
+HAZARD_MIN_LEVEL = int(get("HAZARD_MIN_LEVEL", "2"))
 # Bật GET /v2/debug/stats (số request Gemma đang bay/đỉnh/tổng) cho tools/bench_load.py. Mặc định tắt:
 # endpoint không tồn tại (404) khi cờ này không phải "1".
 V2_DEBUG_STATS = get("V2_DEBUG_STATS", "") == "1"

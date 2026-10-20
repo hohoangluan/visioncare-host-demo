@@ -25,7 +25,7 @@ logger = logging.getLogger("blind_assist")
 LANE = {
     "chat": "A", "space": "A", "hazard": "A",
     "ocr": "B", "money": "B", "find": "B",
-    "nav_start": "C", "nav_stop": "C", "alert_on": "C", "alert_off": "C",
+    "nav_start": "D", "nav_stop": "D", "alert_on": "C", "alert_off": "C",
     "contact_call": "D", "emergency_call": "D", "ride_quote": "D",
     "ride_confirm": "D", "music_play": "D", "music_stop": "D", "music_volume": "D",
 }

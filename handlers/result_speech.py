@@ -72,11 +72,12 @@ _TAP_NOTIFICATION = "Nếu màn hình đang mở, vui lòng nhấn vào thông b
 # Câu báo thành công không phụ thuộc kết quả trả về. Tách thành hằng số thay vì
 # viết thẳng trong `_success_speech` để `pipeline/phrases.py` dựng sẵn audio cho
 # chúng — đây là những câu được nói nhiều nhất trong cả demo.
-_NAV_OPENED = "Đã mở chỉ đường đi bộ."
+# Dẫn đường là gửi lộ trình về điện thoại (Google Maps), không phải mở bản đồ trên kính.
+_NAV_SENT_TAIL = "về điện thoại. Mở thông báo để đi bằng Google Maps."
 # Bản ghép sẵn cho trường hợp không có địa chỉ. Hai câu này ngắn nên lúc chạy
 # `_sentences()` gộp chúng lại thành MỘT câu; dựng sẵn từng câu rời thì khoá
 # không bao giờ trùng, nên phải dựng đúng bản ghép mà người dùng thật sự nghe.
-_NAV_OPENED_WITH_TAP = f"{_NAV_OPENED} {_TAP_NOTIFICATION}"
+_NAV_OPENED_WITH_TAP = f"Đã gửi chỉ đường {_NAV_SENT_TAIL}"
 _NAV_STOPPED = "Đã dừng chỉ đường."
 _MUSIC_STOPPED = "Đã dừng phát nhạc."
 _VOLUME_CHANGED = "Đã thay đổi âm lượng."
@@ -136,7 +137,7 @@ def _success_speech(operation: str, result: dict) -> str:
         address = destination.get("address") if isinstance(destination, dict) else None
         if not address:
             return _NAV_OPENED_WITH_TAP
-        return f"Đã mở chỉ đường đi bộ đến {address}. {_TAP_NOTIFICATION}"
+        return f"Đã gửi chỉ đường tới {address} {_NAV_SENT_TAIL}"
 
     if operation == "music_stop":
         return _MUSIC_STOPPED

@@ -158,8 +158,8 @@ def test_nav_live_survives_new_chat_turn(world):  # noqa: F811
     from live.session import sessions
 
     rec, labels, _ = world
-    rec.text = "DẪN TÔI TỚI CHỢ BẾN THÀNH"
-    labels["dẫn tôi tới chợ bến thành"] = _gemma("nav_start")
+    rec.text = "BẬT CẢNH BÁO"
+    labels["bật cảnh báo"] = clef.ClefResult("alert_on", 0.9)
     with client.websocket_connect("/v2/session") as ws:
         _hello(ws, device="ws-nav")
         ws.receive_text()
@@ -249,14 +249,14 @@ def test_button_press_without_speech_stops_music_but_speech_is_classified(world)
         assert [n for n, _ in calls["actions"]] == ["music_volume", "music_stop"]
 
 
-def test_button_stop_navigation_also_closes_nav_live(world):  # noqa: F811
+def test_button_stop_navigation_keeps_obstacle_live(world):  # noqa: F811
     from handlers import action_flow
     from live.session import sessions
     from pipeline import device_ctx
 
     rec, labels, calls = world
-    rec.text = "DẪN TÔI TỚI CHỢ BẾN THÀNH"
-    labels["dẫn tôi tới chợ bến thành"] = _gemma("nav_start")
+    rec.text = "BẬT CẢNH BÁO"
+    labels["bật cảnh báo"] = clef.ClefResult("alert_on", 0.9)
     with client.websocket_connect("/v2/session") as ws:
         _hello(ws, device="ws-navbtn")
         ws.receive_text()
@@ -269,12 +269,8 @@ def test_button_stop_navigation_also_closes_nav_live(world):  # noqa: F811
         _silent_turn(world)
         ws.send_text(json.dumps({"t": "turn_start", "turn": "B", "t_press_ms": 0}))
         ws.send_text(json.dumps({"t": "turn_end", "turn": "B", "t_release_ms": 0}))
-        seen = []
-        while "end" not in seen:  # khung `end` của live nav phải tới (hazard dừng)
-            msg = ws.receive()
-            if msg.get("text"):
-                seen.append(json.loads(msg["text"])["t"])
-        assert sessions.active("ws-navbtn") is None
+        _recv_until_end(ws, "B")  # khung `end` của live nav mà tới thì hàm này ném lỗi
+        assert sessions.active("ws-navbtn") is not None  # dừng chỉ đường không tắt cảnh báo vật cản
         assert ("navigation_stop" in [n for n, _ in calls["actions"]]) or ("nav_stop" in [n for n, _ in calls["actions"]])
 
 
@@ -325,8 +321,8 @@ def test_nav_outbox_and_turn_reply_never_interleave_on_the_audio_channel(world, 
     from live.session import sessions
 
     rec, labels, _ = world
-    rec.text = "DẪN TÔI TỚI CHỢ BẾN THÀNH"
-    labels["dẫn tôi tới chợ bến thành"] = _gemma("nav_start")
+    rec.text = "BẬT CẢNH BÁO"
+    labels["bật cảnh báo"] = clef.ClefResult("alert_on", 0.9)
     with client.websocket_connect("/v2/session") as ws:
         _hello(ws, device="ws-i4")
         ws.receive_text()
@@ -373,8 +369,8 @@ def test_ocr_live_does_not_kill_nav_alerts_for_good(world):  # noqa: F811
     from tests.test_v2_api import _jpeg
 
     rec, labels, _ = world
-    rec.text = "DẪN TÔI TỚI CHỢ BẾN THÀNH"
-    labels["dẫn tôi tới chợ bến thành"] = _gemma("nav_start")
+    rec.text = "BẬT CẢNH BÁO"
+    labels["bật cảnh báo"] = clef.ClefResult("alert_on", 0.9)
     with client.websocket_connect("/v2/session") as ws:
         _hello(ws, device="ws-i5")
         ws.receive_text()

@@ -184,7 +184,7 @@ def run_background(intent: str, text: str, params: dict, deliver=None, skip_ack:
 # ── cổng an toàn làn D: đọc lại + hỏi xác nhận ───────────────────────────────
 
 # Hành động có tác dụng phụ thật: đọc lại cho nghe rồi chờ cửa sổ huỷ mới chạy.
-CONFIRM_INTENTS = {"contact_call", "emergency_call", "ride_quote", "ride_confirm", "music_play"}
+CONFIRM_INTENTS = {"contact_call", "emergency_call", "ride_quote", "ride_confirm", "music_play", "nav_start"}
 
 
 def readback(intent: str, params: dict) -> str:
@@ -202,7 +202,7 @@ def readback(intent: str, params: dict) -> str:
         song = params.get("song")
         return f"Đang mở {song}." if song else "Đang mở nhạc."
     if intent == "nav_start":
-        return f"Đang mở chỉ đường tới {params.get('destination', '')}."
+        return f"Đang gửi chỉ đường tới {params.get('destination', '')} về điện thoại."
     raise KeyError(intent)
 
 

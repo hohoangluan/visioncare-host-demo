@@ -204,15 +204,15 @@ def test_no_speech_is_a_cue(world):
     assert r.headers["x-cue"] == "no_speech" and r.content == b""
 
 
-def test_nav_start_opens_live_and_runs_phone_action(world):
+def test_nav_start_runs_phone_action_without_live(world):
+    """Dẫn đường chỉ gửi lệnh về điện thoại; live nav (cảnh báo vật cản) là chế độ riêng (test_modes_split)."""
     rec, labels, calls = world
     rec.text = "DẪN TÔI TỚI CHỢ BẾN THÀNH"
     labels["dẫn tôi tới chợ bến thành"] = _gemma("nav_start")
     r = _turn("t6")
-    assert r.headers["x-cue"] == "nav_alert_on"
-    assert r.headers["x-live"] == "nav" and r.headers["x-live-token"]
+    assert "x-live" not in r.headers and "x-live-token" not in r.headers
     import time
-    for _ in range(150):
+    for _ in range(400):
         if calls["actions"]:
             break
         time.sleep(0.02)
@@ -540,7 +540,7 @@ def test_process_nav_no_live(world):
     assert sessions.active(config.VISIONCARE_DEVICE_ID) is None
     import time
     # /process: cửa sổ huỷ = câu mở đầu + đệm 2 s + câu đọc lại (đếm từ byte đầu gửi đi), nên lệnh tới muộn hơn /v2.
-    for _ in range(600):
+    for _ in range(900):
         if calls["actions"]:
             break
         time.sleep(0.02)

@@ -72,7 +72,7 @@ class Prewarmer:
                 self.assess_buffer()
         elif lane == "B" and intent in ("money", "find"):
             self._spawn(self._warm_llm_vision(intent))
-        elif lane == "C" and intent in ("nav_start", "alert_on"):
+        elif lane == "C" and intent == "alert_on":
             if self.live_ok:
                 self.session("nav")
         if intent in phone.SLOT:
