@@ -10,6 +10,9 @@ Giao thức (JSON text; binary có byte đầu là loại):
     server -> kính  hello_ok | reply | 0x02 khối audio | reply_end | cam/capture/cue/hazard/end
                     (live, giữ nguyên `live/protocol.py`) | pong | error
 
+Khung debug (chỉ trang demo, `hello.debug=true`; kính thật không gửi nên không đổi gì): trace | say | det | ocr
+| mode, JSON text, gửi không chờ khoá audio và nuốt mọi lỗi gửi (xem `docs/FIRMWARE_ENDPOINTS.md`, mục Debug).
+
 Ngữ nghĩa huỷ (an toàn làn D): `turn_start` mới, `cancel`, đóng socket và phiên mới
 của cùng kính đều: huỷ task `turn.run` + stream audio, huỷ live, rồi `begin_turn`
 (tăng thế hệ + huỷ lệnh chờ làn D) — lệnh "gọi mẹ" đang chờ đọc xong không được chạy
@@ -103,6 +106,8 @@ class DeviceSession:
         self._result_task: asyncio.Task | None = None
         self._nav_suspended = False  # OCR live đã thay nav live: dựng lại nav khi OCR xong
         self._resume_task: asyncio.Task | None = None
+        self.debug = False  # hello.debug: trang demo muốn nhận khung trace/say/det/ocr/mode
+        self._debug_tasks: set[asyncio.Task] = set()
 
     # ---------- gửi ----------
     async def send_json(self, obj: dict) -> None:
@@ -115,6 +120,63 @@ class DeviceSession:
     async def send_bytes(self, data: bytes) -> None:
         async with self._send_lock:
             await self.ws.send_bytes(data)
+
+    # ---------- khung debug (demo) ----------
+    def emit_debug(self, obj: dict) -> None:
+        """Gửi một khung debug mà KHÔNG chờ: gọi trên event loop. Tắt debug / lỗi gửi thì bỏ qua."""
+        if not self.debug or self._shut:
+            return
+        task = self._evloop.create_task(self._send_debug(obj))
+        self._debug_tasks.add(task)
+        task.add_done_callback(self._debug_tasks.discard)
+
+    async def _send_debug(self, obj: dict) -> None:
+        try:
+            await self.send_json(obj)
+        except Exception:  # noqa: BLE001 - khung debug không bao giờ được cản kính
+            pass
+
+    def _say_hook(self, turn: str, text: str) -> None:
+        """Móc của `device_ctx.announce`: gọi từ thread TTS, chuyển về event loop."""
+        self._evloop.call_soon_threadsafe(self.emit_debug, {"t": "say", "turn": turn, "text": text})
+
+    def _mode_frame(self) -> dict:
+        from handlers.action_flow import device_state
+
+        live = sessions.active(self.device)
+        state = device_state()
+        return {"t": "mode", "obstacle": live is not None and live.mode == "nav",
+                "ocr": live is not None and live.mode == "ocr",
+                "navigating": bool(state.get("navigating")), "music": bool(state.get("music_playing")),
+                "call": None}  # plan 2 sẽ điền
+
+    def emit_mode(self) -> None:
+        if not self.debug or self._shut:
+            return
+        try:
+            self.emit_debug(self._mode_frame())
+        except Exception:  # noqa: BLE001
+            logger.exception("v2 session %s: dựng khung mode lỗi", self.session_id)
+
+    async def _send_trace(self, turn: _Turn, result) -> None:
+        """Khung `trace` của lượt, gửi TRƯỚC `reply`."""
+        from lanes import phone
+
+        try:
+            reply = result.reply
+            frame = {
+                "t": "trace", "turn": turn.id, "transcript": result.transcript,
+                "intent": reply.intent or None, "lane": reply.lane or None, "source": result.source,
+                "confidence": None if result.confidence is None else round(result.confidence, 3),
+                "params": json.loads(json.dumps(reply.params, default=str)), "cues": list(reply.cues),
+                "live": reply.live,
+                "timings": {k: round(v, 4) for k, v in result.timings.items()},
+                "pending": phone.pending_question(self.device),
+            }
+        except Exception:  # noqa: BLE001
+            logger.exception("v2 session %s: dựng khung trace lỗi", self.session_id)
+            return
+        await self._send_debug(frame)
 
     async def error(self, code: str) -> None:
         try:
@@ -131,10 +193,14 @@ class DeviceSession:
         if old is not None and old is not self:
             await old.replace()
         device_ctx.current.set(self.device)  # task con thừa kế
+        if self.debug:
+            device_ctx.say.set(self._say_hook)  # thread TTS (copy context) báo từng câu vào TTS
         try:
-            await self.send_json(
-                {"t": "hello_ok", "session": self.session_id, "cue_version": cues.CUE_VERSION, "ping_s": PING_S}
-            )
+            ok = {"t": "hello_ok", "session": self.session_id, "cue_version": cues.CUE_VERSION, "ping_s": PING_S}
+            if self.debug:
+                ok["debug"] = True
+            await self.send_json(ok)
+            self.emit_mode()
             await self._loop()
         except (WebSocketDisconnect, RuntimeError):
             pass
@@ -167,6 +233,7 @@ class DeviceSession:
             return False
         device = str(hello.get("device") or config.VISIONCARE_DEVICE_ID)[:_MAX_DEVICE_LEN]
         self.device = device
+        self.debug = hello.get("debug") is True
         try:
             self.cue_version = int(hello.get("cue_version") or 0)
         except (TypeError, ValueError):
@@ -201,6 +268,8 @@ class DeviceSession:
         if self._shut:
             return
         self._shut = True
+        for task in list(self._debug_tasks):
+            task.cancel()
         await self._cancel_work(reason)
 
     # ---------- huỷ ----------
@@ -351,6 +420,8 @@ class DeviceSession:
                     transport="ws", glasses=turn.glasses,
                 )
                 reply, released = result.reply, result.released_at
+                if self.debug:
+                    await self._send_trace(turn, result)
             except Exception:  # noqa: BLE001 - kính luôn phải nghe được gì đó
                 logger.exception("v2 session turn %s thất bại", turn.id)
                 reply, released = Reply(cues=["system_busy"]), time.monotonic()
@@ -367,11 +438,13 @@ class DeviceSession:
                 await self._send_reply_locked(turn, reply, released)
             if reply.live:
                 await self._start_live(reply)
+            self.emit_mode()  # device_state có thể đã đổi sau lượt
         finally:
             if reply.live:
                 sessions.discard(reply.live_token)  # bị huỷ trước khi nhận token live: bỏ luôn (đã claim thì no-op)
 
     async def _send_reply_locked(self, turn: _Turn, reply: Reply, released: float) -> None:
+        device_ctx.turn.set(turn.id)  # móc `say` ghi đúng id lượt (cả `result-<id>`)
         cue_ok = self.cue_version >= cues.CUE_VERSION
         has_audio = _audio_expected(reply, cue_ok)
         # `reply` đi NGAY (cue phát từ flash trong lúc TTS dựng mảnh đầu).
@@ -413,7 +486,7 @@ class DeviceSession:
             request_id, text = self._results.popleft()
             try:
                 await self._send_reply(_Turn(f"result-{request_id}"), Reply(speech=[text], intent="result", lane="D"),
-                                       time.monotonic())
+                                       time.monotonic())  # _send_reply đã phát khung mode sau khi đọc
             except (WebSocketDisconnect, RuntimeError) as exc:
                 logger.info("v2 session %s: socket đứt khi đọc kết quả (%r)", self.session_id, exc)
                 return
@@ -440,17 +513,19 @@ class DeviceSession:
         from lanes import nav_live, ocr_live
 
         sock = LiveSocket(self.send_text, self.send_bytes, speak_cues=self.cue_version < cues.CUE_VERSION,
-                          audio_lock=self._audio_lock)
+                          audio_lock=self._audio_lock, debug=self.emit_debug if self.debug else None)
         runner = ocr_live.run if live.mode == "ocr" else nav_live.run
         self._live_session, self._live_sock = live, sock
         # Chạy ở task riêng để vòng nhận (và turn_start/cancel) không bị chặn; task
         # `_run_turn` kết thúc ngay sau đây nên không tự huỷ chính live của mình.
         self._live_task = asyncio.create_task(self._run_live(runner, sock, live))
+        self.emit_mode()
 
     async def _run_live(self, runner, sock: LiveSocket, live) -> None:
         try:
             await runner(sock, live)
         finally:
+            self.emit_mode()  # live kết thúc (runner đã nhả phiên)
             if live.mode == "ocr" and self._nav_suspended and not self._shut:
                 self._resume_task = asyncio.get_running_loop().create_task(self._resume_nav(live))
 

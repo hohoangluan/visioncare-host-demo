@@ -207,7 +207,7 @@ def _trusted(d: Decision) -> bool:
 def _ask_back(ctx: TurnContext, d: Decision, params: dict, lane: str) -> Reply:
     phone.set_pending_confirm(ctx.device, d.intent, params)
     logger.info("làn D %s: hỏi lại (backend=%r conf=%.2f)", d.intent, d.backend, d.confidence)
-    return Reply(speech=[phone.ask_confirm(d.intent, params)], intent=d.intent, lane=lane)
+    return Reply(speech=[phone.ask_confirm(d.intent, params)], intent=d.intent, lane=lane, params=params)
 
 
 def _session_deliver(device: str):
@@ -283,13 +283,13 @@ async def _lane_d(ctx: TurnContext, d: Decision, text: str, params: dict | None 
         return Reply(cues=[phone.ASK_CUE[intent]], intent=intent, lane="D")
     if intent not in phone.CONFIRM_INTENTS:
         # music_stop / music_volume: không nguy hiểm, chạy ngay như cũ.
-        return Reply(speech=phone.speech(intent, text, params), intent=intent, lane="D")
+        return Reply(speech=phone.speech(intent, text, params), intent=intent, lane="D", params=params)
     if not _trusted(d):
         return _ask_back(ctx, d, params, "D")
     fired = _fire_after_readback(ctx, intent, text, params)
     if fired is None:
         return Reply(intent=intent, lane="D")
-    return Reply(speech=[fired[0]], intent=intent, lane="D", on_audio_start=fired[1])
+    return Reply(speech=[fired[0]], intent=intent, lane="D", on_audio_start=fired[1], params=params)
 
 
 async def route(ctx: TurnContext, d: Decision, text: str) -> Reply:

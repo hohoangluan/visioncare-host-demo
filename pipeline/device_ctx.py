@@ -28,6 +28,22 @@ turn: contextvars.ContextVar[str] = contextvars.ContextVar("turn_id", default=""
 action_request: contextvars.ContextVar[str] = contextvars.ContextVar("action_request", default="")
 
 
+# Móc "câu sắp vào TTS" cho khung debug của demo (`live/device_session.py` đặt khi hello có `debug`):
+# `hook(turn_id, text)`, gọi được từ thread bất kỳ. None = tắt (kính thật).
+say: contextvars.ContextVar[Callable[[str, str], None] | None] = contextvars.ContextVar("say_hook", default=None)
+
+
+def announce(text: str) -> None:
+    """Báo câu `text` sắp được đọc (nếu phiên đang bật debug). Lỗi của móc không bao giờ cản TTS."""
+    hook = say.get()
+    if hook is None or not text.strip():
+        return
+    try:
+        hook(turn.get(), text.strip())
+    except Exception:  # noqa: BLE001
+        pass
+
+
 @contextlib.contextmanager
 def use(device: str) -> Iterator[None]:
     token = current.set(device or config.VISIONCARE_DEVICE_ID)

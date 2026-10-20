@@ -17,9 +17,14 @@ from tests.test_v2_api import _adpcm_chunks, _gemma, world  # noqa: F401 (fixtur
 client = TestClient(app)
 
 
-def _hello(ws, device="ws-dev", token=TEST_DEVICE_TOKEN):
+def _hello(ws, device="ws-dev", token=TEST_DEVICE_TOKEN, **extra):
     ws.send_text(json.dumps({"t": "hello", "device": device, "token": token,
-                             "cue_version": cues.CUE_VERSION, "fw": "t", "accept": "audio/wav;codec=ima_adpcm"}))
+                             "cue_version": cues.CUE_VERSION, "fw": "t", "accept": "audio/wav;codec=ima_adpcm",
+                             **extra}))
+
+
+def _hello_debug(ws, device="ws-dev"):
+    _hello(ws, device, debug=True)  # khung debug chỉ dành cho trang demo
 
 
 def _send_turn(ws, turn, end=True):

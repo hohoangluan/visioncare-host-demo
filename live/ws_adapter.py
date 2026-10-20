@@ -31,10 +31,14 @@ class LiveSocket:
         send_bytes: Callable[[bytes], Awaitable[None]],
         speak_cues: bool = False,
         audio_lock: asyncio.Lock | None = None,
+        debug: Callable[[dict], None] | None = None,
     ) -> None:
         # Khoá kênh audio 0x02 của phiên: mỗi câu nói (outbox nav, OCR, cue đọc thay clip) giữ nó trọn câu
         # để không xen với câu trả lời của lượt / kết quả hành động. Khung JSON không cần khoá.
         self.audio_lock = audio_lock
+        # Chỉ phiên bật `hello.debug` (trang demo) mới có: runner gửi khung det/ocr bằng móc này,
+        # không chờ và không bao giờ ném lỗi (xem `DeviceSession.emit_debug`).
+        self.debug = debug
         # Kính có `cue_version` cũ hơn server (không có clip trong flash): khung
         # {"t":"cue"} đổi thành câu nói TTS, giống `_send_reply` làm với cue của lượt.
         self._speak_cues = speak_cues

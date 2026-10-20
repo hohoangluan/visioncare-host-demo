@@ -10,7 +10,7 @@ Mức: 0 Safe (không gửi) · 1 Danger · 2 High Danger · 3 Critical.
 import logging
 import os
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from functools import lru_cache
 
 import cv2
@@ -141,6 +141,8 @@ class Hazard:
     level: int
     dir: str = "center"
     kind: str = ""
+    # Mức từng detection (cùng thứ tự đầu vào của `assess`), chỉ để hiện debug; không tham gia so sánh.
+    levels: list[int] = field(default_factory=list, compare=False, repr=False)
 
 
 class HazardTracker:
@@ -152,15 +154,18 @@ class HazardTracker:
     def assess(self, detections: list[Detection]) -> Hazard:
         best = Hazard(0)
         current: dict[tuple[str, str], float] = {}
+        levels: list[int] = []
         for det in detections:
             key = (det.kind, direction(det.cx))
             prev = self._prev.get(key)
             approaching = prev is not None and det.area > prev * 1.15  # hộp lớn dần
             current[key] = max(current.get(key, 0.0), det.area)
             lvl = level_of(det, approaching)
+            levels.append(lvl)
             if lvl > best.level:
                 best = Hazard(lvl, key[1], det.kind)
         self._prev = current
+        best.levels = levels
         return best
 
 

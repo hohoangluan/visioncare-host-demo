@@ -333,6 +333,7 @@ def synthesize_text_stream(text_chunks: Iterable[str]) -> Iterator[bytes]:
     def worker() -> None:
         try:
             for index, sentence in enumerate(_sentences(text_chunks)):
+                device_ctx.announce(sentence)  # khung debug `say`: chỗ DUY NHẤT text vào TTS (mọi đường WS)
                 for pcm in _spoken_pcm(sentence, first=index == 0):
                     while not stop.is_set():
                         try:

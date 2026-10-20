@@ -179,6 +179,7 @@ async def run(ws: WebSocket, session: LiveSession) -> None:
     started = time.monotonic()
     deadline = started + config.OCR_ALIGN_TIMEOUT_S
     best_vga: bytes | None = None
+    debug = getattr(ws, "debug", None)  # chỉ có trên LiveSocket của phiên bật debug (demo)
     try:
         await ws.send_text(protocol.cam("vga", 5))
         capture_sent = False
@@ -207,6 +208,11 @@ async def run(ws: WebSocket, session: LiveSession) -> None:
             gray, _ = decoded
             boxes = await asyncio.to_thread(det.detect, gray)
             action = aligner.step_gray(gray, boxes)
+            if debug is not None:
+                debug({"t": "ocr", "w": gray.shape[1], "h": gray.shape[0],
+                       "boxes": [[int(v) for v in b] for b in boxes],
+                       "cue": action.cue if action is not None and action.kind == "cue" else None,
+                       "capture": action is not None and action.kind == "capture"})
             if action is None:
                 continue
             if action.kind == "cue":

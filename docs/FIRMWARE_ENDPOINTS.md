@@ -275,3 +275,17 @@ Nhấn nút ở bất kỳ trạng thái nào: dừng phát, gửi `turn_start` 
 `call_mom`, `call_nam` (điện thoại báo `MULTIPLE_CONTACTS_FOUND`, người dùng nghe được), `ride` (`ride_quote` rồi `ride_confirm`), `music`
 (có lời = đổi âm lượng, bấm không lời = dừng), `nav` (hazard, chat giữa chừng không tắt nav, bấm nút dừng gửi `end`), `emergency`,
 `call_cancel` (điện thoại không nhận lệnh nào). Nhả nút -> tiếng đầu 502–560 ms; lệnh -> kết quả được đọc 483–992 ms. Bảng đầy đủ: `docs/E2E_FULL_FLOW.md`.
+
+## 15. Debug (chỉ demo)
+
+Dành cho trang demo của giám khảo, **kính thật không dùng và không cần xử lý**. Khai `"debug": true` trong `hello` (đúng kiểu boolean `true`)
+thì `hello_ok` có thêm `"debug": true` và server gửi thêm các khung JSON text dưới đây. Không khai thì không có khung nào trong mục này,
+mọi hành vi khác giữ nguyên. Khung debug **không chờ khoá audio** (xen được giữa hai khối `0x02`), không chặn đường hazard và lỗi gửi bị bỏ qua.
+
+| Khung | Khi nào | Trường |
+|---|---|---|
+| `{"t":"trace","turn",...}` | sau khi lượt xử lý xong, **trước** `reply` | `transcript:str`, `intent:str\|null`, `lane:str\|null`, `source:str` (nguồn quyết định ý định), `confidence:float\|null` (null khi không có bộ phân loại chấm), `params:dict` (tham số làn D; `{}` nếu không có), `cues:[str]`, `live:"ocr"\|"nav"\|null`, `timings:{audio_s,upload_s,final_stt_s,intent_s,route_s,release_to_reply_s}` (giây), `pending:str\|null` (câu đang chờ lượt sau, vd "Bạn muốn đi đâu?" / "Chỉ đường tới … phải không?") |
+| `{"t":"say","turn","text"}` | mỗi câu được đưa vào TTS: lượt thường, `result-*`, outbox live nav, OCR đọc, cue đọc thay clip | `text:str`; `turn` là id lượt đang nói (`result-<id>` cho kết quả hành động) |
+| `{"t":"det","w","h","boxes":[{"kind","score","box":[x0,y0,x1,y1],"level"}],"hazard":{"level","dir","kind"}\|null,"sent":bool}` | mỗi khung live nav đã xử lý | `box` chuẩn hoá 0..1 theo `w,h` (ảnh đã giải mã); `level` từng hộp theo `hazard.level_of`; `hazard` null khi khung an toàn; `sent` = khung `hazard` có thật sự đi tới kính (qua chống làm phiền) |
+| `{"t":"ocr","w","h","boxes":[[x0,y0,x1,y1]],"cue":str\|null,"capture":bool}` | mỗi khung live OCR đã giải mã | `boxes` là **pixel** theo `w,h` (ảnh xám đã thu nhỏ, tối đa 800 px cạnh dài); `cue` = cue căn khung vừa gửi; `capture` = vừa ra lệnh chụp |
+| `{"t":"mode","obstacle":bool,"ocr":bool,"navigating":bool,"music":bool,"call":str\|null}` | ngay sau `hello_ok`; mỗi khi live bắt đầu/kết thúc; sau mỗi lượt và mỗi `result-*` | `obstacle` = live nav đang chạy, `ocr` = live OCR đang chạy, `navigating`/`music` = điện thoại đang dẫn đường/phát nhạc; `call` luôn `null` (plan 2) |

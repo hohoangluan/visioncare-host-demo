@@ -31,11 +31,27 @@ def _decode(jpeg: bytes) -> np.ndarray | None:
     return cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
 
 
-def process_frame(det, tracker: hazard.HazardTracker, jpeg: bytes) -> hazard.Hazard:
+def process_frame(
+    det, tracker: hazard.HazardTracker, jpeg: bytes,
+) -> tuple[hazard.Hazard, list[hazard.Detection], tuple[int, int]]:
+    """-> (hazard, detections của khung, (rộng, cao) ảnh đã giải mã); hazard.levels là mức từng detection."""
     bgr = _decode(jpeg)
     if bgr is None:
-        return hazard.Hazard(0)
-    return tracker.assess(det.detect(bgr))
+        return hazard.Hazard(0), [], (0, 0)
+    detections = det.detect(bgr)
+    return tracker.assess(detections), detections, (bgr.shape[1], bgr.shape[0])
+
+
+def _det_frame(result: hazard.Hazard, detections: list[hazard.Detection], size: tuple[int, int], sent: bool) -> dict:
+    """Khung debug `det` cho trang demo: hộp chuẩn hoá 0..1 + mức từng hộp."""
+    levels = result.levels or [0] * len(detections)
+    return {
+        "t": "det", "w": size[0], "h": size[1],
+        "boxes": [{"kind": d.kind, "score": round(d.score, 3), "box": [round(v, 4) for v in d.box], "level": lvl}
+                  for d, lvl in zip(detections, levels)],
+        "hazard": {"level": result.level, "dir": result.dir, "kind": result.kind} if result.level else None,
+        "sent": sent,
+    }
 
 
 HAZARD_QUIET_S = 1.5  # sau hazard mức >= 2, chừng này giây im lặng mới được nói tiếp
@@ -99,6 +115,7 @@ async def run(ws: WebSocket, session: LiveSession) -> None:
     clock = _HazardClock()
     talker = asyncio.create_task(_speak_outbox(ws, session, clock))
     det = hazard.detector()
+    debug = getattr(ws, "debug", None)  # chỉ có trên LiveSocket của phiên bật debug (demo)
     tracker, anti = hazard.HazardTracker(), hazard.AntiAnnoy()
     frames, total_ms = 0, 0.0
     try:
@@ -108,13 +125,16 @@ async def run(ws: WebSocket, session: LiveSession) -> None:
             if frame is None or det is None:
                 continue
             started = time.perf_counter()
-            result = await asyncio.to_thread(process_frame, det, tracker, frame)
+            result, detections, size = await asyncio.to_thread(process_frame, det, tracker, frame)
             if result.level >= _HIGH_LEVEL:
                 clock.mark()  # TRƯỚC khi gửi: audio outbox phải dừng ngay, hazard đi trước
             # Mức dưới HAZARD_MIN_LEVEL coi như an toàn: không tới AntiAnnoy, không gửi kính.
-            if anti.step(result.level if result.level >= config.HAZARD_MIN_LEVEL else 0):
+            sent = anti.step(result.level if result.level >= config.HAZARD_MIN_LEVEL else 0)
+            if sent:
                 await ws.send_text(protocol.hazard(result.level, result.dir, result.kind))
                 logger.info("hazard level=%d dir=%s kind=%s", result.level, result.dir, result.kind)
+            if debug is not None:  # SAU hazard, không chờ gửi: demo không được làm chậm đường cảnh báo
+                debug(_det_frame(result, detections, size, bool(sent)))
             frames += 1
             total_ms += (time.perf_counter() - started) * 1000
         if session.closed.is_set() and not box.closed:
