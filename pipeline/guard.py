@@ -141,6 +141,10 @@ def authenticate(headers_or_value, claimed: str | None = None) -> Auth | None:
             return None
         return Auth(owner, True)
     if _shared_allowed() and hmac.compare_digest(raw, config.VISIONCARE_DEVICE_CLIENT_TOKEN.encode()):
+        # Id đã có token riêng chỉ dùng được với token riêng của nó: không thì người giữ token chung
+        # đá phiên thật của kính đó, ghi ảnh/huỷ lệnh chờ và điều khiển điện thoại của nó qua AB.
+        if claimed and any(device == claimed for device, _ in device_tokens()):
+            return None
         return Auth(claimed or config.VISIONCARE_DEVICE_ID, False)
     return None
 

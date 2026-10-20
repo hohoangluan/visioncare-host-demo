@@ -660,6 +660,7 @@ def _device_id(request: Request) -> str:
     """Id kính ĐÃ xác thực (token riêng -> kính chủ token; token chung -> `X-Device-Id` do client khai)
     và đặt `per_device` vào ContextVar để C5–C7 biết có được gọi điện/nhắn tin hay không."""
     auth = guard.request_auth(request)
+    device_ctx.current.set(auth.device_id)  # per_device luôn đi cùng đúng kính của nó, không để lệch cặp
     device_ctx.per_device.set(auth.per_device)
     return auth.device_id
 
