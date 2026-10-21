@@ -1,0 +1,2452 @@
+Reading additional input from stdin...
+OpenAI Codex v0.162.0-alpha.17.2
+--------
+workdir: /workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system
+model: gpt-6-luna
+provider: openai
+approval: never
+sandbox: read-only
+reasoning effort: high
+reasoning summaries: none
+session id: 01a15dee-28f4-7720-b195-c762fe18afec
+--------
+user
+Đọc và làm theo docs/superpowers/plans/sdd-od/codex-review-money.md. Không hỏi lại.
+hook: SessionStart
+hook: SessionStart Completed
+codex
+Tôi sẽ dùng skill `executing-plans` để đọc và làm theo kế hoạch trong tài liệu, rồi kiểm tra các kết quả có thể thực hiện trong workspace hiện tại.
+exec
+/bin/bash -lc 'cat /home/vannk/.codex/skills/.system/../.. 2>/dev/null' in /workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system
+ exited 1 in 0ms:
+exec
+/bin/bash -lc 'cat /home/vannk/.codex/plugins/cache/personal/superpowers/6.1.1/skills/executing-plans/SKILL.md' in /workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system
+ succeeded in 0ms:
+---
+name: executing-plans
+description: Use when you have a written implementation plan to execute in a separate session with review checkpoints
+---
+
+# Executing Plans
+
+## Overview
+
+Load plan, review critically, execute all tasks, report when complete.
+
+**Announce at start:** "I'm using the executing-plans skill to implement this plan."
+
+**Note:** Tell your human partner that Superpowers works much better with access to subagents. The quality of its work will be significantly higher if run on a platform with subagent support (Claude Code, Codex CLI, Codex App, and Copilot CLI all qualify; see the per-platform tool refs in `../using-superpowers/references/`). If subagents are available, use superpowers:subagent-driven-development instead of this skill.
+
+## The Process
+
+### Step 1: Load and Review Plan
+1. Read plan file
+2. Review critically - identify any questions or concerns about the plan
+3. If concerns: Raise them with your human partner before starting
+4. If no concerns: Create todos for the plan items and proceed
+
+### Step 2: Execute Tasks
+
+For each task:
+1. Mark as in_progress
+2. Follow each step exactly (plan has bite-sized steps)
+3. Run verifications as specified
+4. Mark as completed
+
+### Step 3: Complete Development
+
+After all tasks complete and verified:
+- Announce: "I'm using the finishing-a-development-branch skill to complete this work."
+- **REQUIRED SUB-SKILL:** Use superpowers:finishing-a-development-branch
+- Follow that skill to verify tests, present options, execute choice
+
+## When to Stop and Ask for Help
+
+**STOP executing immediately when:**
+- Hit a blocker (missing dependency, test fails, instruction unclear)
+- Plan has critical gaps preventing starting
+- You don't understand an instruction
+- Verification fails repeatedly
+
+**Ask for clarification rather than guessing.**
+
+## When to Revisit Earlier Steps
+
+**Return to Review (Step 1) when:**
+- Partner updates the plan based on your feedback
+- Fundamental approach needs rethinking
+
+**Don't force through blockers** - stop and ask.
+
+## Remember
+- Review plan critically first
+- Follow plan steps exactly
+- Don't skip verifications
+- Reference skills when plan says to
+- Stop when blocked, don't guess
+- Never start implementation on main/master branch without explicit user consent
+
+## Integration
+
+**Required workflow skills:**
+- **superpowers:using-git-worktrees** - Ensures isolated workspace (creates one or verifies existing)
+- **superpowers:writing-plans** - Creates the plan this skill executes
+- **superpowers:finishing-a-development-branch** - Complete development after all tasks
+
+exec
+/bin/bash -lc 'git status --short' in /workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system
+exec
+/bin/bash -lc 'cat docs/superpowers/plans/sdd-od/codex-review-money.md' in /workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system
+ exited 128 in 0ms:
+fatal: not a git repository (or any parent up to mount point /)
+Stopping at filesystem boundary (GIT_DISCOVERY_ACROSS_FILESYSTEM not set).
+
+ succeeded in 0ms:
+Bạn là reviewer code Python. Đọc spec docs/superpowers/specs/2026-10-21-doc-tien-3-khung-design.md (§1–§6) và diff docs/superpowers/plans/sdd-od/money-v2.diff
+(nhánh ocr-tien trong worktree vh-ocr; có thể đọc thêm file trong vh-ocr để lấy ngữ cảnh). KHÔNG sửa file nào, KHÔNG chạy lệnh ghi.
+Chỉ báo LỖI ĐÚNG SAI (correctness) có thật, xếp nặng → nhẹ, mỗi lỗi: file:dòng, kịch bản cụ thể gây sai, vì sao. Tập trung:
+1) lượt đọc chắc có bị chậm/đổi hành vi so với trước không; 2) luồng live money_retry: huỷ khi turn_start/socket đóng, hết hạn 3 s, không khung nào,
+khung trong 1 s đầu bị bỏ, chỉ đọc lại 1 lần, dựng lại nav; 3) luật hint (mờ > ×10/"không rõ" > lại gần), cặp ×10; 4) MONEY_RETRY=0 giữ hành vi cũ;
+5) race/async (task không được await, ngoại lệ nuốt mất). Bỏ qua style. Không có lỗi thì ghi "không thấy lỗi đáng kể". Trả lời tiếng Việt, ≤ 400 từ.
+
+codex
+Tài liệu yêu cầu review chỉ đọc: không sửa file, không chạy lệnh ghi, và báo cáo tối đa 400 từ. Tôi đang tìm spec, diff và worktree `vh-ocr` để đối chiếu các luồng được nêu.
+exec
+/bin/bash -lc "pwd; rg --files -g '2026-10-21-doc-tien-3-khung-design.md' -g 'money-v2.diff' -g 'AGENTS.md' -g 'money*' -g '*money*' /workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system /workingspace_aiclub/WorkingSpace/Personal/vannk 2>/dev/null" in /workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system
+ exited 127 in 0ms:
+/workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system
+
+exec
+/bin/bash -lc 'ls -la; ls -la docs/superpowers/plans/sdd-od; ls -la /workingspace_aiclub/WorkingSpace/Personal/vannk' in /workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system
+ succeeded in 0ms:
+total 232
+drwxrwxr-x 17 luanhh luanhh  8192 Oct 21 16:40 .
+drwxr-xr-x 15 luanhh luanhh  8192 Oct 21 08:46 ..
+-rw-------  1 luanhh luanhh  2119 Oct 20 15:10 .env
+-rw-rw-r--  1 luanhh luanhh     5 Oct 19 01:10 .gitignore
+drwxrwxr-x  2 luanhh luanhh   152 Oct 21 08:46 .impeccable
+drwxrwxr-x  2 luanhh luanhh   152 Oct 21 13:38 .vscode
+drwxrwxr-x  9 luanhh luanhh  8192 Oct 20 18:49 app-demo-backend
+-rwxrwxr-x  1 luanhh luanhh  2939 Oct 19 23:16 demo.sh
+-rw-rw-r--  1 luanhh luanhh  2972 Oct 19 23:16 docker-compose.yml
+drwxrwxr-x  4 luanhh luanhh  8192 Oct 21 16:26 docs
+drwxrwxr-x  9 luanhh luanhh  8192 Oct 21 16:57 evaluations
+drwxrwxr-x  4 luanhh luanhh  8192 Oct 18 21:22 experiments
+-rw-rw-r--  1 luanhh luanhh 33667 Oct 21 14:05 handcheck_50_ask_vs_space.csv
+-rw-rw-r--  1 luanhh luanhh  7253 Oct 21 13:43 handcheck_50_human.csv
+drwxrwxr-x  2 luanhh luanhh   152 Oct 19 12:19 storage
+drwxrwxr-x  9 luanhh luanhh  8192 Oct 20 15:09 stt-bench-cache
+-rw-rw-r--  1 luanhh luanhh 36920 Oct 18 12:38 summarize_seevia_project.md
+drwx------  8 luanhh luanhh  8192 Oct 21 16:23 ui
+drwxrwxr-x 20 luanhh luanhh  8192 Oct 21 16:43 vh-chot
+drwxrwxr-x 19 luanhh luanhh  8192 Oct 21 16:22 vh-ocr
+drwxrwxr-x 20 luanhh luanhh  8192 Oct 21 16:42 vh-od
+drwxrwxr-x 19 luanhh luanhh  8192 Oct 21 13:54 vh-vqa
+drwxrwxr-x 24 luanhh luanhh  8192 Oct 21 10:46 visioncare-host-demo
+drwxrwxr-x 19 luanhh luanhh  8192 Oct 21 15:13 wt-demo-ux
+total 152
+drwxrwxr-x 2 luanhh luanhh  8192 Oct 21 17:07 .
+drwxrwxr-x 3 luanhh luanhh  8192 Oct 21 16:38 ..
+-rw-rw-r-- 1 luanhh luanhh  5738 Oct 21 17:07 codex-review-money.log
+-rw-rw-r-- 1 luanhh luanhh  1047 Oct 21 17:07 codex-review-money.md
+-rw-rw-r-- 1 luanhh luanhh  4748 Oct 21 16:50 money-retry-brief.md
+-rw-rw-r-- 1 luanhh luanhh  9199 Oct 21 17:06 money-retry-report.md
+-rw-rw-r-- 1 luanhh luanhh 41474 Oct 21 17:07 money-v2.diff
+-rw-rw-r-- 1 luanhh luanhh  6091 Oct 21 17:07 progress.md
+-rw-rw-r-- 1 luanhh luanhh 16079 Oct 21 16:38 task-1-3-brief.md
+-rw-rw-r-- 1 luanhh luanhh  7201 Oct 21 16:38 task-4-brief.md
+-rw-rw-r-- 1 luanhh luanhh  4870 Oct 21 16:46 task-4-report.md
+-rw-rw-r-- 1 luanhh luanhh  7077 Oct 21 16:38 task-5-brief.md
+total 72
+drwxr-xr-x 15 luanhh luanhh  8192 Oct 21 08:46 .
+drwxrwxrwt 45 nobody nogroup 8192 Sep 20 19:35 ..
+drwxr-xr-x  2 luanhh luanhh   152 Oct 11 21:09 .agents
+drwxr-xr-x  2 luanhh luanhh   152 Oct 11 21:09 .aws
+drwxrwxr-x  3 luanhh luanhh  8192 Oct 19 11:43 .claude
+drwxr-xr-x  2 luanhh luanhh   152 Oct 11 21:09 .codex
+drwxrwxr-x  6 luanhh luanhh  8192 Oct 19 11:43 .git
+drwxrwxr-x  2 luanhh luanhh   152 Oct 21 08:46 .impeccable
+drwxrwxr-x  3 luanhh luanhh  8192 Sep  3 00:09 .tmp
+drwxrwxr-x  5 luanhh luanhh  8192 Sep  2 23:33 .venv-ocrvl
+drwxrwxr-x  2 luanhh luanhh   152 Aug  1 19:52 .vscode
+drwxrwxr-x  3 luanhh luanhh   152 Oct  8 08:40 .vscode-server
+drwxrwxr-x 43 luanhh luanhh  8192 Oct 19 13:11 Ai_challange_2026
+drwxrwxr-x 17 luanhh luanhh  8192 Oct 21 16:40 SeeVia_system
+drwxrwxr-x 35 luanhh luanhh  8192 Oct 19 11:43 tripguardian
+
+exec
+/bin/bash -lc "find /workingspace_aiclub/WorkingSpace/Personal/vannk -name '2026-10-21-doc-tien-3-khung-design.md' -o -name 'money-v2.diff' -o -name 'AGENTS.md'; ls -la docs/superpowers/specs; git -C /workingspace_aiclub/WorkingSpace/Personal/vannk/vh-ocr status --short" in /workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system
+exec
+/bin/bash -lc "ls -la vh-ocr; ls -la vh-ocr/docs/superpowers/specs; ls -la docs/superpowers/specs; git -C vh-ocr status --short; sed -n '1,240p' docs/superpowers/plans/sdd-od/money-v2.diff" in /workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system
+ succeeded in 0ms:
+total 320
+drwxrwxr-x 19 luanhh luanhh  8192 Oct 21 16:22 .
+drwxrwxr-x 17 luanhh luanhh  8192 Oct 21 16:40 ..
+-rw-rw-r--  1 luanhh luanhh   184 Oct 21 14:37 .dockerignore
+lrwxrwxrwx  1 luanhh luanhh    28 Oct 21 14:37 .env -> ../visioncare-host-demo/.env
+-rw-rw-r--  1 luanhh luanhh  3840 Oct 21 14:37 .env.example
+-rw-rw-r--  1 luanhh luanhh   114 Oct 21 14:37 .git
+-rw-rw-r--  1 luanhh luanhh  1048 Oct 21 14:37 .gitignore
+drwxrwxr-x  3 luanhh luanhh   152 Oct 21 16:22 .pytest_cache
+-rw-rw-r--  1 luanhh luanhh  3125 Oct 21 14:37 Dockerfile
+-rw-rw-r--  1 luanhh luanhh 30367 Oct 21 14:37 README.md
+drwxrwxr-x  2 luanhh luanhh  8192 Oct 21 17:00 __pycache__
+-rw-rw-r--  1 luanhh luanhh 44102 Oct 21 14:37 app.py
+drwxrwxr-x  4 luanhh luanhh   152 Oct 21 14:37 assets
+drwxrwxr-x  2 luanhh luanhh   152 Oct 21 14:37 certs
+-rw-rw-r--  1 luanhh luanhh 32053 Oct 21 16:59 config.py
+drwxrwxr-x  4 luanhh luanhh   152 Oct 21 14:37 data
+drwxrwxr-x  4 luanhh luanhh  8192 Oct 21 14:57 demo-web
+drwxrwxr-x  4 luanhh luanhh  8192 Oct 21 17:05 docs
+drwxrwxr-x  5 luanhh luanhh  8192 Oct 21 14:37 evaluations
+drwxrwxr-x  3 luanhh luanhh  8192 Oct 21 14:51 handlers
+drwxrwxr-x  3 luanhh luanhh  8192 Oct 21 17:00 lanes
+drwxrwxr-x  3 luanhh luanhh  8192 Oct 21 14:38 live
+drwxrwxr-x  9 luanhh luanhh  8192 Oct 21 14:56 models
+drwxrwxr-x  3 luanhh luanhh  8192 Oct 21 14:49 pipeline
+-rw-rw-r--  1 luanhh luanhh  1618 Oct 21 14:37 requirements.txt
+-rwxrwxr-x  1 luanhh luanhh  2077 Oct 21 14:37 run.sh
+-rw-rw-r--  1 luanhh luanhh   741 Oct 21 14:37 schemas.py
+drwxrwxr-x  3 luanhh luanhh  8192 Oct 21 14:38 services
+-rw-rw-r--  1 luanhh luanhh  8966 Oct 21 14:37 start-demo.ps1
+drwxrwxr-x  3 luanhh luanhh 12288 Oct 21 17:02 storage
+drwxrwxr-x  4 luanhh luanhh  8192 Oct 21 16:58 tests
+drwxrwxr-x  7 luanhh luanhh  8192 Oct 21 14:56 tools
+total 152
+drwxrwxr-x 2 luanhh luanhh  8192 Oct 21 14:37 .
+drwxrwxr-x 4 luanhh luanhh   152 Oct 21 14:37 ..
+-rw-rw-r-- 1 luanhh luanhh 13714 Oct 21 14:37 2026-07-19-blind-assist-audio-server-design.md
+-rw-rw-r-- 1 luanhh luanhh  1807 Oct 21 14:37 2026-07-20-find-navigation-keywords-design.md
+-rw-rw-r-- 1 luanhh luanhh  7109 Oct 21 14:37 2026-07-20-ocr-paddle-translate-module-design.md
+-rw-rw-r-- 1 luanhh luanhh  6911 Oct 21 14:37 2026-07-20-vlm-gemini-module-design.md
+-rw-rw-r-- 1 luanhh luanhh  4668 Oct 21 14:37 2026-08-02-space-hazard-intent-llm-design.md
+-rw-rw-r-- 1 luanhh luanhh 11733 Oct 21 14:37 2026-10-19-glasses-calls-messages-design.md
+-rw-rw-r-- 1 luanhh luanhh 24978 Oct 21 14:37 2026-10-19-ocr-stream-guidance-design.md
+-rw-rw-r-- 1 luanhh luanhh 23614 Oct 21 14:37 2026-10-19-voice-server-architecture-design.md
+-rw-rw-r-- 1 luanhh luanhh 17399 Oct 21 14:37 2026-10-19-voice-v2-hardening-design.md
+total 40
+drwxrwxr-x 2 luanhh luanhh  8192 Oct 21 16:50 .
+drwxrwxr-x 4 luanhh luanhh   152 Oct 21 16:34 ..
+-rw-rw-r-- 1 luanhh luanhh  7800 Oct 21 17:07 2026-10-21-doc-tien-3-khung-design.md
+-rw-rw-r-- 1 luanhh luanhh 20394 Oct 21 16:30 2026-10-21-vat-can-du-doan-quy-dao-design.md
+diff --git a/config.py b/config.py
+index 1f43ebd..f43e44d 100644
+--- a/config.py
++++ b/config.py
+@@ -268,21 +268,34 @@ LLM_TIMEOUT_S = float(get("LLM_TIMEOUT_S", "30"))
+ LLM_MAX_TOKENS = int(get("LLM_MAX_TOKENS", "400"))
+ # Cạnh dài ảnh gửi cho Gemma. Ảnh UXGA 1600px gửi nguyên là nhiều token ảnh hơn
+ # và upload lâu hơn mà Gemma vẫn thu về độ phân giải nội bộ của nó.
+ LLM_IMAGE_MAX_SIDE = int(get("LLM_IMAGE_MAX_SIDE", "896"))
+ # OCR cần giữ chi tiết chữ nhỏ nên ảnh chụp high-res gửi lớn hơn.
+ LLM_OCR_IMAGE_MAX_SIDE = int(get("LLM_OCR_IMAGE_MAX_SIDE", "1600"))
+ # Đọc tiền làn B: "choice" = Gemma chọn nhãn mệnh giá + xác suất, dưới MONEY_MIN_PROB thì từ chối
+ # (handlers/read_money.read_choice); "prompt" = prompt tự do cũ. Ngưỡng chọn trên dev 2026-10-21:
+ # sai <= 3 % mà đúng cao nhất; test: nói sai 11,2 % -> 3,3 %, trễ p90 234 -> 215 ms.
+ MONEY_MODE = get("MONEY_MODE", "choice")
+-MONEY_MIN_PROB = float(get("MONEY_MIN_PROB", "0.995"))
++# Đọc tiền v2 (2026-10-21, spec doc-tien-3-khung): đọc chặt 1 khung, không chắc thì nói hướng dẫn rồi đọc lại
++# 1 lần từ khung live. τ 0,995 -> 0,999: test nói sai 3,6 -> 2,1 % (đổi lại từ chối 39 -> 49 %, phần đó đọc lại bù).
++MONEY_MIN_PROB = float(get("MONEY_MIN_PROB", "0.999"))
++# 1 = có đọc lại; 0 = hành vi cũ (không chắc thì nói "chưa đọc rõ", không mở live).
++MONEY_RETRY = get("MONEY_RETRY", "1") == "1"
++MONEY_RETRY_PROB = float(get("MONEY_RETRY_PROB", "0.999"))
++# Lượt đọc lại: bỏ mọi khung trong SETTLE_S đầu (để người dùng chỉnh tay theo hướng dẫn), rồi lấy khung đầu tiên đủ nét;
++# hết TIMEOUT_S (tính từ lúc gửi `cam`) thì lấy khung nét nhất đã thấy.
++MONEY_RETRY_SETTLE_S = float(get("MONEY_RETRY_SETTLE_S", "1.0"))
++MONEY_RETRY_TIMEOUT_S = float(get("MONEY_RETRY_TIMEOUT_S", "3.0"))
++# Độ nét (Laplacian, read_money.blur_score: ảnh thu về cạnh dài 192 px) dưới ngưỡng này thì nói "Giữ yên tay." và
++# chờ khung nét khi đọc lại. Chọn trên dev: phân vị 25 % độ nét của 81 ảnh dev đọc đúng ở τ 0,999
++# (evaluations/bench/money_blur.py). Cần chỉnh lại trên ảnh thật của kính (xem MONEY_OCR_CAI_TIEN.md, "Đọc tiền v2").
++MONEY_BLUR_HINT = float(get("MONEY_BLUR_HINT", "341.4"))
+ # Khi có >= 2 khung (kính chụp liên tiếp): ngưỡng cho khung "chắc" trong read_money.combine.
+ MONEY_MULTI_MIN_PROB = float(get("MONEY_MULTI_MIN_PROB", "0.98"))
+ # Làn B đọc chữ: chữ số nào có xác suất token dưới ngưỡng thì nói thêm câu cảnh báo "chưa chắc" (0 = tắt).
+ OCR_DIGIT_HEDGE_PROB = float(get("OCR_DIGIT_HEDGE_PROB", "0.9"))
+ 
+ # Clef (Cloudflare Workers AI) — phân loại intent cuối và trên partial.
+ CLOUDFLARE_API_TOKEN = get("CLOUDFLARE_API_TOKEN", "")
+ CLOUDFLARE_ACCOUNT_ID = get("CLOUDFLARE_ACCOUNT_ID", "")
+ # Bảo vệ endpoint kính (Task 9): trần kích thước + rate limit qua tunnel công khai.
+ # Token kính nằm ở VISIONCARE_DEVICE_CLIENT_TOKEN (rỗng = mọi endpoint kính trả 503).
+diff --git a/docs/FIRMWARE_ENDPOINTS.md b/docs/FIRMWARE_ENDPOINTS.md
+index dd326f1..0218abc 100644
+--- a/docs/FIRMWARE_ENDPOINTS.md
++++ b/docs/FIRMWARE_ENDPOINTS.md
+@@ -158,20 +158,30 @@ kính   {"t":"played","turn":"t42","first_byte_ms":13050,"first_audio_ms":13120}
+ 
+ -- gọi điện --
+ server reply(t45, đọc lại "Đang gọi cho Nam.") ; 0x02... ; reply_end   ... cửa sổ huỷ ... lệnh tới điện thoại
+ server {"t":"reply","turn":"result-9f1c...",...} ; 0x02... ; {"t":"reply_end","turn":"result-9f1c..."}   (server chủ động)
+ 
+ -- OCR live --
+ server reply(live:"ocr", cues:["ocr_start"]) ; reply_end ; {"t":"cam","size":"vga","fps":5,"quality":12}
+ kính   0x04 <JPEG>...   server {"t":"cue","id":"look_left"} ... {"t":"capture","size":"uxga"}   kính 0x04 <UXGA>
+ server 0x02... (đọc nội dung) ; {"t":"end"}
+ 
++-- đọc tiền (đọc chắc, ~49 %): y như chat, không live --
++kính   {"t":"turn_start",...} ; 0x01 <JPEG UXGA buffer> ; 0x03 <ADPCM>... ; {"t":"turn_end",...}
++server {"t":"reply","turn":"t50","cues":[],"live":null,"audio":{...}} ; 0x02... ("50 nghìn đồng.") ; {"t":"reply_end","turn":"t50"}
++
++-- đọc tiền — đọc lại (không chắc, ~50 %): một câu hướng dẫn rồi đọc lại đúng MỘT lần --
++server reply(live:"ocr", cues:[]) ; 0x02... ("Lùi ra xa một chút, để cả tờ tiền nằm giữa." | "Giữ yên tay." | "Đưa tờ tiền lại gần hơn một chút.") ; reply_end ; {"t":"cam","size":"vga","fps":5,"quality":12}
++kính   0x04 <VGA>...   (server bỏ khung trong MONEY_RETRY_SETTLE_S = 1,0 s đầu; lấy khung đầu tiên sau đó đủ nét, hết 3,0 s thì khung nét nhất; không có khung nào thì nói "vẫn chưa đọc chắc")
++server 0x02... ("50 nghìn đồng." | "Tôi vẫn chưa đọc chắc được tờ này.") ; {"t":"end"}
++(lượt mới/`turn_start`/socket đóng: huỷ như OCR live. Đang chỉ đường: live này tạm thay nav, xong server dựng lại nav. Không có WS (`/process`): chỉ nói câu hướng dẫn, không live.)
++
+ -- nav --
+ server reply(live:"nav", cues:["nav_alert_on"]) ; reply_end ; {"t":"cam","size":"qvga","fps":8,"quality":15}
+ kính   0x04 <JPEG>...   server {"t":"hazard","level":2,"dir":"left","kind":"car"}
+ kính   (bấm nút hỏi giờ: turn_start mới, nav vẫn chạy, hazard vẫn tới)   server {"t":"end"} khi người dùng dừng
+ ```
+ 
+ ## 7. Cue clips và `played`
+ 
+ - Clip nằm ở `assets/cues/`: một file `<id>.wav` mỗi mã cue (WAV IMA ADPCM 16 kHz mono, khối 256 byte) cùng `manifest.json`
+   `{"cue_version": N, "clips": {id: {"file","bytes","seconds","text","sha256"}}}`. Hiện `cue_version` = **2**, 32 clip:
+diff --git a/handlers/read_money.py b/handlers/read_money.py
+index 9cd45a1..b1b0f94 100644
+--- a/handlers/read_money.py
++++ b/handlers/read_money.py
+@@ -1,17 +1,20 @@
+ import asyncio
+ import logging
++import math
+ from collections.abc import AsyncIterator, Iterator
+ 
+ import config
+ from models import llm, vlm
+ from models.llm.client import prefix_prob
++from pipeline import image_quality
++from pipeline.image_buffer import resize_jpeg
+ 
+ logger = logging.getLogger("blind_assist")
+ 
+ _PROMPT = (
+     "Bạn đang hỗ trợ người khiếm thị nhận biết mệnh giá tiền mặt Việt Nam Đồng (VND) qua camera.\n"
+     "Nhìn vào ảnh và trả lời ĐÚNG TRỌNG TÂM mệnh giá tiền mặt đọc được.\n\n"
+     "QUY TẮC NGUYÊN TẮC:\n"
+     "- Mở đầu ngay bằng mệnh giá, KHÔNG dùng các từ dẫn dắt hoặc từ thừa như: "
+     "\"Đây là\", \"Ảnh chụp\", \"Trước mặt bạn là\", \"Trong hình có\", \"Tôi thấy\".\n"
+     "- Nếu có 1 tờ: đọc trực tiếp mệnh giá (ví dụ: \"50 nghìn đồng\", \"500 nghìn đồng\", \"10 nghìn đồng\").\n"
+@@ -71,20 +74,117 @@ async def choose_raw(messages: list[dict], top_logprobs: int = 1) -> tuple[str,
+     return text, choice
+ 
+ 
+ async def choose(messages: list[dict]) -> tuple[str, float | None]:
+     """(nhãn, xác suất nhãn THÔ của server). Đã thử chuẩn hoá lại trên 13 nhãn hợp lệ (dev 2026-10-21):
+     1 khung nói sai gấp đôi (3,6 -> 7,3 %) vì nhãn sai cũng "chắc" lên, 3 khung không lợi — giữ xác suất thô."""
+     text, choice = await choose_raw(messages)
+     return text, prefix_prob(choice, len(text))
+ 
+ 
++# ── Đọc tiền v2 (2026-10-21): top-2 nhãn + câu hướng dẫn khi không chắc ───────────────────────
++# Spec: docs/superpowers/specs/2026-10-21-doc-tien-3-khung-design.md §3. Không tốn thêm lượt gọi model: top-2 lấy từ
++# logprobs của chính lượt chọn nhãn, độ nét lấy từ ảnh đã có.
++HOLD_STILL = "Giữ yên tay."
++STEP_BACK = "Lùi ra xa một chút, để cả tờ tiền nằm giữa."
++COME_CLOSER = "Đưa tờ tiền lại gần hơn một chút."
++RETRY_FAILED = "Tôi vẫn chưa đọc chắc được tờ này."
++STATIC_SPEECH = (HOLD_STILL, STEP_BACK, COME_CLOSER, RETRY_FAILED)
++
++# Độ nét tính trên ảnh thu về cạnh dài này: đúng cỡ ảnh dev (vnd_kaggle 192x144) mà ngưỡng MONEY_BLUR_HINT được chọn.
++# Laplacian phụ thuộc cỡ ảnh nên khung UXGA/VGA của kính phải thu nhỏ trước khi so với ngưỡng.
++BLUR_REF_SIDE = 192
++_TOP_LOGPROBS = 5  # nhánh x10 thường chỉ đứng hạng 3 ở token chữ số cuối (đo thật 2026-10-21), 2 là không đủ
++
++
++def blur_score(jpeg: bytes) -> float | None:
++    """Độ nét Laplacian bằng hàm production `image_quality.measure` trên ảnh cạnh dài `BLUR_REF_SIDE`; None nếu không giải mã được."""
++    try:
++        measured = image_quality.measure(resize_jpeg(jpeg, BLUR_REF_SIDE, 90))
++    except Exception:  # noqa: BLE001 - JPEG hỏng/cắt dở: coi như không đo được
++        return None
++    return None if measured is None else measured[0]
++
++
++def _x10(a: str, b: str) -> bool:
++    """Hai nhãn mệnh giá lệch đúng x10 (50 nghìn <-> 500 nghìn, 200 đồng <-> 2 nghìn): số 0 bị cắt mép."""
++    va, vb = LABELS.get(a), LABELS.get(b)
++    return va is not None and vb is not None and max(va, vb) == 10 * min(va, vb)
++
++
++def _label_for_prefix(prefix: str, top1: str) -> str | None:
++    """Nhãn khác `top1` bắt đầu bằng `prefix` (nhánh model suýt chọn). Nhiều nhãn cùng tiền tố ("500" khớp "500 đồng" và
++    "500 nghìn đồng") thì ưu tiên nhãn lệch x10 với top-1, rồi tới thứ tự trong CHOICES."""
++    found = [c for c in CHOICES if c != top1 and c.startswith(prefix)]
++    if not found:
++        return None
++    return next((c for c in found if _x10(top1, c)), found[0])
++
++
++def top_labels(choice: dict, text: str) -> list[tuple[str, float]]:
++    """[(nhãn đã chọn, xác suất), (nhãn thay thế mạnh nhất, xác suất tiền tố)] từ logprobs của lượt chọn nhãn.
++
++    Nhãn thay thế = nhánh rẽ có xác suất lớn nhất: tại token thứ i, token khác `top_logprobs` ghép với phần đã chọn
++    cho tiền tố của một nhãn khác trong CHOICES; xác suất = tích tới i-1 x xác suất token thay thế (cận dưới, phần đuôi
++    nhãn không tính). Không có logprobs -> []; không có nhánh nào hợp lệ -> chỉ top-1.
++    """
++    items = (choice.get("logprobs") or {}).get("content")
++    p1 = prefix_prob(choice, len(text))
++    if not items or p1 is None:
++        return []
++    top, best = [(text, p1)], None
++    pos, cum = 0, 0.0
++    for it in items:
++        if pos >= len(text) or it.get("logprob") is None:
++            break
++        for alt in it.get("top_logprobs") or []:
++            token, lp = alt.get("token", ""), alt.get("logprob")
++            if token == it.get("token") or lp is None:
++                continue
++            label = _label_for_prefix(text[:pos] + token, text)
++            if label is not None and (best is None or cum + lp > best[1]):
++                best = (label, cum + lp)
++        cum += it["logprob"]
++        pos += len(it.get("token", ""))
++    if best is not None:
++        top.append((best[0], math.exp(best[1])))
++    return top
++
++
++def hint(top: list[tuple[str, float]], sharpness: float | None) -> str:
++    """Câu nói khi không đọc chắc, đi từ trên xuống: mờ -> "Giữ yên tay."; "không rõ" hoặc hai nhãn đầu lệch x10
++    (cắt mép) -> lùi ra xa; còn lại -> lại gần. Không đo được độ nét (None) thì bỏ qua luật mờ."""
++    if sharpness is not None and sharpness < config.MONEY_BLUR_HINT:
++        return HOLD_STILL
++    if top and (top[0][0] == UNSURE_LABEL or (len(top) > 1 and _x10(top[0][0], top[1][0]))):
++        return STEP_BACK
++    return COME_CLOSER
++
++
++async def choose_ranked(messages: list[dict]) -> tuple[str, float | None, list[tuple[str, float]]]:
++    """Như `choose` (cùng nhãn, cùng xác suất thô) kèm top-2 nhãn để chọn câu hướng dẫn."""
++    text, choice = await choose_raw(messages, top_logprobs=_TOP_LOGPROBS)
++    return text, prefix_prob(choice, len(text)), top_labels(choice, text)
++
++
++async def read_ranked(image: bytes, min_prob: float) -> tuple[str, list[tuple[str, float]] | None]:
++    """Đọc MỘT khung: (câu nói như `combine`, top-2). Lỗi mạng/model -> (UNSURE, None): không có gì để hướng dẫn, và
++    đọc lại cũng sẽ hỏng y vậy."""
++    try:
++        label, prob, top = await choose_ranked(choice_messages(image))
++    except Exception as exc:  # noqa: BLE001
++        logger.warning("đọc tiền: lỗi %r", exc)
++        return UNSURE, None
++    logger.info("đọc tiền: %s p=%s top=%s", label, prob, top)
++    return combine([(label, prob)], min_prob), top
++
++
+ def say(label: str, prob: float | None, min_prob: float) -> str:
+     """Câu nói cho nhãn: mệnh giá chỉ khi xác suất >= ngưỡng (không có xác suất = không chắc)."""
+     return combine([(label, prob)], min_prob)
+ 
+ 
+ def combine(reads: list[tuple[str, float | None]], min_prob: float) -> str:
+     """Gộp nhãn của nhiều khung (khung đầu = khung chính): nói mệnh giá khi có >= 1 khung chắc
+     (xác suất >= ngưỡng) và KHÔNG khung nào chắc một mệnh giá khác. Đo dev 2026-10-21 (3 khung,
+     ngưỡng 0,98): đúng 59 -> 75 %, sai <= 3 %; trung bình xác suất hay đòi đa số thì từ chối quá nhiều."""
+     sure = {label for label, prob in reads if label in LABELS and prob is not None and prob >= min_prob}
+diff --git a/lanes/ocr_live.py b/lanes/ocr_live.py
+index c73aaf8..58923c6 100644
+--- a/lanes/ocr_live.py
++++ b/lanes/ocr_live.py
+@@ -108,20 +108,26 @@ async def read_image(jpeg: bytes, mode: str, device: str) -> AsyncIterator[str]:
+         reply.append(head)
+         yield head
+     text = "".join(reply).strip()
+     if hedge and digit_probs and min(digit_probs) < config.OCR_DIGIT_HEDGE_PROB:
+         logger.info("đọc chữ: chữ số kém chắc (p min %.3f) -> cảnh báo", min(digit_probs))
+         yield " " + DIGIT_HEDGE
+     if text and mode != "money":
+         _remember(device, text)
+ 
+ 
++async def read_money_frame(jpeg: bytes, min_prob: float) -> tuple[str, list[tuple[str, float]] | None]:
++    """Đọc tiền đúng MỘT khung (cỡ ảnh như `read_image`): (câu nói, top-2 nhãn; None khi lỗi mạng/model)."""
++    image = await asyncio.to_thread(resize_jpeg, jpeg, config.LLM_OCR_IMAGE_MAX_SIDE, 90)
++    return await read_money.read_ranked(image, min_prob)
++
++
+ def spoken(jpeg: bytes, mode: str, device: str) -> AsyncIterator[str]:
+
+exec
+/bin/bash -lc "cat vh-ocr/docs/superpowers/specs/2026-10-21-doc-tien-3-khung-design.md; sed -n '241,520p' docs/superpowers/plans/sdd-od/money-v2.diff" in /workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system
+ succeeded in 0ms:
+cat: vh-ocr/docs/superpowers/specs/2026-10-21-doc-tien-3-khung-design.md: No such file or directory
+     """`read_image` với câu đầu cắt ngắn (<= 8 từ) để TTS đọc ngay, như làn chat.
+ 
+     Gemma ra token đầu sau ~0,2 s nhưng câu đầu của một trang sách thường dài; TTS chỉ
+     bắt đầu khi gặp dấu hết câu nên phải chờ cả câu dài sinh xong.
+     """
+     return general.short_first_sentence(read_image(jpeg, mode, device))
+ 
+ 
+ def _width(jpeg: bytes) -> int:
+@@ -183,31 +189,73 @@ async def speak_ws(ws: WebSocket, text) -> None:
+ 
+     Trên `/v2/session` giữ khoá audio của phiên (`ws.audio_lock`) trọn câu: kết quả hành động / câu trả lời
+     lượt khác xếp hàng sau, không xen vào audio đọc chữ.
+     """
+     async with getattr(ws, "audio_lock", None) or contextlib.nullcontext():
+         async with contextlib.aclosing(speech.adpcm_stream(text)) as chunks:
+             async for chunk in chunks:
+                 await ws.send_bytes(protocol.audio(chunk))
+ 
+ 
++async def _money_retry(ws: WebSocket, box: _Mailbox, session: LiveSession) -> None:
++    """Đọc tiền lại MỘT lần sau câu hướng dẫn (final_router._money): bỏ khung trong MONEY_RETRY_SETTLE_S đầu cho người
++    dùng chỉnh tay, lấy khung đầu tiên đủ nét (độ nét >= MONEY_BLUR_HINT); hết MONEY_RETRY_TIMEOUT_S thì khung nét nhất
++    đã thấy; không có khung nào thì nói "vẫn chưa đọc chắc". Không bao giờ đọc lần thứ hai (người khiếm thị không kẹt vòng lặp)."""
++    started = time.monotonic()
++    settle_end, deadline = started + config.MONEY_RETRY_SETTLE_S, started + config.MONEY_RETRY_TIMEOUT_S
++    await ws.send_text(protocol.cam("vga", 5))
++    best, best_score = None, -1.0
++    while not box.closed and not session.closed.is_set():
++        left = deadline - time.monotonic()
++        if left <= 0:
++            break
++        frame = await box.take(min(0.5, left))
++        if frame is None or time.monotonic() < settle_end:
++            continue  # chưa có khung, hoặc khung chụp lúc người dùng còn đang chỉnh tay
++        score = await asyncio.to_thread(read_money.blur_score, frame)
++        if score is None:
++            continue
++        if score > best_score:
++            best, best_score = frame, score
++        if score >= config.MONEY_BLUR_HINT:
++            break
++    if box.closed or session.closed.is_set():
++        return
++    sentence = read_money.RETRY_FAILED
++    if best is not None:
++        logger.info("đọc tiền đọc lại: dùng khung nét %.0f (ngưỡng %.0f) sau %.1fs", best_score,
++                    config.MONEY_BLUR_HINT, time.monotonic() - started)
++        said, _ = await read_money_frame(best, config.MONEY_RETRY_PROB)
++        if said in read_money.LABELS:
++            sentence = said
++    else:
++        logger.info("đọc tiền đọc lại: không có khung nào trong %.1fs", config.MONEY_RETRY_TIMEOUT_S)
++    if box.closed or session.closed.is_set():
++        return
++    await speak_ws(ws, [sentence])
++    await ws.send_text(protocol.end())
++
++
+ async def run(ws: WebSocket, session: LiveSession) -> None:
+     mode = session.params.get("mode", "read")
+     box = _Mailbox()
+     receiver = asyncio.create_task(receive_frames(ws, box, session))
+     aligner = text_align.Aligner()
+     det = text_align.detector()
+     started = time.monotonic()
+     deadline = started + config.OCR_ALIGN_TIMEOUT_S
+     best_vga: bytes | None = None
+     debug = getattr(ws, "debug", None)  # chỉ có trên LiveSocket của phiên bật debug (demo)
+     try:
++        if mode == "money_retry":
++            await _money_retry(ws, box, session)
++            return
+         await ws.send_text(protocol.cam("vga", 5))
+         capture_sent = False
+         capture_deadline = 0.0
+         hi_res: bytes | None = None
+         while not box.closed and not session.closed.is_set():
+             now = time.monotonic()
+             if not capture_sent and now >= deadline:
+                 logger.info("OCR live: hết trần %.0fs, chụp luôn", config.OCR_ALIGN_TIMEOUT_S)
+                 capture_sent, capture_deadline = True, now + 3.0
+                 await ws.send_text(protocol.capture("uxga"))
+diff --git a/pipeline/final_router.py b/pipeline/final_router.py
+index 5b22800..85715ce 100644
+--- a/pipeline/final_router.py
++++ b/pipeline/final_router.py
+@@ -4,20 +4,21 @@ Phục vụ cả `/v2/turn` lẫn `WS /v2/session` và `/process` (firmware cũ,
+ Với `/process` thì `ctx.single_shot = True`: không có WebSocket nào để mở nên làn B
+ đọc thẳng ảnh buffer và làn C chỉ gửi lệnh điện thoại + câu xác nhận.
+ """
+ 
+ import asyncio
+ import logging
+ from collections.abc import AsyncIterator, Callable
+ 
+ import config
+ from handlers import phone as phone_handlers
++from handlers import read_money
+ from lanes import general, ocr_live, phone
+ from live import call_bridge
+ from live.session import sessions
+ from models import search
+ from pipeline import device_ctx, image_quality, pending_action, speech
+ from pipeline.image_buffer import image_buffer
+ from pipeline.intent_early import Decision
+ from pipeline.reply import Reply
+ 
+ logger = logging.getLogger("blind_assist")
+@@ -92,21 +93,21 @@ class TurnContext:
+         if self.spec_answer is not None and not keep_answer:
+             self.spec_answer.cancel()
+         if self.spec_params is not None and not keep_params:
+             self.spec_params[1].cancel()
+ 
+ FILLER_SEARCHING = "Để tôi tra cứu."
+ 
+ # Chỉ gặp ở `/process` (firmware cũ, không có WS): bật cảnh báo vật cản liên tục
+ # cần kênh realtime nên nói thẳng là chưa làm được, thay vì nói "đã bật" rồi im.
+ NO_LIVE_MESSAGE = "Kính bản này chưa hỗ trợ cảnh báo liên tục."
+-STATIC_SPEECH: tuple[str, ...] = (NO_LIVE_MESSAGE,)
++STATIC_SPEECH: tuple[str, ...] = (NO_LIVE_MESSAGE, *read_money.STATIC_SPEECH)
+ 
+ 
+ def _sync(ctx: TurnContext, agen: AsyncIterator[str]):
+     return speech.sync_iter(agen, ctx.loop)
+ 
+ 
+ async def _lane_a(ctx: TurnContext, d: Decision, text: str) -> Reply:
+     if d.intent == "ocr":  # reread
+         last = ocr_live.last_text(ctx.device)
+         if not last:
+@@ -161,39 +162,57 @@ async def _web_answer(d: Decision, text: str) -> AsyncIterator[str]:
+ 
+ 
+ async def _lane_b(ctx: TurnContext, d: Decision, text: str) -> Reply:
+     entry = await ctx.image()
+     if d.intent == "find":
+         # Chưa có object detector: một lần, Gemma đọc ảnh buffer.
+         return await _lane_a(ctx, d, text)
+     if entry is None:
+         return Reply(cues=["no_image"], intent=d.intent, lane="B")
+     if d.intent == "money":
++        if config.MONEY_RETRY and config.MONEY_MODE == "choice":
++            return await _money(ctx, entry.jpeg)
+         # Tờ tiền ít chữ, bộ dò chữ không căn khung tốt -> đọc luôn ảnh buffer UXGA.
+         return Reply(speech=_sync(ctx, ocr_live.spoken(entry.jpeg, "money", ctx.device)),
+                      intent="money", lane="B")
+ 
+     mode = d.ocr_mode if d.ocr_mode in ("summarize", "raw", "specialized") else "read"
+     if ctx.single_shot:  # không có WS để hướng dẫn căn khung: đọc thẳng ảnh đã có
+         return Reply(speech=_sync(ctx, ocr_live.spoken(entry.jpeg, mode, ctx.device)),
+                      intent="ocr", lane="B")
+     if config.OCR_ACCEPT_BUFFER:
+         task = ctx.prewarmer.assess_buffer()
+         problem, boxes = await task if task is not None else ("look_around", [])
+         logger.info("làn B: ảnh buffer %s (%d hộp chữ)", problem or "ĐẠT -> đọc ngay", len(boxes))
+         if problem is None:
+             return Reply(speech=_sync(ctx, ocr_live.spoken(entry.jpeg, mode, ctx.device)),
+                          intent="ocr", lane="B")
+     session = ctx.prewarmer.session("ocr", {"mode": mode, "fallback_jpeg": entry.jpeg})
+     return Reply(cues=["ocr_start"], live="ocr", live_token=session.token, intent="ocr", lane="B")
+ 
+ 
++async def _money(ctx: TurnContext, jpeg: bytes) -> Reply:
++    """Đọc tiền v2: đọc chặt 1 khung (ảnh buffer UXGA, τ MONEY_MIN_PROB). Chắc -> nói mệnh giá, trễ như cũ. Không chắc ->
++    nói MỘT câu hướng dẫn (read_money.hint) và, có WS, mở phiên live `money_retry` đọc lại đúng một lần từ khung mới
++    (lanes/ocr_live._money_retry). Phiên mang mode "ocr" để nav live được tạm nhường chỗ rồi dựng lại như mọi OCR live.
++    "Không có tiền" và lỗi mạng giữ câu cũ, không đọc lại."""
++    sentence, top = await ocr_live.read_money_frame(jpeg, config.MONEY_MIN_PROB)
++    if sentence != read_money.UNSURE or top is None:
++        return Reply(speech=[sentence], intent="money", lane="B")
++    line = read_money.hint(top, await asyncio.to_thread(read_money.blur_score, jpeg))
++    logger.info("làn B tiền: chưa chắc (top=%s) -> %r%s", top, line, "" if not ctx.single_shot else " (không WS, không đọc lại)")
++    if ctx.single_shot:  # /process: không có WS để lấy khung mới; người dùng tự bấm lại
++        return Reply(speech=[line], intent="money", lane="B")
++    session = ctx.prewarmer.session("ocr", {"mode": "money_retry"})
++    return Reply(speech=[line], live="ocr", live_token=session.token, intent="money", lane="B")
++
++
+ async def _params(ctx: TurnContext, intent: str, text: str) -> dict:
+     spec = ctx.spec_params
+     if spec is not None and spec[0] == (intent, text) and not spec[1].cancelled():
+         ctx.spec_params = None
+         try:
+             return await spec[1]
+         except Exception:  # noqa: BLE001
+             pass
+     return await phone.extract(intent, text)
+ 
+diff --git a/tests/test_money_retry.py b/tests/test_money_retry.py
+new file mode 100644
+index 0000000..b4dc260
+--- /dev/null
++++ b/tests/test_money_retry.py
+@@ -0,0 +1,362 @@
++"""Đọc tiền v2 (2026-10-21): đọc chặt 1 khung, không chắc thì nói hướng dẫn + đọc lại 1 lần từ khung live."""
++
++import asyncio
++import io
++import json
++import math
++import time
++from types import SimpleNamespace
++
++import numpy as np
++import pytest
++from PIL import Image
++
++import config
++from handlers import read_money
++from lanes import ocr_live
++from live import protocol
++from live.session import LiveSession
++from live.ws_adapter import LiveSocket
++from models import llm
++from pipeline import final_router
++from pipeline.intent_early import Decision
++
++STILL, BACK, CLOSER = "Giữ yên tay.", "Lùi ra xa một chút, để cả tờ tiền nằm giữa.", "Đưa tờ tiền lại gần hơn một chút."
++SHARP, BLURRY = 5000.0, 10.0  # quanh MONEY_BLUR_HINT
++
++
++def _jpeg(sharp: bool, w=192, h=144) -> bytes:
++    rng = np.random.default_rng(1)
++    arr = rng.integers(0, 255, (h, w), dtype=np.uint8) if sharp else np.full((h, w), 128, np.uint8)
++    out = io.BytesIO()
++    Image.fromarray(arr).convert("RGB").save(out, format="JPEG", quality=90)
++    return out.getvalue()
++
++
++# ── câu hướng dẫn: 3 nhóm + thứ tự ưu tiên ────────────────────────────────────────────────────
++@pytest.mark.parametrize("top,sharp,expected", [
++    ([("50 nghìn đồng", 0.9)], BLURRY, STILL),                                   # mờ
++    ([("50 nghìn đồng", 0.9)], None, CLOSER),                                    # không đo được độ nét: không đoán là mờ
++    ([("50 nghìn đồng", 0.9)], SHARP, CLOSER),                                   # còn lại
++    ([("không rõ", 0.8), ("50 nghìn đồng", 0.1)], SHARP, BACK),                  # "không rõ"
++    ([("không rõ", 0.8)], SHARP, BACK),                                          # chỉ có top-1
++    ([("50 nghìn đồng", 0.6), ("500 nghìn đồng", 0.4)], SHARP, BACK),            # lệch x10
++    ([("500 nghìn đồng", 0.6), ("50 nghìn đồng", 0.4)], SHARP, BACK),
++    ([("10 nghìn đồng", 0.6), ("100 nghìn đồng", 0.4)], SHARP, BACK),
++    ([("200 đồng", 0.6), ("2 nghìn đồng", 0.4)], SHARP, BACK),
++    ([("2 nghìn đồng", 0.6), ("200 đồng", 0.4)], SHARP, BACK),
++    ([("50 nghìn đồng", 0.6), ("20 nghìn đồng", 0.4)], SHARP, CLOSER),           # hai mệnh giá khác, không x10
++    ([("50 nghìn đồng", 0.6), ("5 nghìn đồng", 0.4)], SHARP, BACK),              # 5 nghìn <-> 50 nghìn cũng x10
++    ([("50 nghìn đồng", 0.9)], BLURRY, STILL),
++    ([("không rõ", 0.8)], BLURRY, STILL),                                        # mờ thắng "không rõ"
++    ([("50 nghìn đồng", 0.6), ("500 nghìn đồng", 0.4)], BLURRY, STILL),          # mờ thắng x10
++    ([], SHARP, CLOSER),
++])
++def test_hint(top, sharp, expected):
++    assert read_money.hint(top, sharp) == expected
++
++
++def test_hint_blur_threshold_is_config(monkeypatch):
++    monkeypatch.setattr(config, "MONEY_BLUR_HINT", 100.0)
++    assert read_money.hint([("50 nghìn đồng", 0.9)], 99.0) == STILL
++    assert read_money.hint([("50 nghìn đồng", 0.9)], 100.0) == CLOSER
++
++
++# ── top-2 từ logprobs ────────────────────────────────────────────────────────────────────────
++def _choice(text: str, steps: list[tuple[str, float, list[tuple[str, float]]]]) -> dict:
++    """steps: (token, logprob, [(token thay thế, logprob)]) — token ghép lại phải bằng `text` (+ token kết)."""
++    return {"message": {"content": text}, "logprobs": {"content": [
++        {"token": t, "logprob": lp, "top_logprobs": [{"token": t, "logprob": lp}, *({"token": a, "logprob": b} for a, b in alts)]}
++        for t, lp, alts in steps]}}
++
++
++def test_top_labels_finds_x10_runner_up_at_the_zero_digit():
++    ch = _choice("50 nghìn đồng", [("5", 0.0, []), ("0", math.log(0.7), [("0", math.log(0.7))]), (" ngh", math.log(0.9), [("0", math.log(0.2))]),
++                                    ("ìn", 0.0, []), (" đồng", 0.0, [])])
++    # Nhánh khác ở token thứ 3: "5","0","0" -> tiền tố "500" khớp "500 đồng"/"500 nghìn đồng"; ưu tiên nhãn lệch x10 với top-1.
++    top = read_money.top_labels(ch, "50 nghìn đồng")
++    assert top[0][0] == "50 nghìn đồng" and abs(top[0][1] - 0.7 * 0.9) < 1e-9
++    assert top[1][0] == "500 nghìn đồng" and abs(top[1][1] - 0.7 * 0.2) < 1e-9
++
++
++def test_top_labels_runner_up_unsure_label():
++    ch = _choice("2 nghìn đồng", [("2", math.log(0.6), [("không", math.log(0.35))]), (" ngh", 0.0, []), ("ìn", 0.0, []), (" đồng", 0.0, [])])
++    top = read_money.top_labels(ch, "2 nghìn đồng")
+
+exec
+/bin/bash -lc "cat docs/superpowers/specs/2026-10-21-doc-tien-3-khung-design.md; sed -n '521,1000p' docs/superpowers/plans/sdd-od/money-v2.diff" in /workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system
+ succeeded in 0ms:
+# Đọc tiền — đọc chặt 1 khung, không chắc thì hướng dẫn và đọc lại (thiết kế v2)
+
+Ngày: 2026-10-21 · Trạng thái: **ĐÃ DUYỆT 2026-10-21** (người dùng: "Đồng ý, sau khi hoàn tất nhớ thực hiện kiểm thử và ghi chép lại") · Quyết định (b) trong `docs/2026-10-21-ban-giao-cai-tien-ai.md`.
+Số đo gốc: `evaluations/reports/MONEY_OCR_CAI_TIEN.md`. Code đọc theo nhãn đã có trên nhánh `ocr-tien` (`handlers/read_money.py`).
+
+**v1 (3 khung song song) bị người dùng bác:** chờ thêm khung VGA làm **mọi** lượt chậm thêm (ước ≤ 600 ms).
+**Hướng người dùng chốt [ND]:**
+- không tăng trễ;
+- ưu tiên **giảm đọc sai**, chấp nhận từ chối nhiều hơn;
+- khi không đọc được thì **đưa yêu cầu cụ thể** ("xa ra", "lại gần", "giữ yên").
+
+## 1. Ý chính
+
+Lượt đọc đầu chỉ dùng **1 khung** (ảnh buffer UXGA có sẵn lúc bấm nút), nên **trễ y như hiện tại**. Ngưỡng xác suất nâng từ 0,995 lên **0,999**, để nói sai ít hơn.
+Chỉ lượt **không chắc** mới làm thêm: nói câu hướng dẫn, mở live lấy 1 khung mới, đọc lại **một lần**. Lượt đó vốn đã là lượt "không đọc
+được", nên không lượt đọc thành công nào bị chậm đi.
+
+## 2. Số đo (dev chọn, test chạy một lần; dữ liệu `vnd_kaggle`, khung "đọc lại" = khung i+3 của cùng video)
+
+| Cấu hình — **test**, 330 ảnh có tiền | Nói sai | Đúng | Từ chối | Bịa (ảnh không tiền) | Lượt phải đọc lại | Trễ lượt đọc thành công |
+|---|---|---|---|---|---|---|
+| Hiện tại (nhánh `ocr-tien`): 1 khung, τ 0,995 | 3,6 % (12) | 57,0 % | 39,4 % | 0 | 0 | như cũ |
+| 1 khung, τ 0,999, không đọc lại | **2,1 %** (7) | 49,4 % | 48,5 % | 0 | 0 | như cũ |
+| **1 khung τ 0,999 + đọc lại 1 lần τ 0,999** | 2,7 % (9) | **65,8 %** | 31,5 % | 0 | 53 % | **như cũ** |
+| v1: 3 khung song song τ 0,98 (để so) | 1,8 % | 77,3 % | 20,9 % | 0 | 0 | +~0,5 s mọi lượt |
+
+Dev (165 ảnh có tiền), cấu hình chọn: sai 2,4 %, đúng 65,5 %, từ chối 32,1 %. Chọn trên dev theo luật "sai ≤ 2,5 % (dev), tối đa đúng".
+Số test **khớp** dev.
+
+**Đọc đúng giới hạn:**
+- Khung đọc lại trong bàn đo **không** phải khung sau khi người dùng làm theo hướng dẫn. Nó chỉ là khung kề của cùng video webcam. Tỉ lệ đúng
+  65,8 % vì vậy là **cận dưới**: người làm theo "lùi ra xa / giữ yên" thì khung sau tốt hơn khung kề ngẫu nhiên.
+- Đọc lại làm số ca nói sai tăng từ 7 lên 9 (thêm 1 lượt đọc = thêm 1 cơ hội sai). Muốn chặt hơn nữa thì lần đọc lại dùng τ 0,9995: đổi ít đúng
+  lấy ít sai (chưa đo, cần chạy dev).
+- n nhỏ: 1 ca = 0,3 điểm trên test, 0,6 điểm trên dev. Chạy lại cùng ảnh lệch ±2 ca do server không tất định.
+
+## 3. Chọn câu hướng dẫn (không tốn thêm lượt gọi model)
+
+Nguyên nhân từ chối trên dev (82 ảnh, τ 0,999):
+
+| Nhóm | Số ảnh |
+|---|---|
+| Đúng mệnh giá nhưng chưa đủ chắc | 36 |
+| Model chọn "không rõ" | 24 |
+| Ra mệnh giá khác | 18 |
+| Lệch ×10 (số 0 bị cắt mép) | 4 |
+
+Ảnh bị từ chối mờ hơn ảnh đọc đúng (độ nét Laplacian trung vị 363 so với 485).
+
+Luật chọn câu, đi từ trên xuống, chỉ dùng tín hiệu đã có sẵn: xác suất top-k của lượt chọn nhãn và độ nét mà `pipeline/image_quality.py` đã tính.
+1. Ảnh mờ (Laplacian dưới ngưỡng, chọn trên dev) → **"Giữ yên tay."** (clip `hold_still` có sẵn "Giữ yên.").
+2. Hai nhãn đầu lệch ×10 (50.000 ↔ 500.000, 10.000 ↔ 100.000…), hoặc nhãn "không rõ" → **"Lùi ra xa một chút, để cả tờ tiền nằm giữa."** (cắt mép là gốc lỗi chính).
+3. Còn lại → **"Đưa tờ tiền lại gần hơn một chút."**
+   - Lưu ý: trên ảnh webcam 192×144, nhóm "đúng nhưng chưa đủ chắc" phần nhiều do ảnh nhỏ. Kính thật gửi tới 1600 px, nên có thể "lại gần" ít khi cần hơn.
+
+**Không đo được trên bàn hiện có:** việc chọn câu nào đúng hơn phụ thuộc người dùng làm theo hướng dẫn, mà `vnd_kaggle` là video tĩnh. Phải kiểm bằng
+thử thật trên kính (mục 5).
+
+## 4. Luồng giao thức (không đổi firmware)
+
+Firmware: sau `reply_end` của lượt có `reply.live = "ocr"`, kính làm đúng lệnh `cam` / `capture` / `cue` / `end` (`docs/FIRMWARE_ENDPOINTS.md` §6).
+Không thêm khung mới, không thêm clip.
+
+```
+-- đọc chắc (~49 %): y như hiện tại
+kính   turn_start ; 0x01 <JPEG UXGA buffer> ; 0x03 <ADPCM>... ; turn_end
+server reply(live:null) ; 0x02... ("Tờ năm mươi nghìn.") ; reply_end
+
+-- không chắc (~50 %): hướng dẫn + đọc lại một lần
+server reply(live:"ocr") ; 0x02... ("Lùi ra xa một chút, để cả tờ tiền nằm giữa.") ; reply_end ; {"t":"cam","size":"vga","fps":5,"quality":12}
+kính   0x04 <VGA> ...
+server (bỏ khung trong 1,0 s đầu cho người dùng chỉnh tay; lấy khung VGA đầu tiên sau đó có độ nét đạt) -> read_choice([khung])
+server 0x02... ("Tờ năm mươi nghìn." | "Tôi vẫn chưa đọc chắc được tờ này.") ; {"t":"end"}   (nói rồi mới end — như live OCR)
+```
+
+- Hạn chờ live tối đa 3 s. Hết hạn thì nói "Tôi vẫn chưa đọc chắc được tờ này." rồi `end`. `turn_start` mới hoặc socket đóng thì huỷ (giống live OCR).
+- Đọc lại **chỉ một lần**, để người khiếm thị không kẹt vòng lặp.
+- Không có WS (`ctx.single_shot`): đọc 1 khung τ 0,999. Không chắc thì nói câu hướng dẫn và kết thúc, người dùng tự bấm lại.
+- Đang chỉ đường: live tạm thay nav như live OCR; xong thì dựng lại nav.
+- Thời gian 1,0 s chờ chỉnh tay là tham số (`MONEY_RETRY_SETTLE_S`), chỉnh khi thử thật.
+
+## 5. Đo trước khi bật
+
+1. **Offline (đã làm, mục 2):** τ chọn trên dev, test một lần.
+2. **Ngưỡng độ nét cho luật 1:** chọn trên dev (ảnh bị từ chối vì mờ so với ảnh đọc đúng), không đụng test.
+3. **Thử thật trên kính, bắt buộc trước khi bật mặc định:** 10 tờ × 3 tư thế khó (lệch mép, xa, rung tay).
+   - Đo % đọc được sau 1 lần hướng dẫn, % nói sai, thời gian của lượt có đọc lại.
+   - Lượt đọc thành công ngay phải **không** chậm hơn bản hiện tại (so p90 cùng máy).
+
+## 6. Phạm vi code (khi được duyệt)
+
+- `config.py`:
+  - `MONEY_MIN_PROB` 0,995 → **0,999**;
+  - `MONEY_RETRY=1` (0 = tắt, hành vi hiện tại);
+  - `MONEY_RETRY_PROB=0.999`, `MONEY_RETRY_SETTLE_S=1.0`, `MONEY_RETRY_TIMEOUT_S=3.0`, `MONEY_BLUR_HINT`.
+- `handlers/read_money.py`: `choose()` trả thêm top-2 nhãn để chọn câu hướng dẫn; thêm `hint(choice, sharpness) -> str`.
+- `pipeline/final_router.py::_lane_b`: `money` không chắc và có WS → `Reply(live="ocr", speech=hint)` + phiên live chế độ `money_retry`.
+- `lanes/ocr_live.py::run`: nhánh `money_retry` (bỏ khung lúc chỉnh tay, lấy 1 khung nét, đọc lại, `end`).
+- `docs/FIRMWARE_ENDPOINTS.md`: thêm chuỗi mẫu "đọc tiền đọc lại". Khung giao thức không đổi.
+- Test: luật `hint` theo 3 nhóm; τ; luồng live đọc lại (khung giả); huỷ khi `turn_start`.
+
+## 7. Không làm
+Đổi firmware hoặc clip; 3 khung song song (v1); bộ dò tờ tiền; vòng đọc lại thứ hai.
++    assert [t[0] for t in top] == ["2 nghìn đồng", "không rõ"]
++
++
++def test_top_labels_without_alternatives_or_logprobs_is_top1_only():
++    ch = _choice("không rõ", [("không", 0.0, []), (" rõ", 0.0, [])])
++    assert read_money.top_labels(ch, "không rõ") == [("không rõ", 1.0)]
++    assert read_money.top_labels({"message": {"content": "không rõ"}}, "không rõ") == []
++
++
++# ── ngưỡng ───────────────────────────────────────────────────────────────────────────────────
++def test_default_min_prob_is_0_999():
++    assert config.MONEY_MIN_PROB == 0.999 and config.MONEY_RETRY_PROB == 0.999
++    assert read_money.say("50 nghìn đồng", 0.998, config.MONEY_MIN_PROB) == read_money.UNSURE
++    assert read_money.say("50 nghìn đồng", 0.9995, config.MONEY_MIN_PROB) == "50 nghìn đồng"
++
++
++def test_retry_defaults():
++    assert config.MONEY_RETRY is True
++    assert config.MONEY_RETRY_SETTLE_S == 1.0 and config.MONEY_RETRY_TIMEOUT_S == 3.0
++    assert config.MONEY_BLUR_HINT > 0
++
++
++# ── bộ định tuyến làn B ──────────────────────────────────────────────────────────────────────
++class _Warmer:
++    def __init__(self):
++        self.calls = []
++
++    def session(self, mode, params=None):
++        self.calls.append((mode, params))
++        return SimpleNamespace(token="tok-1")
++
++
++def _ctx(single_shot=False):
++    async def image():
++        return SimpleNamespace(jpeg=_jpeg(sharp=True))
++
++    return SimpleNamespace(device="dev-money", single_shot=single_shot, prewarmer=_Warmer(), image=image)
++
++
++def _fake_choose(label, prob, top=None):
++    calls = []
++
++    async def fake(messages):
++        calls.append(messages)
++        return label, prob, top if top is not None else [(label, prob)]
++
++    return fake, calls
++
++
++def _route(ctx, monkeypatch, label, prob, top=None):
++    fake, calls = _fake_choose(label, prob, top)
++    monkeypatch.setattr(read_money, "choose_ranked", fake)
++    reply = asyncio.run(final_router._lane_b(ctx, Decision("money"), "đọc tiền"))
++    return reply, calls
++
++
++def test_sure_read_speaks_denomination_without_live(monkeypatch):
++    ctx = _ctx()
++    reply, calls = _route(ctx, monkeypatch, "50 nghìn đồng", 0.9995)
++    assert list(reply.speech) == ["50 nghìn đồng"] and reply.live is None and ctx.prewarmer.calls == []
++    assert len(calls) == 1  # đúng 1 lượt Gemma
++
++
++def test_unsure_read_speaks_hint_and_opens_money_retry_live(monkeypatch):
++    ctx = _ctx()
++    reply, calls = _route(ctx, monkeypatch, "50 nghìn đồng", 0.998, [("50 nghìn đồng", 0.998), ("500 nghìn đồng", 0.001)])
++    assert list(reply.speech) == [BACK]
++    assert reply.live == "ocr" and reply.live_token == "tok-1" and reply.intent == "money" and reply.lane == "B"
++    assert ctx.prewarmer.calls == [("ocr", {"mode": "money_retry"})]  # phiên mode "ocr" để nav tạm nhường chỗ như OCR live
++    assert len(calls) == 1
++
++
++def test_unsure_blurry_frame_says_hold_still(monkeypatch):
++    ctx = _ctx()
++
++    async def blurry():
++        return SimpleNamespace(jpeg=_jpeg(sharp=False))
++
++    ctx.image = blurry
++    reply, _ = _route(ctx, monkeypatch, "50 nghìn đồng", 0.5)
++    assert list(reply.speech) == [STILL] and reply.live == "ocr"
++
++
++def test_unsure_single_shot_speaks_hint_without_live(monkeypatch):
++    ctx = _ctx(single_shot=True)
++    reply, _ = _route(ctx, monkeypatch, "không rõ", 0.9)
++    assert list(reply.speech) == [BACK] and reply.live is None and ctx.prewarmer.calls == []
++
++
++def test_retry_off_keeps_old_behaviour_and_never_opens_live(monkeypatch):
++    monkeypatch.setattr(config, "MONEY_RETRY", False)
++    ctx = _ctx()
++    old = []
++
++    def spoken(jpeg, mode, device):  # đường cũ: ocr_live.spoken(entry.jpeg, "money", ...)
++        old.append(mode)
++        return ["ĐƯỜNG CŨ"]
++
++    async def boom(messages):
++        raise AssertionError("MONEY_RETRY=0 không được đi đường mới")
++
++    monkeypatch.setattr(ocr_live, "spoken", spoken)
++    monkeypatch.setattr(read_money, "choose_ranked", boom)
++    monkeypatch.setattr(final_router, "_sync", lambda ctx, agen: agen)  # SyncIter cần loop của lượt thật
++    reply = asyncio.run(final_router._lane_b(ctx, Decision("money"), "đọc tiền"))
++    assert reply.live is None and ctx.prewarmer.calls == [] and reply.speech == ["ĐƯỜNG CŨ"] and old == ["money"]
++
++
++def test_no_money_and_network_error_do_not_retry(monkeypatch):
++    ctx = _ctx()
++    reply, _ = _route(ctx, monkeypatch, "không có tiền", 0.9)
++    assert list(reply.speech) == [read_money.NO_MONEY] and reply.live is None
++
++    async def broken(messages):
++        raise llm.LLMError("mất mạng")
++
++    monkeypatch.setattr(read_money, "choose_ranked", broken)
++    reply = asyncio.run(final_router._lane_b(ctx, Decision("money"), "đọc tiền"))
++    assert list(reply.speech) == [read_money.UNSURE] and reply.live is None
++
++
++def test_hint_sentences_are_prerendered():
++    for line in (STILL, BACK, CLOSER, read_money.RETRY_FAILED):
++        assert line in final_router.STATIC_SPEECH
++
++
++# ── phiên live money_retry ───────────────────────────────────────────────────────────────────
++class _Box:
++    """Socket giả: ghi lại khung văn bản và câu nói; khung ảnh đẩy vào qua feed_frame."""
++
++    def __init__(self, monkeypatch):
++        self.texts, self.said = [], []
++
++        async def send_text(s):
++            self.texts.append(json.loads(s))
++
++        async def send_bytes(b):
++            pass
++
++        async def speak(ws, text):
++            self.said.append("".join(text))
++
++        monkeypatch.setattr(ocr_live, "speak_ws", speak)
++        self.ws = LiveSocket(send_text, send_bytes)
++        self.session = LiveSession("tok", "dev-money", "ocr", {"mode": "money_retry"})
++
++    def types(self):
++        return [t["t"] for t in self.texts]
++
++
++def _fast(monkeypatch, settle=0.3, timeout=1.5):
++    monkeypatch.setattr(config, "MONEY_RETRY_SETTLE_S", settle)
++    monkeypatch.setattr(config, "MONEY_RETRY_TIMEOUT_S", timeout)
++    monkeypatch.setattr(config, "MONEY_BLUR_HINT", 100.0)
++    monkeypatch.setattr(config, "LIVE_MAX_FPS", 0)
++
++
++def _patch_read(monkeypatch, label="50 nghìn đồng", prob=0.9999, seen=None):
++    async def fake(messages):
++        if seen is not None:
++            seen.append(messages)
++        return label, prob, [(label, prob)]
++
++    monkeypatch.setattr(read_money, "choose_ranked", fake)
++
++
++async def _drive(box, script):
++    """script: [(giây chờ, jpeg)] — đẩy khung vào socket rồi chạy runner tới hết."""
++    task = asyncio.create_task(ocr_live.run(box.ws, box.session))
++
++    async def feed():
++        for wait, jpeg in script:
++            await asyncio.sleep(wait)
++            box.ws.feed_frame(jpeg)
++
++    await asyncio.gather(task, feed())
++
++
++def test_money_retry_drops_settle_frames_reads_first_sharp_one_and_ends(monkeypatch):
++    _fast(monkeypatch)
++    box, seen = _Box(monkeypatch), []
++    _patch_read(monkeypatch, seen=seen)
++    sharp_early = _jpeg(True, 64, 48)   # trong 0,3 s đầu: phải bị bỏ dù nét
++    sharp_late = _jpeg(True, 192, 144)
++    asyncio.run(_drive(box, [(0.05, sharp_early), (0.4, _jpeg(False)), (0.1, sharp_late)]))
++    assert box.texts[0] == json.loads(protocol.cam("vga", 5))
++    assert box.types() == ["cam", "end"] and box.said == ["50 nghìn đồng"]
++    assert len(seen) == 1  # đúng 1 lượt Gemma (chỉ đọc 1 lần)
++
++
++def test_money_retry_frame_used_is_the_first_sharp_after_settle(monkeypatch):
++    _fast(monkeypatch)
++    box = _Box(monkeypatch)
++    used = []
++
++    async def fake_frame(jpeg, min_prob):
++        used.append((len(jpeg), min_prob))
++        return "50 nghìn đồng", [("50 nghìn đồng", 1.0)]
++
++    monkeypatch.setattr(ocr_live, "read_money_frame", fake_frame)
++    early, late = _jpeg(True, 64, 48), _jpeg(True, 192, 144)
++    asyncio.run(_drive(box, [(0.05, early), (0.4, _jpeg(False)), (0.1, late)]))
++    assert used == [(len(late), config.MONEY_RETRY_PROB)]  # bỏ khung sớm + khung mờ, đọc khung nét đầu tiên, ngưỡng MONEY_RETRY_PROB
++    assert box.said == ["50 nghìn đồng"] and box.types() == ["cam", "end"]
++
++
++def test_money_retry_timeout_takes_sharpest_seen(monkeypatch):
++    _fast(monkeypatch, settle=0.1, timeout=0.8)
++    monkeypatch.setattr(config, "MONEY_BLUR_HINT", 10 ** 9)  # không khung nào đạt -> hết hạn lấy khung nét nhất
++    box, used = _Box(monkeypatch), []
++
++    async def fake_frame(jpeg, min_prob):
++        used.append(jpeg)
++        return "không rõ", [("không rõ", 1.0)]
++
++    monkeypatch.setattr(ocr_live, "read_money_frame", fake_frame)
++    flat, noisy = _jpeg(False), _jpeg(True)
++    t = time.monotonic()
++    asyncio.run(_drive(box, [(0.2, noisy), (0.1, flat)]))
++    assert used == [noisy] and time.monotonic() - t < 2.0
++    assert box.said == [read_money.RETRY_FAILED] and box.types() == ["cam", "end"]
++
++
++def test_money_retry_no_frame_in_time_says_still_unsure(monkeypatch):
++    _fast(monkeypatch, settle=0.1, timeout=0.4)
++    box = _Box(monkeypatch)
++
++    async def boom(jpeg, min_prob):
++        raise AssertionError("không có khung thì không đọc")
++
++    monkeypatch.setattr(ocr_live, "read_money_frame", boom)
++    asyncio.run(_drive(box, []))
++    assert box.said == [read_money.RETRY_FAILED] and box.types() == ["cam", "end"]
++
++
++def test_money_retry_unsure_again_says_still_unsure_and_never_loops(monkeypatch):
++    _fast(monkeypatch)
++    box, seen = _Box(monkeypatch), []
++    _patch_read(monkeypatch, prob=0.5, seen=seen)  # dưới ngưỡng
++    asyncio.run(_drive(box, [(0.4, _jpeg(True)), (0.1, _jpeg(True)), (0.1, _jpeg(True))]))
++    assert box.said == [read_money.RETRY_FAILED] and len(seen) == 1 and box.types().count("cam") == 1
++
++
++def test_money_retry_turn_start_cancels_without_speaking(monkeypatch):
++    _fast(monkeypatch)
++    box = _Box(monkeypatch)
++    _patch_read(monkeypatch)
++
++    async def go():
++        task = asyncio.create_task(ocr_live.run(box.ws, box.session))
++        await asyncio.sleep(0.1)
++        box.session.closed.set()        # DeviceSession._stop_live: huỷ khi turn_start mới
++        box.ws.feed_disconnect()
++        task.cancel()
++        await asyncio.gather(task, return_exceptions=True)
++
++    asyncio.run(go())
++    assert box.said == [] and "end" not in box.types()
++
++
++def test_money_retry_socket_close_or_closed_session_before_speaking_does_not_speak(monkeypatch):
++    _fast(monkeypatch)
++    box = _Box(monkeypatch)
++
++    async def fake_frame(jpeg, min_prob):
++        box.session.closed.set()  # huỷ đúng lúc Gemma đang đọc
++        return "50 nghìn đồng", [("50 nghìn đồng", 1.0)]
++
++    monkeypatch.setattr(ocr_live, "read_money_frame", fake_frame)
++    asyncio.run(_drive(box, [(0.4, _jpeg(True))]))
++    assert box.said == []
++
++
++def test_blur_score_orders_sharp_above_blurry_and_uses_reference_width():
++    assert read_money.blur_score(_jpeg(True)) > config.MONEY_BLUR_HINT > read_money.blur_score(_jpeg(False))
++    big = _jpeg(True, 1600, 1200)
++    assert read_money.blur_score(big) is not None
++    assert read_money.blur_score(b"khong phai anh") is None
+
+codex
+Tôi đã thấy một điểm cần kiểm tra kỹ: `MONEY_RETRY=0` rẽ về đường cũ, nhưng ngưỡng mặc định `MONEY_MIN_PROB` cũng đổi độc lập từ 0,995 lên 0,999. Tôi đang đối chiếu cách đường đọc cũ dùng ngưỡng này và vòng đời live để xác nhận ảnh hưởng thực tế.
+exec
+/bin/bash -lc "nl -ba vh-ocr/handlers/read_money.py | sed -n '1,260p'; nl -ba vh-ocr/lanes/ocr_live.py | sed -n '150,330p'; nl -ba vh-ocr/pipeline/final_router.py | sed -n '130,230p'; nl -ba vh-ocr/live/session.py | sed -n '1,280p'; nl -ba vh-ocr/live/ws_adapter.py | sed -n '1,200p'" in /workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system
+ succeeded in 0ms:
+     1	import asyncio
+     2	import logging
+     3	import math
+     4	from collections.abc import AsyncIterator, Iterator
+     5	
+     6	import config
+     7	from models import llm, vlm
+     8	from models.llm.client import prefix_prob
+     9	from pipeline import image_quality
+    10	from pipeline.image_buffer import resize_jpeg
+    11	
+    12	logger = logging.getLogger("blind_assist")
+    13	
+    14	_PROMPT = (
+    15	    "Bạn đang hỗ trợ người khiếm thị nhận biết mệnh giá tiền mặt Việt Nam Đồng (VND) qua camera.\n"
+    16	    "Nhìn vào ảnh và trả lời ĐÚNG TRỌNG TÂM mệnh giá tiền mặt đọc được.\n\n"
+    17	    "QUY TẮC NGUYÊN TẮC:\n"
+    18	    "- Mở đầu ngay bằng mệnh giá, KHÔNG dùng các từ dẫn dắt hoặc từ thừa như: "
+    19	    "\"Đây là\", \"Ảnh chụp\", \"Trước mặt bạn là\", \"Trong hình có\", \"Tôi thấy\".\n"
+    20	    "- Nếu có 1 tờ: đọc trực tiếp mệnh giá (ví dụ: \"50 nghìn đồng\", \"500 nghìn đồng\", \"10 nghìn đồng\").\n"
+    21	    "- Nếu có nhiều tờ: liệt kê ngắn gọn từng mệnh giá (ví dụ: \"10 nghìn đồng và 50 nghìn đồng\").\n"
+    22	    "- KHÔNG mô tả màu sắc (người nghe không cảm nhận được màu).\n"
+    23	    "- Nếu ảnh quá mờ, bị che khuất, tối đen hoặc không thấy rõ tờ tiền nào, PHẢI nói thẳng: "
+    24	    "\"Không thấy rõ tiền, vui lòng chụp lại.\"\n"
+    25	    "- TUYỆT ĐỐI không đoán bừa khi không chắc chắn."
+    26	)
+    27	
+    28	
+    29	def handle(image: bytes, command_text: str) -> Iterator[str]:
+    30	    return vlm.generate_stream(_PROMPT, image=image)
+    31	
+    32	
+    33	
+    34	# ── Chọn nhãn có xác suất (2026-10-21) ────────────────────────────────────────
+    35	# Đo trên vnd_kaggle: làn B (prompt tự do) đọc sai 10,9-11,2 %, gần như mọi ca sai là sai số chữ
+    36	# số 0 (5.000 <-> 50.000, 500.000 -> 50.000). Bản JSON "chép số + chữ rồi code đối chiếu" thua cả
+    37	# hai trục (trễ x3, model chép luôn dãy số khớp điều nó đoán). Ở đây Gemma CHỌN một nhãn trong
+    38	# tập cố định (structured choice, ~4 token, nhanh như cũ) và trả xác suất của nhãn; dưới ngưỡng
+    39	# MONEY_MIN_PROB thì từ chối. Lưới cấu hình + ngưỡng chọn trên dev: evaluations/bench/money_vnd.py --path choice.
+    40	DENOMS = (200, 500, 1000, 2000, 5000, 10000, 20000, 50000, 100000, 200000, 500000)
+    41	UNSURE_LABEL, NO_MONEY_LABEL = "không rõ", "không có tiền"
+    42	
+    43	
+    44	def speak(value: int) -> str:
+    45	    return f"{value // 1000} nghìn đồng" if value >= 1000 else f"{value} đồng"
+    46	
+    47	
+    48	LABELS = {speak(d): d for d in DENOMS}
+    49	CHOICES = [*LABELS, UNSURE_LABEL, NO_MONEY_LABEL]
+    50	
+    51	CHOICE_QUESTION = "Đây là tờ tiền bao nhiêu?"
+    52	
+    53	
+    54	def choice_messages(image: bytes) -> list[dict]:
+    55	    """Cấu hình thắng trên dev: system prompt làn A + prompt đọc tiền + câu hỏi, rồi chọn nhãn.
+    56	    (Bỏ system prompt: sai nhiều hơn; dặn "đếm kỹ chữ số 0": sai 43 % — đo 2026-10-21.)"""
+    57	    from lanes import general  # nhập muộn: lanes.general nhập module này
+    58	    text = f'{_PROMPT}\n\nNgười dùng nói: "{CHOICE_QUESTION}"\nTrả đúng một nhãn.'
+    59	    return [{"role": "system", "content": general._VISION_SYSTEM}, llm.user_message(text, image)]
+    60	
+    61	NO_MONEY = "Không thấy tờ tiền nào. Bạn đưa tờ tiền ra trước kính, cách khoảng một gang tay."
+    62	UNSURE = "Chưa đọc rõ mệnh giá. Bạn lật mặt có số to về phía kính và giữ yên tay."
+    63	
+    64	
+    65	async def choose_raw(messages: list[dict], top_logprobs: int = 1) -> tuple[str, dict]:
+    66	    """(nhãn, choice gốc của server) — một lượt Gemma structured choice có logprobs."""
+    67	    choice = await llm.complete_raw(
+    68	        messages, max_tokens=12, temperature=0.0,
+    69	        logprobs=True, top_logprobs=top_logprobs, structured_outputs={"choice": CHOICES},
+    70	    )
+    71	    text = (choice["message"].get("content") or "").strip()
+    72	    if text not in CHOICES:
+    73	        raise llm.LLMError(f"Gemma không trả đúng nhãn: {text[:40]!r}")
+    74	    return text, choice
+    75	
+    76	
+    77	async def choose(messages: list[dict]) -> tuple[str, float | None]:
+    78	    """(nhãn, xác suất nhãn THÔ của server). Đã thử chuẩn hoá lại trên 13 nhãn hợp lệ (dev 2026-10-21):
+    79	    1 khung nói sai gấp đôi (3,6 -> 7,3 %) vì nhãn sai cũng "chắc" lên, 3 khung không lợi — giữ xác suất thô."""
+    80	    text, choice = await choose_raw(messages)
+    81	    return text, prefix_prob(choice, len(text))
+    82	
+    83	
+    84	# ── Đọc tiền v2 (2026-10-21): top-2 nhãn + câu hướng dẫn khi không chắc ───────────────────────
+    85	# Spec: docs/superpowers/specs/2026-10-21-doc-tien-3-khung-design.md §3. Không tốn thêm lượt gọi model: top-2 lấy từ
+    86	# logprobs của chính lượt chọn nhãn, độ nét lấy từ ảnh đã có.
+    87	HOLD_STILL = "Giữ yên tay."
+    88	STEP_BACK = "Lùi ra xa một chút, để cả tờ tiền nằm giữa."
+    89	COME_CLOSER = "Đưa tờ tiền lại gần hơn một chút."
+    90	RETRY_FAILED = "Tôi vẫn chưa đọc chắc được tờ này."
+    91	STATIC_SPEECH = (HOLD_STILL, STEP_BACK, COME_CLOSER, RETRY_FAILED)
+    92	
+    93	# Độ nét tính trên ảnh thu về cạnh dài này: đúng cỡ ảnh dev (vnd_kaggle 192x144) mà ngưỡng MONEY_BLUR_HINT được chọn.
+    94	# Laplacian phụ thuộc cỡ ảnh nên khung UXGA/VGA của kính phải thu nhỏ trước khi so với ngưỡng.
+    95	BLUR_REF_SIDE = 192
+    96	_TOP_LOGPROBS = 5  # nhánh x10 thường chỉ đứng hạng 3 ở token chữ số cuối (đo thật 2026-10-21), 2 là không đủ
+    97	
+    98	
+    99	def blur_score(jpeg: bytes) -> float | None:
+   100	    """Độ nét Laplacian bằng hàm production `image_quality.measure` trên ảnh cạnh dài `BLUR_REF_SIDE`; None nếu không giải mã được."""
+   101	    try:
+   102	        measured = image_quality.measure(resize_jpeg(jpeg, BLUR_REF_SIDE, 90))
+   103	    except Exception:  # noqa: BLE001 - JPEG hỏng/cắt dở: coi như không đo được
+   104	        return None
+   105	    return None if measured is None else measured[0]
+   106	
+   107	
+   108	def _x10(a: str, b: str) -> bool:
+   109	    """Hai nhãn mệnh giá lệch đúng x10 (50 nghìn <-> 500 nghìn, 200 đồng <-> 2 nghìn): số 0 bị cắt mép."""
+   110	    va, vb = LABELS.get(a), LABELS.get(b)
+   111	    return va is not None and vb is not None and max(va, vb) == 10 * min(va, vb)
+   112	
+   113	
+   114	def _label_for_prefix(prefix: str, top1: str) -> str | None:
+   115	    """Nhãn khác `top1` bắt đầu bằng `prefix` (nhánh model suýt chọn). Nhiều nhãn cùng tiền tố ("500" khớp "500 đồng" và
+   116	    "500 nghìn đồng") thì ưu tiên nhãn lệch x10 với top-1, rồi tới thứ tự trong CHOICES."""
+   117	    found = [c for c in CHOICES if c != top1 and c.startswith(prefix)]
+   118	    if not found:
+   119	        return None
+   120	    return next((c for c in found if _x10(top1, c)), found[0])
+   121	
+   122	
+   123	def top_labels(choice: dict, text: str) -> list[tuple[str, float]]:
+   124	    """[(nhãn đã chọn, xác suất), (nhãn thay thế mạnh nhất, xác suất tiền tố)] từ logprobs của lượt chọn nhãn.
+   125	
+   126	    Nhãn thay thế = nhánh rẽ có xác suất lớn nhất: tại token thứ i, token khác `top_logprobs` ghép với phần đã chọn
+   127	    cho tiền tố của một nhãn khác trong CHOICES; xác suất = tích tới i-1 x xác suất token thay thế (cận dưới, phần đuôi
+   128	    nhãn không tính). Không có logprobs -> []; không có nhánh nào hợp lệ -> chỉ top-1.
+   129	    """
+   130	    items = (choice.get("logprobs") or {}).get("content")
+   131	    p1 = prefix_prob(choice, len(text))
+   132	    if not items or p1 is None:
+   133	        return []
+   134	    top, best = [(text, p1)], None
+   135	    pos, cum = 0, 0.0
+   136	    for it in items:
+   137	        if pos >= len(text) or it.get("logprob") is None:
+   138	            break
+   139	        for alt in it.get("top_logprobs") or []:
+   140	            token, lp = alt.get("token", ""), alt.get("logprob")
+   141	            if token == it.get("token") or lp is None:
+   142	                continue
+   143	            label = _label_for_prefix(text[:pos] + token, text)
+   144	            if label is not None and (best is None or cum + lp > best[1]):
+   145	                best = (label, cum + lp)
+   146	        cum += it["logprob"]
+   147	        pos += len(it.get("token", ""))
+   148	    if best is not None:
+   149	        top.append((best[0], math.exp(best[1])))
+   150	    return top
+   151	
+   152	
+   153	def hint(top: list[tuple[str, float]], sharpness: float | None) -> str:
+   154	    """Câu nói khi không đọc chắc, đi từ trên xuống: mờ -> "Giữ yên tay."; "không rõ" hoặc hai nhãn đầu lệch x10
+   155	    (cắt mép) -> lùi ra xa; còn lại -> lại gần. Không đo được độ nét (None) thì bỏ qua luật mờ."""
+   156	    if sharpness is not None and sharpness < config.MONEY_BLUR_HINT:
+   157	        return HOLD_STILL
+   158	    if top and (top[0][0] == UNSURE_LABEL or (len(top) > 1 and _x10(top[0][0], top[1][0]))):
+   159	        return STEP_BACK
+   160	    return COME_CLOSER
+   161	
+   162	
+   163	async def choose_ranked(messages: list[dict]) -> tuple[str, float | None, list[tuple[str, float]]]:
+   164	    """Như `choose` (cùng nhãn, cùng xác suất thô) kèm top-2 nhãn để chọn câu hướng dẫn."""
+   165	    text, choice = await choose_raw(messages, top_logprobs=_TOP_LOGPROBS)
+   166	    return text, prefix_prob(choice, len(text)), top_labels(choice, text)
+   167	
+   168	
+   169	async def read_ranked(image: bytes, min_prob: float) -> tuple[str, list[tuple[str, float]] | None]:
+   170	    """Đọc MỘT khung: (câu nói như `combine`, top-2). Lỗi mạng/model -> (UNSURE, None): không có gì để hướng dẫn, và
+   171	    đọc lại cũng sẽ hỏng y vậy."""
+   172	    try:
+   173	        label, prob, top = await choose_ranked(choice_messages(image))
+   174	    except Exception as exc:  # noqa: BLE001
+   175	        logger.warning("đọc tiền: lỗi %r", exc)
+   176	        return UNSURE, None
+   177	    logger.info("đọc tiền: %s p=%s top=%s", label, prob, top)
+   178	    return combine([(label, prob)], min_prob), top
+   179	
+   180	
+   181	def say(label: str, prob: float | None, min_prob: float) -> str:
+   182	    """Câu nói cho nhãn: mệnh giá chỉ khi xác suất >= ngưỡng (không có xác suất = không chắc)."""
+   183	    return combine([(label, prob)], min_prob)
+   184	
+   185	
+   186	def combine(reads: list[tuple[str, float | None]], min_prob: float) -> str:
+   187	    """Gộp nhãn của nhiều khung (khung đầu = khung chính): nói mệnh giá khi có >= 1 khung chắc
+   188	    (xác suất >= ngưỡng) và KHÔNG khung nào chắc một mệnh giá khác. Đo dev 2026-10-21 (3 khung,
+   189	    ngưỡng 0,98): đúng 59 -> 75 %, sai <= 3 %; trung bình xác suất hay đòi đa số thì từ chối quá nhiều."""
+   190	    sure = {label for label, prob in reads if label in LABELS and prob is not None and prob >= min_prob}
+   191	    if len(sure) == 1:
+   192	        return sure.pop()
+   193	    if reads and reads[0][0] == NO_MONEY_LABEL and not sure:
+   194	        return NO_MONEY
+   195	    return UNSURE
+   196	
+   197	
+   198	async def read_choice(images: list[bytes]) -> AsyncIterator[str]:
+   199	    """Một lượt Gemma cho MỖI khung, chạy song song; 1 khung dùng ngưỡng MONEY_MIN_PROB, nhiều khung
+   200	    dùng MONEY_MULTI_MIN_PROB (thấp hơn vì đã có các khung khác chặn mâu thuẫn)."""
+   201	    results = await asyncio.gather(*(choose(choice_messages(img)) for img in images), return_exceptions=True)
+   202	    reads = [r for r in results if not isinstance(r, BaseException)]
+   203	    for r in results:
+   204	        if isinstance(r, BaseException):
+   205	            logger.warning("đọc tiền: lỗi %r", r)
+   206	    logger.info("đọc tiền: %s", reads)
+   207	    yield combine(reads, config.MONEY_MIN_PROB if len(images) == 1 else config.MONEY_MULTI_MIN_PROB)
+   208	
+   150	        self.event.set()
+   151	
+   152	    async def take(self, timeout: float) -> bytes | None:
+   153	        try:
+   154	            await asyncio.wait_for(self.event.wait(), timeout)
+   155	        except asyncio.TimeoutError:
+   156	            return None
+   157	        self.event.clear()
+   158	        frame, self.frame = self.frame, None
+   159	        return frame
+   160	
+   161	
+   162	async def receive_frames(ws: WebSocket, box: _Mailbox, session: LiveSession) -> None:
+   163	    min_gap = 1.0 / config.LIVE_MAX_FPS if config.LIVE_MAX_FPS > 0 else 0.0
+   164	    last = 0.0
+   165	    try:
+   166	        while not session.closed.is_set():
+   167	            msg = await ws.receive()
+   168	            if msg["type"] == "websocket.disconnect":
+   169	                break
+   170	            data = msg.get("bytes")
+   171	            if data:
+   172	                # Khung quá trần/quá fps: bỏ khung, KHÔNG đóng phiên (Task 9).
+   173	                now = time.monotonic()
+   174	                if len(data) > config.LIVE_MAX_FRAME_BYTES or now - last < min_gap:
+   175	                    continue
+   176	                last = now
+   177	                frame = protocol.parse_frame(data)
+   178	                if frame is not None:
+   179	                    box.put(frame)
+   180	    except (WebSocketDisconnect, RuntimeError):
+   181	        pass
+   182	    finally:
+   183	        box.closed = True
+   184	        box.event.set()
+   185	
+   186	
+   187	async def speak_ws(ws: WebSocket, text) -> None:
+   188	    """Text (iterable đồng bộ) -> TTS -> khung 0x02 ADPCM qua WS.
+   189	
+   190	    Trên `/v2/session` giữ khoá audio của phiên (`ws.audio_lock`) trọn câu: kết quả hành động / câu trả lời
+   191	    lượt khác xếp hàng sau, không xen vào audio đọc chữ.
+   192	    """
+   193	    async with getattr(ws, "audio_lock", None) or contextlib.nullcontext():
+   194	        async with contextlib.aclosing(speech.adpcm_stream(text)) as chunks:
+   195	            async for chunk in chunks:
+   196	                await ws.send_bytes(protocol.audio(chunk))
+   197	
+   198	
+   199	async def _money_retry(ws: WebSocket, box: _Mailbox, session: LiveSession) -> None:
+   200	    """Đọc tiền lại MỘT lần sau câu hướng dẫn (final_router._money): bỏ khung trong MONEY_RETRY_SETTLE_S đầu cho người
+   201	    dùng chỉnh tay, lấy khung đầu tiên đủ nét (độ nét >= MONEY_BLUR_HINT); hết MONEY_RETRY_TIMEOUT_S thì khung nét nhất
+   202	    đã thấy; không có khung nào thì nói "vẫn chưa đọc chắc". Không bao giờ đọc lần thứ hai (người khiếm thị không kẹt vòng lặp)."""
+   203	    started = time.monotonic()
+   204	    settle_end, deadline = started + config.MONEY_RETRY_SETTLE_S, started + config.MONEY_RETRY_TIMEOUT_S
+   205	    await ws.send_text(protocol.cam("vga", 5))
+   206	    best, best_score = None, -1.0
+   207	    while not box.closed and not session.closed.is_set():
+   208	        left = deadline - time.monotonic()
+   209	        if left <= 0:
+   210	            break
+   211	        frame = await box.take(min(0.5, left))
+   212	        if frame is None or time.monotonic() < settle_end:
+   213	            continue  # chưa có khung, hoặc khung chụp lúc người dùng còn đang chỉnh tay
+   214	        score = await asyncio.to_thread(read_money.blur_score, frame)
+   215	        if score is None:
+   216	            continue
+   217	        if score > best_score:
+   218	            best, best_score = frame, score
+   219	        if score >= config.MONEY_BLUR_HINT:
+   220	            break
+   221	    if box.closed or session.closed.is_set():
+   222	        return
+   223	    sentence = read_money.RETRY_FAILED
+   224	    if best is not None:
+   225	        logger.info("đọc tiền đọc lại: dùng khung nét %.0f (ngưỡng %.0f) sau %.1fs", best_score,
+   226	                    config.MONEY_BLUR_HINT, time.monotonic() - started)
+   227	        said, _ = await read_money_frame(best, config.MONEY_RETRY_PROB)
+   228	        if said in read_money.LABELS:
+   229	            sentence = said
+   230	    else:
+   231	        logger.info("đọc tiền đọc lại: không có khung nào trong %.1fs", config.MONEY_RETRY_TIMEOUT_S)
+   232	    if box.closed or session.closed.is_set():
+   233	        return
+   234	    await speak_ws(ws, [sentence])
+   235	    await ws.send_text(protocol.end())
+   236	
+   237	
+   238	async def run(ws: WebSocket, session: LiveSession) -> None:
+   239	    mode = session.params.get("mode", "read")
+   240	    box = _Mailbox()
+   241	    receiver = asyncio.create_task(receive_frames(ws, box, session))
+   242	    aligner = text_align.Aligner()
+   243	    det = text_align.detector()
+   244	    started = time.monotonic()
+   245	    deadline = started + config.OCR_ALIGN_TIMEOUT_S
+   246	    best_vga: bytes | None = None
+   247	    debug = getattr(ws, "debug", None)  # chỉ có trên LiveSocket của phiên bật debug (demo)
+   248	    try:
+   249	        if mode == "money_retry":
+   250	            await _money_retry(ws, box, session)
+   251	            return
+   252	        await ws.send_text(protocol.cam("vga", 5))
+   253	        capture_sent = False
+   254	        capture_deadline = 0.0
+   255	        hi_res: bytes | None = None
+   256	        while not box.closed and not session.closed.is_set():
+   257	            now = time.monotonic()
+   258	            if not capture_sent and now >= deadline:
+   259	                logger.info("OCR live: hết trần %.0fs, chụp luôn", config.OCR_ALIGN_TIMEOUT_S)
+   260	                capture_sent, capture_deadline = True, now + 3.0
+   261	                await ws.send_text(protocol.capture("uxga"))
+   262	            if capture_sent and now >= capture_deadline:
+   263	                break
+   264	            frame = await box.take(0.5)
+   265	            if frame is None:
+   266	                continue
+   267	            if _width(frame) >= 1000:
+   268	                hi_res = frame
+   269	                break
+   270	            if capture_sent:
+   271	                continue
+   272	            best_vga = frame
+   273	            decoded = await asyncio.to_thread(text_align.decode_gray, frame)
+   274	            if decoded is None:
+   275	                continue
+   276	            gray, _ = decoded
+   277	            boxes = await asyncio.to_thread(det.detect, gray)
+   278	            action = aligner.step_gray(gray, boxes)
+   279	            if debug is not None:
+   280	                debug({"t": "ocr", "w": gray.shape[1], "h": gray.shape[0],
+   281	                       "boxes": [[int(v) for v in b] for b in boxes],
+   282	                       "cue": action.cue if action is not None and action.kind == "cue" else None,
+   283	                       "capture": action is not None and action.kind == "capture"})
+   284	            if action is None:
+   285	                continue
+   286	            if action.kind == "cue":
+   287	                await ws.send_text(protocol.cue(action.cue))
+   288	            else:
+   289	                logger.info("OCR live: khung đạt sau %.1fs, chụp UXGA", time.monotonic() - started)
+   290	                capture_sent, capture_deadline = True, time.monotonic() + 3.0
+   291	                await ws.send_text(protocol.capture("uxga"))
+   292	
+   293	        image = pick_image(hi_res, session.params.get("fallback_jpeg"), best_vga)
+   294	        if image is None or box.closed or session.closed.is_set():
+   295	            return
+   296	        loop = asyncio.get_running_loop()
+   297	        await speak_ws(ws, speech.sync_iter(spoken(image, mode, session.device), loop))
+   298	        await ws.send_text(protocol.end())
+   299	    except (WebSocketDisconnect, RuntimeError) as exc:
+   300	        logger.info("OCR live: kính ngắt kết nối (%r), huỷ", exc)
+   301	    finally:
+   302	        receiver.cancel()
+   303	        sessions.release(session)
+   130	            ctx.spec_answer.cancel()
+   131	            ctx.spec_answer = None
+   132	        return Reply(speech=_sync(ctx, _web_answer(d, text)), intent=d.intent, lane="A")
+   133	
+   134	    spec = ctx.spec_answer
+   135	    if spec is not None and spec.key == (d.intent, text):
+   136	        ctx.spec_answer = None
+   137	        logger.info("làn A: dùng câu trả lời đã sinh song song với Clef")
+   138	        return Reply(speech=_sync(ctx, spec.replay()), intent=d.intent, lane="A")
+   139	    if spec is not None:
+   140	        spec.cancel()
+   141	        ctx.spec_answer = None
+   142	    return Reply(speech=_sync(ctx, general.answer(d.intent, text, image)), intent=d.intent, lane="A")
+   143	
+   144	
+   145	async def _web_answer(d: Decision, text: str) -> AsyncIterator[str]:
+   146	    """Câu cần tra web: câu đệm phát NGAY, tra (trần `SEARCH_TIMEOUT_S`) chạy dưới câu đệm.
+   147	
+   148	    Không khoá hoặc tra hỏng -> `search_failed`: Gemma nói thẳng là chưa tra được.
+   149	    """
+   150	    if not search.available():
+   151	        results = None
+   152	    else:
+   153	        task = asyncio.ensure_future(search.search(text))
+   154	        try:
+   155	            if config.SEARCH_FILLER:
+   156	                yield FILLER_SEARCHING + "\n"
+   157	            results = await task
+   158	        finally:
+   159	            task.cancel()
+   160	    async for piece in general.answer(d.intent, text, None, results, search_failed=results is None):
+   161	        yield piece
+   162	
+   163	
+   164	async def _lane_b(ctx: TurnContext, d: Decision, text: str) -> Reply:
+   165	    entry = await ctx.image()
+   166	    if d.intent == "find":
+   167	        # Chưa có object detector: một lần, Gemma đọc ảnh buffer.
+   168	        return await _lane_a(ctx, d, text)
+   169	    if entry is None:
+   170	        return Reply(cues=["no_image"], intent=d.intent, lane="B")
+   171	    if d.intent == "money":
+   172	        if config.MONEY_RETRY and config.MONEY_MODE == "choice":
+   173	            return await _money(ctx, entry.jpeg)
+   174	        # Tờ tiền ít chữ, bộ dò chữ không căn khung tốt -> đọc luôn ảnh buffer UXGA.
+   175	        return Reply(speech=_sync(ctx, ocr_live.spoken(entry.jpeg, "money", ctx.device)),
+   176	                     intent="money", lane="B")
+   177	
+   178	    mode = d.ocr_mode if d.ocr_mode in ("summarize", "raw", "specialized") else "read"
+   179	    if ctx.single_shot:  # không có WS để hướng dẫn căn khung: đọc thẳng ảnh đã có
+   180	        return Reply(speech=_sync(ctx, ocr_live.spoken(entry.jpeg, mode, ctx.device)),
+   181	                     intent="ocr", lane="B")
+   182	    if config.OCR_ACCEPT_BUFFER:
+   183	        task = ctx.prewarmer.assess_buffer()
+   184	        problem, boxes = await task if task is not None else ("look_around", [])
+   185	        logger.info("làn B: ảnh buffer %s (%d hộp chữ)", problem or "ĐẠT -> đọc ngay", len(boxes))
+   186	        if problem is None:
+   187	            return Reply(speech=_sync(ctx, ocr_live.spoken(entry.jpeg, mode, ctx.device)),
+   188	                         intent="ocr", lane="B")
+   189	    session = ctx.prewarmer.session("ocr", {"mode": mode, "fallback_jpeg": entry.jpeg})
+   190	    return Reply(cues=["ocr_start"], live="ocr", live_token=session.token, intent="ocr", lane="B")
+   191	
+   192	
+   193	async def _money(ctx: TurnContext, jpeg: bytes) -> Reply:
+   194	    """Đọc tiền v2: đọc chặt 1 khung (ảnh buffer UXGA, τ MONEY_MIN_PROB). Chắc -> nói mệnh giá, trễ như cũ. Không chắc ->
+   195	    nói MỘT câu hướng dẫn (read_money.hint) và, có WS, mở phiên live `money_retry` đọc lại đúng một lần từ khung mới
+   196	    (lanes/ocr_live._money_retry). Phiên mang mode "ocr" để nav live được tạm nhường chỗ rồi dựng lại như mọi OCR live.
+   197	    "Không có tiền" và lỗi mạng giữ câu cũ, không đọc lại."""
+   198	    sentence, top = await ocr_live.read_money_frame(jpeg, config.MONEY_MIN_PROB)
+   199	    if sentence != read_money.UNSURE or top is None:
+   200	        return Reply(speech=[sentence], intent="money", lane="B")
+   201	    line = read_money.hint(top, await asyncio.to_thread(read_money.blur_score, jpeg))
+   202	    logger.info("làn B tiền: chưa chắc (top=%s) -> %r%s", top, line, "" if not ctx.single_shot else " (không WS, không đọc lại)")
+   203	    if ctx.single_shot:  # /process: không có WS để lấy khung mới; người dùng tự bấm lại
+   204	        return Reply(speech=[line], intent="money", lane="B")
+   205	    session = ctx.prewarmer.session("ocr", {"mode": "money_retry"})
+   206	    return Reply(speech=[line], live="ocr", live_token=session.token, intent="money", lane="B")
+   207	
+   208	
+   209	async def _params(ctx: TurnContext, intent: str, text: str) -> dict:
+   210	    spec = ctx.spec_params
+   211	    if spec is not None and spec[0] == (intent, text) and not spec[1].cancelled():
+   212	        ctx.spec_params = None
+   213	        try:
+   214	            return await spec[1]
+   215	        except Exception:  # noqa: BLE001
+   216	            pass
+   217	    return await phone.extract(intent, text)
+   218	
+   219	
+   220	def _trusted(d: Decision) -> bool:
+   221	    """Chỉ nhãn Gemma đủ tin cậy mới được chạy hành động có tác dụng phụ.
+   222	
+   223	    Clef/không rõ nguồn/luật từ khoá -> hỏi lại. `backend` lạ KHÔNG mặc định là gemma.
+   224	    """
+   225	    return d.backend == "gemma" and d.confidence_known and d.confidence >= config.ACTION_MIN_CONFIDENCE
+   226	
+   227	
+   228	def _ask_back(ctx: TurnContext, d: Decision, params: dict, lane: str) -> Reply:
+   229	    phone.set_pending_confirm(ctx.device, d.intent, params)
+   230	    logger.info("làn D %s: hỏi lại (backend=%r conf=%.2f)", d.intent, d.backend, d.confidence)
+     1	"""Phiên realtime B/C: token một lần cho `WS /v2/live`, mỗi kính một phiên.
+     2	
+     3	Token tạo ngay lúc ĐOÁN SỚM ra làn B/C (prewarm, §7.4) nên khi `/v2/turn` trả
+     4	header thì token đã có sẵn. Đoán sai thì token hết hạn sau 10 s, không ai dùng.
+     5	"""
+     6	
+     7	import queue
+     8	import secrets
+     9	import threading
+    10	import time
+    11	from dataclasses import dataclass, field
+    12	
+    13	import config
+    14	
+    15	
+    16	@dataclass
+    17	class LiveSession:
+    18	    token: str
+    19	    device: str
+    20	    mode: str  # "ocr" | "nav"
+    21	    params: dict = field(default_factory=dict)
+    22	    created_at: float = field(default_factory=time.monotonic)
+    23	    # Gắn khi WS mở; `close()` từ chỗ khác (nav_stop, lượt mới) đặt cờ này.
+    24	    closed: threading.Event = field(default_factory=threading.Event)
+    25	    # Hàng đợi audio đẩy vào phiên từ ngoài (vd. kết quả làn D khi đang dẫn đường).
+    26	    outbox: queue.Queue = field(default_factory=queue.Queue)
+    27	
+    28	
+    29	class SessionManager:
+    30	    def __init__(self) -> None:
+    31	        self._lock = threading.Lock()
+    32	        self._pending: dict[str, LiveSession] = {}
+    33	        self._active: dict[str, LiveSession] = {}  # device -> phiên đang mở
+    34	
+    35	    def create(self, device: str, mode: str, params: dict | None = None) -> LiveSession:
+    36	        session = LiveSession(secrets.token_urlsafe(12), device, mode, dict(params or {}))
+    37	        with self._lock:
+    38	            self._prune()
+    39	            self._pending[session.token] = session
+    40	        return session
+    41	
+    42	    def _prune(self) -> None:
+    43	        now = time.monotonic()
+    44	        for token in [t for t, s in self._pending.items() if now - s.created_at > config.LIVE_TOKEN_TTL_S]:
+    45	            del self._pending[token]
+    46	
+    47	    def claim(self, token: str) -> LiveSession | None:
+    48	        """Dùng token đúng một lần; mở phiên mới thì đóng phiên cũ của kính đó."""
+    49	        with self._lock:
+    50	            self._prune()
+    51	            session = self._pending.pop(token, None)
+    52	            if session is None:
+    53	                return None
+    54	            old = self._active.get(session.device)
+    55	            if old is not None:
+    56	                old.closed.set()
+    57	            self._active[session.device] = session
+    58	            return session
+    59	
+    60	    def discard(self, token: str | None) -> None:
+    61	        if token:
+    62	            with self._lock:
+    63	                self._pending.pop(token, None)
+    64	
+    65	    def active(self, device: str) -> LiveSession | None:
+    66	        with self._lock:
+    67	            session = self._active.get(device)
+    68	            return None if session is None or session.closed.is_set() else session
+    69	
+    70	    def release(self, session: LiveSession) -> None:
+    71	        session.closed.set()
+    72	        with self._lock:
+    73	            if self._active.get(session.device) is session:
+    74	                del self._active[session.device]
+    75	
+    76	    def close_device(self, device: str, mode: str | None = None) -> bool:
+    77	        """Đóng phiên đang chạy của kính (vd. "tắt cảnh báo"). True nếu có phiên."""
+    78	        with self._lock:
+    79	            session = self._active.get(device)
+    80	            if session is None or (mode is not None and session.mode != mode):
+    81	                return False
+    82	            session.closed.set()
+    83	            del self._active[device]
+    84	            return True
+    85	
+    86	    def clear(self) -> None:
+    87	        with self._lock:
+    88	            for session in self._active.values():
+    89	                session.closed.set()
+    90	            self._pending.clear()
+    91	            self._active.clear()
+    92	
+    93	
+    94	sessions = SessionManager()
+     1	"""Giả `WebSocket` cho `ocr_live.run` / `nav_live.run` chạy trên socket phiên `/v2/session`.
+     2	
+     3	Hai runner live viết cho `WS /v2/live` riêng và chỉ gọi đúng 3 method trên socket
+     4	(đọc từ `lanes/ocr_live.py::receive_frames`, `speak_ws`, `run` và
+     5	`lanes/nav_live.py::run`, `_speak_outbox`):
+     6	
+     7	    await ws.receive()      -> dict kiểu starlette ("websocket.receive" / "websocket.disconnect")
+     8	    await ws.send_text(s)
+     9	    await ws.send_bytes(b)
+    10	
+    11	Chỉ cài đúng ba method đó. Vòng nhận của phiên là nơi DUY NHẤT đọc socket thật;
+    12	nó đẩy khung live vào đây bằng `feed_frame` (khung 0x04 của kính đổi về 0x01 + JPEG
+    13	là định dạng `protocol.parse_frame` mong đợi) và báo ngắt bằng `feed_disconnect`.
+    14	"""
+    15	
+    16	import asyncio
+    17	import contextlib
+    18	import json
+    19	from collections.abc import Awaitable, Callable
+    20	
+    21	from live import protocol
+    22	from pipeline import cues, speech
+    23	
+    24	_QUEUE_MAX = 8  # runner chỉ giữ khung mới nhất (_Mailbox); đầy thì bỏ khung cũ nhất
+    25	
+    26	
+    27	class LiveSocket:
+    28	    def __init__(
+    29	        self,
+    30	        send_text: Callable[[str], Awaitable[None]],
+    31	        send_bytes: Callable[[bytes], Awaitable[None]],
+    32	        speak_cues: bool = False,
+    33	        audio_lock: asyncio.Lock | None = None,
+    34	        debug: Callable[[dict], None] | None = None,
+    35	    ) -> None:
+    36	        # Khoá kênh audio 0x02 của phiên: mỗi câu nói (outbox nav, OCR, cue đọc thay clip) giữ nó trọn câu
+    37	        # để không xen với câu trả lời của lượt / kết quả hành động. Khung JSON không cần khoá.
+    38	        self.audio_lock = audio_lock
+    39	        # Chỉ phiên bật `hello.debug` (trang demo) mới có: runner gửi khung det/ocr bằng móc này,
+    40	        # không chờ và không bao giờ ném lỗi (xem `DeviceSession.emit_debug`).
+    41	        self.debug = debug
+    42	        # Kính có `cue_version` cũ hơn server (không có clip trong flash): khung
+    43	        # {"t":"cue"} đổi thành câu nói TTS, giống `_send_reply` làm với cue của lượt.
+    44	        self._speak_cues = speak_cues
+    45	        self._send_text = send_text
+    46	        self._send_bytes = send_bytes
+    47	        self._inbox: asyncio.Queue = asyncio.Queue(_QUEUE_MAX)
+    48	        self._closed = False
+    49	
+    50	    # --- phía vòng nhận của phiên ---
+    51	    def feed_frame(self, jpeg: bytes) -> None:
+    52	        if self._closed:
+    53	            return
+    54	        if self._inbox.full():
+    55	            self._inbox.get_nowait()
+    56	        self._inbox.put_nowait({"type": "websocket.receive", "bytes": bytes([protocol.FRAME_JPEG]) + jpeg})
+    57	
+    58	    def feed_disconnect(self) -> None:
+    59	        if self._closed:
+    60	            return
+    61	        self._closed = True
+    62	        while self._inbox.full():
+    63	            self._inbox.get_nowait()
+    64	        self._inbox.put_nowait({"type": "websocket.disconnect", "code": 1000})
+    65	
+    66	    # --- phía runner ---
+    67	    async def receive(self) -> dict:
+    68	        return await self._inbox.get()
+    69	
+    70	    async def send_text(self, data: str) -> None:
+    71	        if self._speak_cues and '"cue"' in data:
+    72	            try:
+    73	                frame = json.loads(data)
+    74	            except ValueError:
+    75	                frame = None
+    76	            if isinstance(frame, dict) and frame.get("t") == "cue":
+    77	                text = cues.fallback_text(str(frame.get("id", "")))
+    78	                if text:
+    79	                    async with self.audio_lock or contextlib.nullcontext():
+    80	                        async with contextlib.aclosing(speech.adpcm_stream([text])) as chunks:
+    81	                            async for chunk in chunks:
+    82	                                await self._send_bytes(protocol.audio(chunk))
+    83	                return
+    84	        await self._send_text(data)
+    85	
+    86	    async def send_bytes(self, data: bytes) -> None:
+    87	        await self._send_bytes(data)
+
+exec
+/bin/bash -lc "rg -n \"MONEY_MIN_PROB|def spoken|def read_image|_stop_live|money_retry|restore.*nav|mode == \\\"ocr\\\"|turn_start\" vh-ocr/{config.py,lanes/ocr_live.py,live,pipeline,app.py} | head -n 220; nl -ba vh-ocr/lanes/ocr_live.py | sed -n '1,155p'; nl -ba vh-ocr/config.py | sed -n '255,305p'; nl -ba vh-ocr/pipeline/final_router.py | sed -n '35,125p'" in /workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system
+ succeeded in 0ms:
+/bin/bash: rg: command not found
+     1	"""Làn B — OCR Realtime (§10): căn khung qua WS -> chụp UXGA -> Gemma -> TTS.
+     2	
+     3	Đường nhanh: ảnh buffer UXGA chụp lúc bấm nút đã đạt chuẩn căn khung (chạy
+     4	detector lúc prewarm) thì đọc luôn ngay trong response `/v2/turn`, không mở
+     5	WebSocket — bỏ hẳn vòng căn khung lẫn một lần chụp nữa.
+     6	"""
+     7	
+     8	import asyncio
+     9	import contextlib
+    10	import io
+    11	import logging
+    12	import math
+    13	import threading
+    14	import time
+    15	from collections.abc import AsyncIterator
+    16	
+    17	from PIL import Image
+    18	from starlette.websockets import WebSocket, WebSocketDisconnect
+    19	
+    20	import config
+    21	from handlers import read_money
+    22	from lanes import general
+    23	from live import protocol, text_align
+    24	from live.session import LiveSession, sessions
+    25	from models import llm
+    26	from models.ocr import prompts
+    27	from pipeline import speech
+    28	from pipeline.image_buffer import resize_jpeg
+    29	
+    30	logger = logging.getLogger("blind_assist")
+    31	
+    32	_SUMMARIZE = prompts._COMMON + (
+    33	    "Tóm tắt nội dung chính của văn bản trong ảnh bằng tiếng Việt, 2 đến 4 câu "
+    34	    "ngắn, dễ nghe. Giữ đúng mọi con số, tên riêng, ngày tháng quan trọng."
+    35	)
+    36	_NO_TEXT = "Không thấy chữ nào đọc được."
+    37	# Nói SAU câu trả lời khi có chữ số model đọc kém chắc (xác suất token < OCR_DIGIT_HEDGE_PROB).
+    38	# Đo dev 2026-10-21 (SROIE + ViTextVQA, 424 câu có số): AUROC 0,82; τ 0,9 bắt ~1/3 số đọc sai, gắn
+    39	# cảnh báo cho ~5 % câu — vẫn đọc số (không mất câu đúng), chỉ báo người mù nên kiểm lại.
+    40	DIGIT_HEDGE = "Có con số tôi đọc chưa chắc, bạn đưa lại gần để tôi đọc lại."
+    41	
+    42	# device -> (text, lúc lưu); "đọc lại" dùng trong 5 phút.
+    43	_LAST_TEXT: dict[str, tuple[str, float]] = {}
+    44	_LAST_LOCK = threading.Lock()
+    45	
+    46	
+    47	def last_text(device: str) -> str | None:
+    48	    with _LAST_LOCK:
+    49	        item = _LAST_TEXT.get(device)
+    50	    if item is None or time.monotonic() - item[1] > config.LAST_TEXT_TTL_S:
+    51	        return None
+    52	    return item[0]
+    53	
+    54	
+    55	def _remember(device: str, text: str) -> None:
+    56	    with _LAST_LOCK:
+    57	        _LAST_TEXT[device] = (text, time.monotonic())
+    58	
+    59	
+    60	def _prompt(mode: str) -> str:
+    61	    if mode == "summarize":
+    62	        return _SUMMARIZE
+    63	    if mode == "money":
+    64	        return read_money._PROMPT
+    65	    if mode in ("raw", "specialized"):  # dùng lại đúng văn bản prompt của models/ocr/prompts.py
+    66	        return prompts.build(mode)
+    67	    return prompts.build("normal")
+    68	
+    69	
+    70	def pick_image(hi_res: bytes | None, fallback_jpeg: bytes | None, best_vga: bytes | None) -> bytes | None:
+    71	    """Hết trần căn khung mà chưa có ảnh UXGA mới: ưu tiên UXGA buffer (đọc chữ rõ hơn
+    72	    hẳn VGA), VGA căn khung tốt nhất chỉ là phương án cuối."""
+    73	    return hi_res or fallback_jpeg or best_vga
+    74	
+    75	
+    76	async def read_image(jpeg: bytes, mode: str, device: str) -> AsyncIterator[str]:
+    77	    """Ảnh high-res -> từng mảnh text đọc lên. Lưu `last_text` khi xong."""
+    78	    image = await asyncio.to_thread(resize_jpeg, jpeg, config.LLM_OCR_IMAGE_MAX_SIDE, 90)
+    79	    if mode == "money" and config.MONEY_MODE == "choice":
+    80	        async for piece in read_money.read_choice([image]):
+    81	            yield piece
+    82	        return
+    83	    message = llm.user_message(_prompt(mode), image)
+    84	    digit_probs: list[float] = []
+    85	
+    86	    def seen(items: list[dict]) -> None:
+    87	        digit_probs.extend(math.exp(it["logprob"]) for it in items
+    88	                           if it.get("logprob") is not None and any(c.isdigit() for c in it.get("token", "")))
+    89	
+    90	    hedge = config.OCR_DIGIT_HEDGE_PROB > 0
+    91	    stream = llm.stream_chat([message], max_tokens=1024, temperature=0.0, on_logprobs=seen if hedge else None)
+    92	    head, released, reply = "", False, []
+    93	    peek = len(prompts.NO_TEXT_SENTINEL) + 4
+    94	    async for piece in stream:
+    95	        if released:
+    96	            reply.append(piece)
+    97	            yield piece
+    98	            continue
+    99	        head += piece
+   100	        if len(head.strip()) > peek:
+   101	            released = True
+   102	            reply.append(head)
+   103	            yield head
+   104	    if not released:
+   105	        if head.strip().strip(".").strip() == prompts.NO_TEXT_SENTINEL or not head.strip():
+   106	            yield _NO_TEXT
+   107	            return
+   108	        reply.append(head)
+   109	        yield head
+   110	    text = "".join(reply).strip()
+   111	    if hedge and digit_probs and min(digit_probs) < config.OCR_DIGIT_HEDGE_PROB:
+   112	        logger.info("đọc chữ: chữ số kém chắc (p min %.3f) -> cảnh báo", min(digit_probs))
+   113	        yield " " + DIGIT_HEDGE
+   114	    if text and mode != "money":
+   115	        _remember(device, text)
+   116	
+   117	
+   118	async def read_money_frame(jpeg: bytes, min_prob: float) -> tuple[str, list[tuple[str, float]] | None]:
+   119	    """Đọc tiền đúng MỘT khung (cỡ ảnh như `read_image`): (câu nói, top-2 nhãn; None khi lỗi mạng/model)."""
+   120	    image = await asyncio.to_thread(resize_jpeg, jpeg, config.LLM_OCR_IMAGE_MAX_SIDE, 90)
+   121	    return await read_money.read_ranked(image, min_prob)
+   122	
+   123	
+   124	def spoken(jpeg: bytes, mode: str, device: str) -> AsyncIterator[str]:
+   125	    """`read_image` với câu đầu cắt ngắn (<= 8 từ) để TTS đọc ngay, như làn chat.
+   126	
+   127	    Gemma ra token đầu sau ~0,2 s nhưng câu đầu của một trang sách thường dài; TTS chỉ
+   128	    bắt đầu khi gặp dấu hết câu nên phải chờ cả câu dài sinh xong.
+   129	    """
+   130	    return general.short_first_sentence(read_image(jpeg, mode, device))
+   131	
+   132	
+   133	def _width(jpeg: bytes) -> int:
+   134	    try:
+   135	        return Image.open(io.BytesIO(jpeg)).size[0]
+   136	    except Exception:  # noqa: BLE001
+   137	        return 0
+   138	
+   139	
+   140	class _Mailbox:
+   141	    """Chỉ giữ khung MỚI NHẤT: xử lý chậm thì bỏ khung cũ, không xếp hàng trễ dần."""
+   142	
+   143	    def __init__(self) -> None:
+   144	        self.frame: bytes | None = None
+   145	        self.event = asyncio.Event()
+   146	        self.closed = False
+   147	
+   148	    def put(self, frame: bytes) -> None:
+   149	        self.frame = frame
+   150	        self.event.set()
+   151	
+   152	    async def take(self, timeout: float) -> bytes | None:
+   153	        try:
+   154	            await asyncio.wait_for(self.event.wait(), timeout)
+   155	        except asyncio.TimeoutError:
+   255	# nhất, lỗi giữa chừng thì chuyển đường kế tiếp.
+   256	LLM_BASE_URLS = tuple(
+   257	    u.strip().rstrip("/") for u in get(
+   258	        "LLM_BASE_URLS", get("AGENT_BASE_URL", "https://llm.uit.edu.vn/gemma/v1"),
+   259	    ).split(",") if u.strip()
+   260	)
+   261	LLM_API_KEY = get("LLM_API_KEY", get("AGENT_API_KEY", ""))
+   262	LLM_MODEL = get("LLM_MODEL", get("AGENT_MODEL", "gemma-4-26b"))
+   263	# llm.uit.edu.vn cần thêm cross-sign Sectigo E46 (docs/LLM_PROVIDER.md).
+   264	LLM_CA_BUNDLE = get("LLM_CA_BUNDLE", os.path.join(_ROOT, "certs", "uit-ca-bundle.pem"))
+   265	# Bắt tay TCP tới một host chết phải hỏng NHANH để kịp chuyển đường dự phòng.
+   266	LLM_CONNECT_TIMEOUT_S = float(get("LLM_CONNECT_TIMEOUT_S", "0.5"))
+   267	LLM_TIMEOUT_S = float(get("LLM_TIMEOUT_S", "30"))
+   268	LLM_MAX_TOKENS = int(get("LLM_MAX_TOKENS", "400"))
+   269	# Cạnh dài ảnh gửi cho Gemma. Ảnh UXGA 1600px gửi nguyên là nhiều token ảnh hơn
+   270	# và upload lâu hơn mà Gemma vẫn thu về độ phân giải nội bộ của nó.
+   271	LLM_IMAGE_MAX_SIDE = int(get("LLM_IMAGE_MAX_SIDE", "896"))
+   272	# OCR cần giữ chi tiết chữ nhỏ nên ảnh chụp high-res gửi lớn hơn.
+   273	LLM_OCR_IMAGE_MAX_SIDE = int(get("LLM_OCR_IMAGE_MAX_SIDE", "1600"))
+   274	# Đọc tiền làn B: "choice" = Gemma chọn nhãn mệnh giá + xác suất, dưới MONEY_MIN_PROB thì từ chối
+   275	# (handlers/read_money.read_choice); "prompt" = prompt tự do cũ. Ngưỡng chọn trên dev 2026-10-21:
+   276	# sai <= 3 % mà đúng cao nhất; test: nói sai 11,2 % -> 3,3 %, trễ p90 234 -> 215 ms.
+   277	MONEY_MODE = get("MONEY_MODE", "choice")
+   278	# Đọc tiền v2 (2026-10-21, spec doc-tien-3-khung): đọc chặt 1 khung, không chắc thì nói hướng dẫn rồi đọc lại
+   279	# 1 lần từ khung live. τ 0,995 -> 0,999: test nói sai 3,6 -> 2,1 % (đổi lại từ chối 39 -> 49 %, phần đó đọc lại bù).
+   280	MONEY_MIN_PROB = float(get("MONEY_MIN_PROB", "0.999"))
+   281	# 1 = có đọc lại; 0 = hành vi cũ (không chắc thì nói "chưa đọc rõ", không mở live).
+   282	MONEY_RETRY = get("MONEY_RETRY", "1") == "1"
+   283	MONEY_RETRY_PROB = float(get("MONEY_RETRY_PROB", "0.999"))
+   284	# Lượt đọc lại: bỏ mọi khung trong SETTLE_S đầu (để người dùng chỉnh tay theo hướng dẫn), rồi lấy khung đầu tiên đủ nét;
+   285	# hết TIMEOUT_S (tính từ lúc gửi `cam`) thì lấy khung nét nhất đã thấy.
+   286	MONEY_RETRY_SETTLE_S = float(get("MONEY_RETRY_SETTLE_S", "1.0"))
+   287	MONEY_RETRY_TIMEOUT_S = float(get("MONEY_RETRY_TIMEOUT_S", "3.0"))
+   288	# Độ nét (Laplacian, read_money.blur_score: ảnh thu về cạnh dài 192 px) dưới ngưỡng này thì nói "Giữ yên tay." và
+   289	# chờ khung nét khi đọc lại. Chọn trên dev: phân vị 25 % độ nét của 81 ảnh dev đọc đúng ở τ 0,999
+   290	# (evaluations/bench/money_blur.py). Cần chỉnh lại trên ảnh thật của kính (xem MONEY_OCR_CAI_TIEN.md, "Đọc tiền v2").
+   291	MONEY_BLUR_HINT = float(get("MONEY_BLUR_HINT", "341.4"))
+   292	# Khi có >= 2 khung (kính chụp liên tiếp): ngưỡng cho khung "chắc" trong read_money.combine.
+   293	MONEY_MULTI_MIN_PROB = float(get("MONEY_MULTI_MIN_PROB", "0.98"))
+   294	# Làn B đọc chữ: chữ số nào có xác suất token dưới ngưỡng thì nói thêm câu cảnh báo "chưa chắc" (0 = tắt).
+   295	OCR_DIGIT_HEDGE_PROB = float(get("OCR_DIGIT_HEDGE_PROB", "0.9"))
+   296	
+   297	# Clef (Cloudflare Workers AI) — phân loại intent cuối và trên partial.
+   298	CLOUDFLARE_API_TOKEN = get("CLOUDFLARE_API_TOKEN", "")
+   299	CLOUDFLARE_ACCOUNT_ID = get("CLOUDFLARE_ACCOUNT_ID", "")
+   300	# Bảo vệ endpoint kính (Task 9): trần kích thước + rate limit qua tunnel công khai.
+   301	# Token kính nằm ở VISIONCARE_DEVICE_CLIENT_TOKEN (rỗng = mọi endpoint kính trả 503).
+   302	VISIONCARE_DEVICE_CLIENT_TOKEN = get("VISIONCARE_DEVICE_CLIENT_TOKEN", "")
+   303	# Token theo từng kính (Plan 2 / C0): đường dẫn file JSON `{"<device_id>": "<sha256 hex của token>"}`
+   304	# (git-ignored; sinh bằng `tools/device_token.py add <device_id>`). Rỗng = không có token riêng.
+   305	# Đường dẫn tương đối tính từ gốc dự án.
+    35	        self.key = key
+    36	        self._items: list = []
+    37	        self._event = asyncio.Event()
+    38	        self._done = False
+    39	        self._error: BaseException | None = None
+    40	        self._task = asyncio.get_running_loop().create_task(self._pump(agen))
+    41	
+    42	    async def _pump(self, agen: AsyncIterator[str]) -> None:
+    43	        try:
+    44	            async for item in agen:
+    45	                self._items.append(item)
+    46	                self._event.set()
+    47	        except BaseException as exc:  # noqa: BLE001
+    48	            self._error = exc
+    49	        finally:
+    50	            self._done = True
+    51	            self._event.set()
+    52	
+    53	    async def replay(self) -> AsyncIterator[str]:
+    54	        i = 0
+    55	        while True:
+    56	            if i < len(self._items):
+    57	                yield self._items[i]
+    58	                i += 1
+    59	                continue
+    60	            if self._done:
+    61	                if self._error is not None and not isinstance(self._error, asyncio.CancelledError):
+    62	                    raise self._error
+    63	                return
+    64	            self._event.clear()
+    65	            if i < len(self._items) or self._done:
+    66	                continue
+    67	            await self._event.wait()
+    68	
+    69	    def cancel(self) -> None:
+    70	        self._task.cancel()
+    71	
+    72	
+    73	class TurnContext:
+    74	    def __init__(self, device: str, turn_id: str, prewarmer, loop) -> None:
+    75	        self.device, self.turn_id = device, turn_id
+    76	        self.prewarmer = prewarmer
+    77	        self.loop = loop
+    78	        # `/process` (firmware cũ): một lần HTTP, không WS -> làn B/C không mở live.
+    79	        self.single_shot = False
+    80	        self.gen: int | None = None  # thế hệ lượt (pending_action.begin_turn)
+    81	        self.spec_answer: Speculation | None = None
+    82	        # (intent, text) -> task trích tham số chạy song song với Clef.
+    83	        self.spec_params: tuple[tuple, asyncio.Task] | None = None
+    84	
+    85	    async def image(self):
+    86	        if self.single_shot:  # ảnh đi cùng request, tới rồi hoặc không bao giờ tới: khỏi chờ
+    87	            return image_buffer.get(self.device, self.turn_id)
+    88	        return await asyncio.to_thread(
+    89	            image_buffer.wait, self.device, self.turn_id, config.IMAGE_WAIT_S,
+    90	        )
+    91	
+    92	    def cancel_speculation(self, keep_answer: bool = False, keep_params: bool = False) -> None:
+    93	        if self.spec_answer is not None and not keep_answer:
+    94	            self.spec_answer.cancel()
+    95	        if self.spec_params is not None and not keep_params:
+    96	            self.spec_params[1].cancel()
+    97	
+    98	FILLER_SEARCHING = "Để tôi tra cứu."
+    99	
+   100	# Chỉ gặp ở `/process` (firmware cũ, không có WS): bật cảnh báo vật cản liên tục
+   101	# cần kênh realtime nên nói thẳng là chưa làm được, thay vì nói "đã bật" rồi im.
+   102	NO_LIVE_MESSAGE = "Kính bản này chưa hỗ trợ cảnh báo liên tục."
+   103	STATIC_SPEECH: tuple[str, ...] = (NO_LIVE_MESSAGE, *read_money.STATIC_SPEECH)
+   104	
+   105	
+   106	def _sync(ctx: TurnContext, agen: AsyncIterator[str]):
+   107	    return speech.sync_iter(agen, ctx.loop)
+   108	
+   109	
+   110	async def _lane_a(ctx: TurnContext, d: Decision, text: str) -> Reply:
+   111	    if d.intent == "ocr":  # reread
+   112	        last = ocr_live.last_text(ctx.device)
+   113	        if not last:
+   114	            return Reply(cues=["ocr_nothing_to_reread"], intent="ocr", lane="A")
+   115	        return Reply(speech=[last], intent="ocr", lane="A")
+   116	
+   117	    image = None
+   118	    if d.intent in general.VISION_INTENTS:
+   119	        entry = await ctx.image()
+   120	        if entry is None:
+   121	            return Reply(cues=["no_image"], intent=d.intent, lane="A")
+   122	        reason = await asyncio.to_thread(image_quality.reject_reason, d.intent, entry.jpeg)
+   123	        if reason is not None:
+   124	            return Reply(speech=[reason], intent=d.intent, lane="A")
+   125	        image = await asyncio.to_thread(entry.llm_jpeg)
+
+exec
+/bin/bash -lc "grep -R -n -E 'def _stop_live|turn_start|money_retry|MONEY_RETRY|close_device' vh-ocr/live vh-ocr/app.py vh-ocr/pipeline | head -n 220; git -C vh-ocr show HEAD:config.py | sed -n '270,290p'; git -C vh-ocr show HEAD:lanes/ocr_live.py | sed -n '70,90p;185,245p'; git -C vh-ocr branch --show-current" in /workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system
+ succeeded in 1ms:
+vh-ocr/live/device_session.py:8:    kính -> server  hello | turn_start | 0x01 JPEG lượt | 0x03 ADPCM lượt | turn_end
+vh-ocr/live/device_session.py:17:Ngữ nghĩa huỷ (an toàn làn D): `turn_start` mới, `cancel`, đóng socket và phiên mới
+vh-ocr/live/device_session.py:82:        self.glasses: dict = {}  # t_press_ms / t_release_ms từ turn_start / turn_end
+vh-ocr/live/device_session.py:349:    def _stop_live(self) -> list[asyncio.Task]:
+vh-ocr/live/device_session.py:440:        elif kind == "turn_start":
+vh-ocr/live/device_session.py:441:            await self._turn_start(frame)
+vh-ocr/live/device_session.py:500:    async def _turn_start(self, frame: dict) -> None:
+vh-ocr/live/device_session.py:705:        # Chạy ở task riêng để vòng nhận (và turn_start/cancel) không bị chặn; task
+vh-ocr/live/session.py:76:    def close_device(self, device: str, mode: str | None = None) -> bool:
+Binary file vh-ocr/live/__pycache__/device_session.cpython-311.pyc matches
+Binary file vh-ocr/live/__pycache__/session.cpython-311.pyc matches
+vh-ocr/pipeline/final_router.py:172:        if config.MONEY_RETRY and config.MONEY_MODE == "choice":
+vh-ocr/pipeline/final_router.py:195:    nói MỘT câu hướng dẫn (read_money.hint) và, có WS, mở phiên live `money_retry` đọc lại đúng một lần từ khung mới
+vh-ocr/pipeline/final_router.py:196:    (lanes/ocr_live._money_retry). Phiên mang mode "ocr" để nav live được tạm nhường chỗ rồi dựng lại như mọi OCR live.
+vh-ocr/pipeline/final_router.py:205:    session = ctx.prewarmer.session("ocr", {"mode": "money_retry"})
+vh-ocr/pipeline/final_router.py:289:        sessions.close_device(ctx.device, "nav")
+Binary file vh-ocr/pipeline/__pycache__/final_router.cpython-311.pyc matches
+# và upload lâu hơn mà Gemma vẫn thu về độ phân giải nội bộ của nó.
+LLM_IMAGE_MAX_SIDE = int(get("LLM_IMAGE_MAX_SIDE", "896"))
+# OCR cần giữ chi tiết chữ nhỏ nên ảnh chụp high-res gửi lớn hơn.
+LLM_OCR_IMAGE_MAX_SIDE = int(get("LLM_OCR_IMAGE_MAX_SIDE", "1600"))
+# Đọc tiền làn B: "choice" = Gemma chọn nhãn mệnh giá + xác suất, dưới MONEY_MIN_PROB thì từ chối
+# (handlers/read_money.read_choice); "prompt" = prompt tự do cũ. Ngưỡng chọn trên dev 2026-10-21:
+# sai <= 3 % mà đúng cao nhất; test: nói sai 11,2 % -> 3,3 %, trễ p90 234 -> 215 ms.
+MONEY_MODE = get("MONEY_MODE", "choice")
+# Đọc tiền v2 (2026-10-21, spec doc-tien-3-khung): đọc chặt 1 khung, không chắc thì nói hướng dẫn rồi đọc lại
+# 1 lần từ khung live. τ 0,995 -> 0,999: test nói sai 3,6 -> 2,1 % (đổi lại từ chối 39 -> 49 %, phần đó đọc lại bù).
+MONEY_MIN_PROB = float(get("MONEY_MIN_PROB", "0.999"))
+# 1 = có đọc lại; 0 = hành vi cũ (không chắc thì nói "chưa đọc rõ", không mở live).
+MONEY_RETRY = get("MONEY_RETRY", "1") == "1"
+MONEY_RETRY_PROB = float(get("MONEY_RETRY_PROB", "0.999"))
+# Lượt đọc lại: bỏ mọi khung trong SETTLE_S đầu (để người dùng chỉnh tay theo hướng dẫn), rồi lấy khung đầu tiên đủ nét;
+# hết TIMEOUT_S (tính từ lúc gửi `cam`) thì lấy khung nét nhất đã thấy.
+MONEY_RETRY_SETTLE_S = float(get("MONEY_RETRY_SETTLE_S", "1.0"))
+MONEY_RETRY_TIMEOUT_S = float(get("MONEY_RETRY_TIMEOUT_S", "3.0"))
+# Độ nét (Laplacian, read_money.blur_score: ảnh thu về cạnh dài 192 px) dưới ngưỡng này thì nói "Giữ yên tay." và
+# chờ khung nét khi đọc lại. Chọn trên dev: phân vị 25 % độ nét của 81 ảnh dev đọc đúng ở τ 0,999
+# (evaluations/bench/money_blur.py). Cần chỉnh lại trên ảnh thật của kính (xem MONEY_OCR_CAI_TIEN.md, "Đọc tiền v2").
+def pick_image(hi_res: bytes | None, fallback_jpeg: bytes | None, best_vga: bytes | None) -> bytes | None:
+    """Hết trần căn khung mà chưa có ảnh UXGA mới: ưu tiên UXGA buffer (đọc chữ rõ hơn
+    hẳn VGA), VGA căn khung tốt nhất chỉ là phương án cuối."""
+    return hi_res or fallback_jpeg or best_vga
+
+
+async def read_image(jpeg: bytes, mode: str, device: str) -> AsyncIterator[str]:
+    """Ảnh high-res -> từng mảnh text đọc lên. Lưu `last_text` khi xong."""
+    image = await asyncio.to_thread(resize_jpeg, jpeg, config.LLM_OCR_IMAGE_MAX_SIDE, 90)
+    if mode == "money" and config.MONEY_MODE == "choice":
+        async for piece in read_money.read_choice([image]):
+            yield piece
+        return
+    message = llm.user_message(_prompt(mode), image)
+    digit_probs: list[float] = []
+
+    def seen(items: list[dict]) -> None:
+        digit_probs.extend(math.exp(it["logprob"]) for it in items
+                           if it.get("logprob") is not None and any(c.isdigit() for c in it.get("token", "")))
+
+    hedge = config.OCR_DIGIT_HEDGE_PROB > 0
+
+
+async def speak_ws(ws: WebSocket, text) -> None:
+    """Text (iterable đồng bộ) -> TTS -> khung 0x02 ADPCM qua WS.
+
+    Trên `/v2/session` giữ khoá audio của phiên (`ws.audio_lock`) trọn câu: kết quả hành động / câu trả lời
+    lượt khác xếp hàng sau, không xen vào audio đọc chữ.
+    """
+    async with getattr(ws, "audio_lock", None) or contextlib.nullcontext():
+        async with contextlib.aclosing(speech.adpcm_stream(text)) as chunks:
+            async for chunk in chunks:
+                await ws.send_bytes(protocol.audio(chunk))
+
+
+async def _money_retry(ws: WebSocket, box: _Mailbox, session: LiveSession) -> None:
+    """Đọc tiền lại MỘT lần sau câu hướng dẫn (final_router._money): bỏ khung trong MONEY_RETRY_SETTLE_S đầu cho người
+    dùng chỉnh tay, lấy khung đầu tiên đủ nét (độ nét >= MONEY_BLUR_HINT); hết MONEY_RETRY_TIMEOUT_S thì khung nét nhất
+    đã thấy; không có khung nào thì nói "vẫn chưa đọc chắc". Không bao giờ đọc lần thứ hai (người khiếm thị không kẹt vòng lặp)."""
+    started = time.monotonic()
+    settle_end, deadline = started + config.MONEY_RETRY_SETTLE_S, started + config.MONEY_RETRY_TIMEOUT_S
+    await ws.send_text(protocol.cam("vga", 5))
+    best, best_score = None, -1.0
+    while not box.closed and not session.closed.is_set():
+        left = deadline - time.monotonic()
+        if left <= 0:
+            break
+        frame = await box.take(min(0.5, left))
+        if frame is None or time.monotonic() < settle_end:
+            continue  # chưa có khung, hoặc khung chụp lúc người dùng còn đang chỉnh tay
+        score = await asyncio.to_thread(read_money.blur_score, frame)
+        if score is None:
+            continue
+        if score > best_score:
+            best, best_score = frame, score
+        if score >= config.MONEY_BLUR_HINT:
+            break
+    if box.closed or session.closed.is_set():
+        return
+    sentence = read_money.RETRY_FAILED
+    if best is not None:
+        logger.info("đọc tiền đọc lại: dùng khung nét %.0f (ngưỡng %.0f) sau %.1fs", best_score,
+                    config.MONEY_BLUR_HINT, time.monotonic() - started)
+        said, _ = await read_money_frame(best, config.MONEY_RETRY_PROB)
+        if said in read_money.LABELS:
+            sentence = said
+    else:
+        logger.info("đọc tiền đọc lại: không có khung nào trong %.1fs", config.MONEY_RETRY_TIMEOUT_S)
+    if box.closed or session.closed.is_set():
+        return
+    await speak_ws(ws, [sentence])
+    await ws.send_text(protocol.end())
+
+
+async def run(ws: WebSocket, session: LiveSession) -> None:
+    mode = session.params.get("mode", "read")
+    box = _Mailbox()
+    receiver = asyncio.create_task(receive_frames(ws, box, session))
+    aligner = text_align.Aligner()
+    det = text_align.detector()
+    started = time.monotonic()
+    deadline = started + config.OCR_ALIGN_TIMEOUT_S
+ocr-tien
+
+exec
+/bin/bash -lc "nl -ba vh-ocr/live/device_session.py | sed -n '330,390p;430,455p;495,535p;680,755p'; grep -R -n 'MONEY_RETRY\\|MONEY_MIN_PROB' vh-ocr/.env* vh-ocr/docs | head -n 100; grep -R -n 'MONEY_MIN_PROB' vh-ocr/tests | head -n 100; git -C vh-ocr status --short" in /workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system
+ succeeded in 101ms:
+   330	        """
+   331	        tasks = []
+   332	        if not keep_results:
+   333	            self._results.clear()  # bấm nút/huỷ/ngắt: người dùng đã chuyển sang việc khác, bỏ câu kết quả chưa đọc
+   334	        if self._result_task is not None:
+   335	            self._result_task.cancel()
+   336	            tasks.append(self._result_task)
+   337	            self._result_task = None
+   338	        turn, self._turn = self._turn, None
+   339	        if turn is not None and turn.task is not None:
+   340	            turn.task.cancel()
+   341	            tasks.append(turn.task)
+   342	        if not (keep_nav and self._live_session is not None and self._live_session.mode == "nav"):
+   343	            tasks.extend(self._stop_live())
+   344	        if tasks:
+   345	            await asyncio.gather(*tasks, return_exceptions=True)
+   346	        pending_action.begin_turn(self.device)
+   347	        logger.info("v2 session %s: huỷ (%s)", self.session_id, reason)
+   348	
+   349	    def _stop_live(self) -> list[asyncio.Task]:
+   350	        tasks = []
+   351	        if self._live_sock is not None:
+   352	            self._live_sock.feed_disconnect()
+   353	        if self._live_session is not None:
+   354	            self._live_session.closed.set()
+   355	        if self._live_task is not None:
+   356	            self._live_task.cancel()
+   357	            tasks.append(self._live_task)
+   358	        self._live_task = self._live_session = self._live_sock = None
+   359	        return tasks
+   360	
+   361	    # ---------- cuộc gọi (plan 2 C5) ----------
+   362	    def _attach_call(self, call) -> None:
+   363	        """Chạy trên event loop: gắn đầu kính của `call` vào phiên này rồi báo `call_state` đầu tiên."""
+   364	        if call.session is self:
+   365	            return  # đã gắn (cuộc mới tạo lúc phiên vào + gắn lại ở `run`)
+   366	        if self._shut:
+   367	            if not call.emergency:  # khẩn cấp: để nguyên cho phiên kế tiếp gắn lại
+   368	                call.hangup_threadsafe("glasses_disconnect", by="glasses")
+   369	            return
+   370	        call.attach_glasses(self._send_call_audio, self.send_json, self._on_call_state, session=self)
+   371	        task = asyncio.get_running_loop().create_task(call.announce())
+   372	        self._debug_tasks.add(task)
+   373	        task.add_done_callback(self._debug_tasks.discard)
+   374	
+   375	    async def _send_call_audio(self, adpcm_bytes: bytes) -> None:
+   376	        # Chỉ `_send_lock` từng khung (không `_audio_lock`): chờ tối đa MỘT khung đang gửi.
+   377	        await self.send_bytes(protocol.audio(adpcm_bytes))
+   378	
+   379	    def _on_call_button(self, kind: str, frame: dict) -> None:
+   380	        call = calls.by_device(self.device)
+   381	        if call is None or call.session is not self:
+   382	            return  # mỗi kính một cuộc gọi: không so id (id tạm `local-…` đổi sang id AB sau `bind`)
+   383	        if kind == "call_hangup":
+   384	            task = asyncio.get_running_loop().create_task(call.hangup("glasses_hangup", by="glasses"))
+   385	        elif call.state == call_bridge.RINGING_IN:
+   386	            task = asyncio.get_running_loop().create_task(call.glasses_answer())  # AB HTTP: không chặn vòng nhận
+   387	        else:
+   388	            return
+   389	        self._debug_tasks.add(task)
+   390	        task.add_done_callback(self._debug_tasks.discard)
+   430	
+   431	    async def _on_text(self, text: str) -> None:
+   432	        try:
+   433	            frame = json.loads(text)
+   434	            kind = frame["t"]
+   435	        except (ValueError, KeyError, TypeError):
+   436	            await self.error("bad_frame")
+   437	            return
+   438	        if kind == "ping":
+   439	            await self.send_json({"t": "pong"})
+   440	        elif kind == "turn_start":
+   441	            await self._turn_start(frame)
+   442	        elif kind == "turn_end":
+   443	            turn = self._turn
+   444	            if turn is not None and str(frame.get("turn", turn.id)) == turn.id:
+   445	                turn.glasses["t_release_ms"] = frame.get("t_release_ms")
+   446	                turn.audio_q.put_nowait(None)
+   447	        elif kind == "cancel":
+   448	            if not self._shut:  # socket cũ đã bị thay không được huỷ lệnh chờ của phiên mới
+   449	                await self._cancel_work("kính huỷ", keep_nav=True)
+   450	        elif kind == "played":
+   451	            marks = metrics.glasses_marks(frame)
+   452	            logger.info("v2 played: %s", {"turn": frame.get("turn"), **marks})
+   453	            # Dòng bổ sung (lượt đã ghi xong từ lâu); ghép với dòng chính theo turn id.
+   454	            metrics.record_turn({
+   455	                "device": self.device, "turn": str(frame.get("turn", "")),
+   495	            turn.audio_q.put_nowait(payload)
+   496	        else:
+   497	            await self.error("bad_frame")
+   498	
+   499	    # ---------- lượt ----------
+   500	    async def _turn_start(self, frame: dict) -> None:
+   501	        from handlers.action_flow import device_state
+   502	
+   503	        if self._shut:
+   504	            return
+   505	        call = calls.by_device(self.device)
+   506	        if call is not None and call.state in (call_bridge.RINGING_OUT, call_bridge.ACTIVE):
+   507	            return  # đang gọi: nút = cúp (`call_hangup`), không mở lượt lệnh (spec §6)
+   508	        await self._cancel_work("lượt mới", keep_nav=True)
+   509	        if self._shut:
+   510	            return
+   511	        # Sau huỷ: chỉ còn nav (OCR live đã dừng) nên `alerting` đúng nghĩa cảnh báo vật cản.
+   512	        state = {**device_state(), "alerting": sessions.active(self.device) is not None}
+   513	        if not guard.limiters()[0].allow(self.device):
+   514	            await self.error("rate_limited")
+   515	            return
+   516	        turn = _Turn(str(frame.get("turn", "")))
+   517	        turn.glasses["t_press_ms"] = frame.get("t_press_ms")
+   518	        self._turn = turn
+   519	        gen = pending_action.generation(self.device)
+   520	        turn.task = asyncio.create_task(self._run_turn(turn, state, gen))
+   521	
+   522	    async def _run_turn(self, turn: _Turn, state: dict, gen: int) -> None:
+   523	        try:
+   524	            try:
+   525	                result = await turn_v2.run(
+   526	                    self.device, turn.id, AUDIO_CONTENT_TYPE, turn.body(), state, gen=gen,
+   527	                    on_cancel=lambda: setattr(turn, "cancelled_in_run", True),
+   528	                    transport="ws", glasses=turn.glasses,
+   529	                )
+   530	                reply, released = result.reply, result.released_at
+   531	                if self.debug:
+   532	                    await self._send_trace(turn, result)
+   533	            except Exception:  # noqa: BLE001 - kính luôn phải nghe được gì đó
+   534	                logger.exception("v2 session turn %s thất bại", turn.id)
+   535	                reply, released = Reply(cues=["system_busy"]), time.monotonic()
+   680	    async def _start_live(self, reply: Reply) -> None:
+   681	        was_nav = (self._live_session is not None and self._live_session.mode == "nav"
+   682	                   and not self._live_session.closed.is_set())
+   683	        old = self._stop_live()  # live mới thay live cũ (vd. nav còn chạy từ lượt trước)
+   684	        if old:
+   685	            await asyncio.gather(*old, return_exceptions=True)
+   686	        live = sessions.claim(reply.live_token or "")
+   687	        if live is None:
+   688	            logger.warning("v2 session %s: token live hết hạn", self.session_id)
+   689	            return
+   690	        if live.mode == "nav":
+   691	            self._nav_suspended = False
+   692	        elif was_nav:
+   693	            # OCR live thay nav live (kính chỉ có một phiên live): nav phải được dựng lại khi OCR xong,
+   694	            # nếu không cảnh báo vật cản tắt âm thầm giữa đường trong khi người dùng tin là còn bật.
+   695	            self._nav_suspended = True
+   696	        self._launch_live(live)
+   697	
+   698	    def _launch_live(self, live) -> None:
+   699	        from lanes import nav_live, ocr_live
+   700	
+   701	        sock = LiveSocket(self.send_text, self.send_bytes, speak_cues=self.cue_version < cues.CUE_VERSION,
+   702	                          audio_lock=self._audio_lock, debug=self.emit_debug if self.debug else None)
+   703	        runner = ocr_live.run if live.mode == "ocr" else nav_live.run
+   704	        self._live_session, self._live_sock = live, sock
+   705	        # Chạy ở task riêng để vòng nhận (và turn_start/cancel) không bị chặn; task
+   706	        # `_run_turn` kết thúc ngay sau đây nên không tự huỷ chính live của mình.
+   707	        self._live_task = asyncio.create_task(self._run_live(runner, sock, live))
+   708	        self.emit_mode()
+   709	
+   710	    async def _run_live(self, runner, sock: LiveSocket, live) -> None:
+   711	        try:
+   712	            await runner(sock, live)
+   713	        finally:
+   714	            self.emit_mode()  # live kết thúc (runner đã nhả phiên)
+   715	            asyncio.get_running_loop().call_soon(self._kick_results)  # tin nhắn xếp hàng trong lúc OCR live
+   716	            if live.mode == "ocr" and self._nav_suspended and not self._shut and not self._in_call():
+   717	                self._resume_task = asyncio.get_running_loop().create_task(self._resume_nav(live))
+   718	
+   719	    async def _resume_nav(self, ended) -> None:
+   720	        """Dựng lại nav live sau OCR live (I5). Bỏ qua nếu giữa chừng đã có live khác thay vào."""
+   721	        if self._shut or not self._nav_suspended or self._in_call():
+   722	            return  # đang gọi: để `_nav_suspended` nguyên, bật lại khi cúp (`_on_call_state`)
+   723	        if self._live_session is not None and self._live_session is not ended:
+   724	            return
+   725	        self._nav_suspended = False
+   726	        live = sessions.claim(sessions.create(self.device, "nav").token)
+   727	        if live is None:
+   728	            return
+   729	        logger.info("v2 session %s: OCR live xong, dựng lại nav live (cảnh báo vật cản)", self.session_id)
+   730	        self._launch_live(live)
+   731	
+   732	
+   733	async def _iter_in_thread(body, abort: Callable[[], None] | None = None):
+   734	    """Iterator đồng bộ (TTS+ADPCM) -> async iterator; thread tự đóng generator khi bị huỷ.
+   735	
+   736	    Đóng generator từ thread khác khi nó đang chạy sẽ ném ValueError, nên chỉ chính
+   737	    thread đọc mới được đóng nó (trong `finally`). Thread đọc có thể đang chặn chờ
+   738	    mảnh text kế của Gemma; `abort` (= `SyncIter.abort` của `reply.speech`) huỷ bước
+   739	    đó để nó thoát ngay khi kính ngắt (<= 0,5 s) thay vì chờ Gemma.
+   740	    """
+   741	    loop = asyncio.get_running_loop()
+   742	    queue: asyncio.Queue = asyncio.Queue()
+   743	    stop = threading.Event()
+   744	    done = object()
+   745	
+   746	    def worker() -> None:
+   747	        try:
+   748	            for chunk in body:
+   749	                if stop.is_set():
+   750	                    break
+   751	                loop.call_soon_threadsafe(queue.put_nowait, chunk)
+   752	        except BaseException as exc:  # noqa: BLE001
+   753	            loop.call_soon_threadsafe(queue.put_nowait, exc)
+   754	        finally:
+   755	            close = getattr(body, "close", None)
+vh-ocr/docs/FIRMWARE_ENDPOINTS.md:174:kính   0x04 <VGA>...   (server bỏ khung trong MONEY_RETRY_SETTLE_S = 1,0 s đầu; lấy khung đầu tiên sau đó đủ nét, hết 3,0 s thì khung nét nhất; không có khung nào thì nói "vẫn chưa đọc chắc")
+vh-ocr/tests/test_read_money.py:73:    monkeypatch.setattr(config, "MONEY_MIN_PROB", 0.995)
+vh-ocr/tests/test_money_retry.py:96:    assert config.MONEY_MIN_PROB == 0.999 and config.MONEY_RETRY_PROB == 0.999
+vh-ocr/tests/test_money_retry.py:97:    assert read_money.say("50 nghìn đồng", 0.998, config.MONEY_MIN_PROB) == read_money.UNSURE
+vh-ocr/tests/test_money_retry.py:98:    assert read_money.say("50 nghìn đồng", 0.9995, config.MONEY_MIN_PROB) == "50 nghìn đồng"
+Binary file vh-ocr/tests/__pycache__/test_read_money.cpython-311-pytest-9.1.1.pyc matches
+Binary file vh-ocr/tests/__pycache__/test_money_retry.cpython-311-pytest-9.1.1.pyc matches
+
+codex
+- **Cao — `config.py:280`, `pipeline/final_router.py:172-176`:** Khi đặt `MONEY_RETRY=0`, lượt quay về đường đọc cũ nhưng ngưỡng mặc định vẫn tăng từ `0,995` lên `0,999`. Ví dụ nhãn có xác suất `0,997`: trước đây đọc ra mệnh giá, nay bị từ chối mà không mở live. Vì vậy cờ tắt retry không giữ nguyên hành vi cũ.
+
+- **Vừa — `lanes/ocr_live.py:203-205, 211-213`:** Mốc 1 giây và 3 giây bắt đầu **trước** khi gửi lệnh `cam`. Nếu gửi lệnh bị chậm 1,2 giây, khung đầu tiên sau khi camera bật đã qua thời gian chỉnh tay và chỉ còn khoảng 1,8 giây chờ. Ngoài ra, lọc khung sớm dựa trên lúc server xử lý (`time.monotonic()`), không phải lúc nhận khung; nếu xử lý bị trễ qua mốc 1 giây, khung chụp trong giây đầu có thể được nhận nhầm.
+
+- **Thấp — `handlers/read_money.py:130-133, 158-160`:** Nếu model trả nhãn `"không rõ"` nhưng thiếu logprobs (hoặc `prefix_prob` không tính được), `top_labels()` trả danh sách rỗng, làm mất nhãn top-1. `hint()` khi đó chọn “Đưa tờ tiền lại gần hơn một chút” thay vì hướng dẫn lùi ra xa theo spec.
+
+Tôi không thấy lỗi đáng kể ở số lượt model đọc chắc: vẫn một lượt; nhãn và ngưỡng được dùng như đường cũ ngoài thay đổi ngưỡng chủ ý nói trên.
+2026-10-21T10:09:31.184522Z ERROR codex_core::session: failed to record rollout items: thread 01a15dee-28f4-7720-b195-c762fe18afec not found
+tokens used
+59,367
+- **Cao — `config.py:280`, `pipeline/final_router.py:172-176`:** Khi đặt `MONEY_RETRY=0`, lượt quay về đường đọc cũ nhưng ngưỡng mặc định vẫn tăng từ `0,995` lên `0,999`. Ví dụ nhãn có xác suất `0,997`: trước đây đọc ra mệnh giá, nay bị từ chối mà không mở live. Vì vậy cờ tắt retry không giữ nguyên hành vi cũ.
+
+- **Vừa — `lanes/ocr_live.py:203-205, 211-213`:** Mốc 1 giây và 3 giây bắt đầu **trước** khi gửi lệnh `cam`. Nếu gửi lệnh bị chậm 1,2 giây, khung đầu tiên sau khi camera bật đã qua thời gian chỉnh tay và chỉ còn khoảng 1,8 giây chờ. Ngoài ra, lọc khung sớm dựa trên lúc server xử lý (`time.monotonic()`), không phải lúc nhận khung; nếu xử lý bị trễ qua mốc 1 giây, khung chụp trong giây đầu có thể được nhận nhầm.
+
+- **Thấp — `handlers/read_money.py:130-133, 158-160`:** Nếu model trả nhãn `"không rõ"` nhưng thiếu logprobs (hoặc `prefix_prob` không tính được), `top_labels()` trả danh sách rỗng, làm mất nhãn top-1. `hint()` khi đó chọn “Đưa tờ tiền lại gần hơn một chút” thay vì hướng dẫn lùi ra xa theo spec.
+
+Tôi không thấy lỗi đáng kể ở số lượt model đọc chắc: vẫn một lượt; nhãn và ngưỡng được dùng như đường cũ ngoài thay đổi ngưỡng chủ ý nói trên.

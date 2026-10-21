@@ -6,7 +6,7 @@
   <meta name="color-scheme" content="light">
   <meta name="theme-color" content="#FFFFFF">
   <title>SeeVia Demo</title>
-  <meta name="description" content="Bảng giám sát demo: POV của kính, vật cản, chữ cần đọc và cách server xử lý từng lượt hội thoại.">
+  <meta name="description" content="Bảng giám sát demo: góc nhìn kính gửi lên server, vật cản, chữ cần đọc và cách server xử lý từng lượt hội thoại. Chỉ hiển thị, không dùng camera hay micro.">
   <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
   <link rel="stylesheet" href="styles.css">
 </head>
@@ -15,7 +15,8 @@
 <!-- Bộ icon dùng chung (nét 2px, bo tròn). Không dùng emoji. -->
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
   <defs>
-    <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></symbol>
+    <symbol id="i-volume" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></symbol>
+    <symbol id="i-volume-off" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="m22 9-6 6M16 9l6 6"/></symbol>
     <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/></symbol>
     <symbol id="i-camera" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3Z"/><circle cx="12" cy="13" r="3"/></symbol>
     <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
@@ -35,6 +36,14 @@
     <symbol id="i-eye" viewBox="0 0 24 24"><path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
     <symbol id="i-link" viewBox="0 0 24 24"><path d="M12 4v16M8 8l4-4 4 4M8 16l4 4 4-4"/></symbol>
     <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+    <symbol id="i-send" viewBox="0 0 24 24"><path d="M22 2 11 13M22 2l-7 20-4-9-9-4 20-7Z"/></symbol>
+    <symbol id="i-loader" viewBox="0 0 24 24"><path d="M12 3v4M12 17v4M5.6 5.6l2.8 2.8M15.6 15.6l2.8 2.8M3 12h4M17 12h4M5.6 18.4l2.8-2.8M15.6 8.4l2.8-2.8"/></symbol>
+    <symbol id="i-help" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M9.5 9.5a2.5 2.5 0 1 1 3.5 2.3c-.7.4-1 .9-1 1.7M12 17h.01"/></symbol>
+    <symbol id="i-down" viewBox="0 0 24 24"><path d="M12 5v14M6 13l6 6 6-6"/></symbol>
+    <symbol id="i-smartphone" viewBox="0 0 24 24"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></symbol>
+    <symbol id="i-car" viewBox="0 0 24 24"><path d="M5 16V11l2-5h10l2 5v5M3 16h18v3H3zM7 13h.01M17 13h.01"/></symbol>
+    <symbol id="i-msg" viewBox="0 0 24 24"><path d="M21 12a8 8 0 0 1-11.5 7.2L4 20l1-4.2A8 8 0 1 1 21 12Z"/></symbol>
+    <symbol id="i-siren" viewBox="0 0 24 24"><path d="M7 18v-6a5 5 0 0 1 10 0v6M5 18h14v3H5zM12 2v2M4.2 5.2l1.4 1.4M19.8 5.2l-1.4 1.4"/></symbol>
     <symbol id="i-warn" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></symbol>
   </defs>
 </svg>
@@ -43,26 +52,32 @@
   <header class="top">
     <img class="logo" src="assets/logo.svg" alt="SeeVia" width="209" height="72">
     <p class="top-sub">Bảng giám sát cho ban giám khảo</p>
-    <span class="tag tag-mock" id="mock-tag" hidden>Mô phỏng</span>
-    <span class="tag tag-warn" id="debug-tag" hidden><svg class="i i-sm" aria-hidden="true"><use href="#i-warn"/></svg>Server chưa bật khung debug</span>
   </header>
+
+  <p class="banner" id="banner" aria-hidden="true" hidden><svg class="i" aria-hidden="true"><use href="#i-warn"/></svg><span id="banner-text"></span></p>
 
   <main class="grid">
     <!-- ======= TRÁI: POV kính ======= -->
     <section class="pov" aria-labelledby="pov-title">
-      <h2 class="sec-title" id="pov-title">POV kính</h2>
+      <div class="pov-head">
+        <h2 class="sec-title" id="pov-title">POV kính</h2>
+        <p class="glasses" id="glasses" data-state="off" role="status"><span class="dot" aria-hidden="true"></span><span id="glasses-text">Kính chưa kết nối</span></p>
+      </div>
 
-      <ul class="modes" id="modes" aria-label="Chế độ đang chạy">
+      <div class="modes-bar">
+      <p class="modes-title" id="modes-title">Chế độ kính</p>
+      <ul class="modes" id="modes" aria-labelledby="modes-title">
         <li class="mode" data-mode="obstacle"><svg class="i" aria-hidden="true"><use href="#i-shield"/></svg><span class="mode-name">Tránh vật cản</span><svg class="i i-sm tick" aria-hidden="true"><use href="#i-check"/></svg><span class="sr">đang tắt</span></li>
         <li class="mode" data-mode="ocr"><svg class="i" aria-hidden="true"><use href="#i-text"/></svg><span class="mode-name">Đọc chữ trực tiếp</span><svg class="i i-sm tick" aria-hidden="true"><use href="#i-check"/></svg><span class="sr">đang tắt</span></li>
         <li class="mode" data-mode="nav"><svg class="i" aria-hidden="true"><use href="#i-route"/></svg><span class="mode-name">Chỉ đường <small>(đã gửi điện thoại)</small></span><svg class="i i-sm tick" aria-hidden="true"><use href="#i-check"/></svg><span class="sr">đang tắt</span></li>
         <li class="mode" data-mode="music"><svg class="i" aria-hidden="true"><use href="#i-music"/></svg><span class="mode-name">Nhạc</span><svg class="i i-sm tick" aria-hidden="true"><use href="#i-check"/></svg><span class="sr">đang tắt</span></li>
         <li class="mode" data-mode="call"><svg class="i" aria-hidden="true"><use href="#i-phone"/></svg><span class="mode-name">Cuộc gọi<small id="call-who"></small></span><svg class="i i-sm tick" aria-hidden="true"><use href="#i-check"/></svg><span class="sr">đang tắt</span></li>
       </ul>
+      </div>
+      <p class="sr" id="modes-live" role="status"></p>
 
-      <div class="stage-box"><div class="stage" id="stage" data-rec="0">
-        <video id="video" playsinline muted></video>
-        <canvas id="overlay" aria-hidden="true"></canvas>
+      <div class="stage-box"><div class="stage" id="stage" data-rec="0" data-frame="0">
+        <canvas id="overlay" role="img" aria-label="Khung hình kính gửi lên server, kèm box server nhận ra"></canvas>
         <div class="flash" id="flash" aria-hidden="true"></div>
         <div class="ring" id="ring" aria-hidden="true"></div>
 
@@ -76,15 +91,13 @@
         </div>
 
         <div class="corner corner-tl mono" id="stat-fps" aria-label="Tốc độ khung live">live: --</div>
-        <div class="corner corner-tr mono" id="stat-lag" aria-label="Độ trễ khung">trễ: --</div>
-        <div class="corner corner-bl" id="rec-badge" hidden><span class="rec-dot"></span>Đang nghe bạn <span class="mono" id="rec-time">0,0 s</span></div>
+        <div class="corner corner-tr" id="stat-src" aria-label="Nguồn hình">--</div>
+        <div class="corner corner-bl" id="rec-badge" hidden><span class="rec-dot"></span>Người dùng đang nói <span class="mono" id="rec-time">0,0 s</span></div>
         <div class="corner corner-br mono" id="stat-size" aria-label="Kích thước khung">--</div>
 
-        <p class="stage-empty" id="stage-empty">Chưa có hình từ camera</p>
-        <div class="media-gate" id="media-gate" hidden>
+        <div class="stage-empty" id="stage-empty" role="status">
           <svg class="i i-lg" aria-hidden="true"><use href="#i-camera"/></svg>
-          <p id="media-gate-msg">Cần quyền camera và micro để bắt đầu.</p>
-          <button class="btn btn-primary" type="button" id="btn-enable-media">Bật camera &amp; micro</button>
+          <p id="stage-empty-msg">Chưa nối server</p>
         </div>
       </div></div>
 
@@ -98,10 +111,26 @@
 
     <!-- ======= PHẢI: server xử lý + lịch sử ======= -->
     <aside class="side">
-      <section class="card" aria-labelledby="tl-title">
+      <section class="card card-grow card-conv" aria-labelledby="hist-title">
+        <div class="card-head">
+          <h2 class="sec-title" id="hist-title">Hội thoại</h2>
+          <p class="turn-count mono" id="turn-count" hidden></p>
+        </div>
+        <div class="history-wrap">
+          <div class="history" id="history" role="log" aria-live="polite" tabindex="0" aria-label="Dòng hội thoại, lượt mới nhất ở cuối">
+            <div class="empty-state" id="history-empty">
+              <svg class="i i-lg" aria-hidden="true"><use href="#i-msg"/></svg>
+              <p id="history-empty-msg">Chưa có lượt nào. Bấm nút trên kính và nói.</p>
+            </div>
+          </div>
+          <button class="jump" type="button" id="jump" hidden><svg class="i i-sm" aria-hidden="true"><use href="#i-down"/></svg><span>Lượt mới nhất</span></button>
+        </div>
+      </section>
+
+      <section class="card card-tl" aria-labelledby="tl-title">
         <h2 class="sec-title" id="tl-title">Server xử lý lượt hiện tại</h2>
         <ol class="timeline" id="timeline">
-          <li class="step" data-step="listen" data-state="wait"><span class="node" aria-hidden="true"></span><div class="step-body"><div class="step-head"><b>Nghe</b><span class="ms mono"></span></div><p class="step-detail">Giữ nút để nói</p></div></li>
+          <li class="step" data-step="listen" data-state="wait"><span class="node" aria-hidden="true"></span><div class="step-body"><div class="step-head"><b>Nghe</b><span class="ms mono"></span></div><p class="step-detail">Chờ kính bấm nút</p></div></li>
           <li class="step" data-step="stt" data-state="wait"><span class="node" aria-hidden="true"></span><div class="step-body"><div class="step-head"><b>Nhận dạng giọng nói</b><span class="ms mono"></span></div><p class="step-detail"></p></div></li>
           <li class="step" data-step="intent" data-state="wait"><span class="node" aria-hidden="true"></span><div class="step-body"><div class="step-head"><b>Hiểu ý định</b><span class="ms mono"></span></div><p class="step-detail"></p></div></li>
           <li class="step" data-step="action" data-state="wait"><span class="node" aria-hidden="true"></span><div class="step-body"><div class="step-head"><b>Hành động</b><span class="ms mono"></span></div><p class="step-detail"></p></div></li>
@@ -109,16 +138,20 @@
         </ol>
       </section>
 
-      <section class="card card-grow" aria-labelledby="hist-title">
-        <h2 class="sec-title" id="hist-title">Lịch sử hội thoại</h2>
-        <div class="history" id="history" role="log" aria-live="polite" tabindex="0" aria-label="Lịch sử hội thoại">
-          <p class="empty" id="history-empty">Chưa có lượt nào. Giữ nút bên dưới và nói.</p>
-        </div>
-      </section>
-
-      <section class="card" aria-labelledby="log-title">
+      <section class="card card-hz" aria-labelledby="log-title">
         <h2 class="sec-title" id="log-title">Vật cản đã cảnh báo kính</h2>
         <ul class="hlog mono" id="hlog" aria-live="off"><li class="empty">Chưa có cảnh báo.</li></ul>
+      </section>
+
+      <section class="card card-phone phone" id="phone" aria-labelledby="ph-title" data-mirror="off">
+        <h2 class="sec-title" id="ph-title">Điện thoại <span class="ph-sub" id="ph-sub">mô phỏng theo lệnh server gửi</span></h2>
+        <div class="phone-frame" id="phone-frame">
+          <div class="phone-screen" id="phone-screen">
+            <img class="phone-img" id="phone-img" alt="Màn hình điện thoại thật, truyền trực tiếp" hidden>
+            <div class="ph-status" aria-hidden="true"><span class="mono" id="ph-clock">--:--</span><span class="ph-app">SeeVia</span></div>
+            <div class="ph-tasks" id="ph-tasks" role="log" aria-live="polite" aria-label="Tác vụ điện thoại đang làm"></div>
+          </div>
+        </div>
       </section>
     </aside>
   </main>
@@ -131,11 +164,7 @@
 
     <div class="dock-mid">
       <p class="note" id="note" role="alert" hidden></p>
-      <button class="ptt" type="button" id="ptt" aria-pressed="false" aria-describedby="ptt-hint">
-        <svg class="i i-lg" aria-hidden="true"><use href="#i-mic"/></svg>
-        <span id="ptt-text">Giữ để nói</span>
-      </button>
-      <p class="ptt-hint" id="ptt-hint">hoặc giữ phím <kbd>Space</kbd></p>
+      <button class="btn btn-ghost" type="button" id="btn-sound" aria-pressed="true"><svg class="i" aria-hidden="true"><use id="sound-icon" href="#i-volume"/></svg><span id="sound-text">Âm thanh kính: bật</span></button>
     </div>
 
     <button class="btn btn-ghost" type="button" id="btn-settings"><svg class="i" aria-hidden="true"><use href="#i-sliders"/></svg><span>Cài đặt</span></button>
@@ -149,30 +178,22 @@
       <button class="btn btn-icon" type="button" data-close aria-label="Đóng"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
     </div>
 
-    <fieldset>
-      <legend>Chế độ</legend>
-      <label class="opt"><input type="radio" name="mode" value="live"><span><b>Server thật</b><small>Nối <code>WS /v2/session</code> như kính, nhận khung debug</small></span></label>
-      <label class="opt"><input type="radio" name="mode" value="mock"><span><b>Mô phỏng</b><small>Không gọi server. Chỉ tập dượt luồng giữ nút, nghe, trả lời</small></span></label>
-    </fieldset>
-
     <label class="field">
       <span>Server</span>
       <input type="text" id="set-base" inputmode="url" autocomplete="off" spellcheck="false" placeholder="/api">
-      <small>Mặc định <code>/api</code>: <code>serve.py</code> chuyển tiếp cả HTTP lẫn WebSocket tới server kính. Có thể dán địa chỉ đầy đủ như <code>wss://host</code>.</small>
+      <small>Mặc định <code>/api</code>: <code>serve.py</code> chuyển tiếp WebSocket <code>/v2/observe</code> tới server kính. Có thể dán địa chỉ đầy đủ như <code>wss://host</code>.</small>
     </label>
 
     <label class="field">
       <span>Token thiết bị</span>
       <input type="password" id="set-token" autocomplete="off" spellcheck="false">
-      <small>Trùng <code>VISIONCARE_DEVICE_CLIENT_TOKEN</code> của server.</small>
+      <small>Để trống: <code>serve.py</code> tự gắn token đã cấu hình ở server (<code>.env</code>). Chỉ nhập khi nối thẳng tới server khác.</small>
     </label>
 
     <label class="field">
-      <span>Camera</span>
-      <select id="set-facing">
-        <option value="environment">Camera sau (hướng ra ngoài)</option>
-        <option value="user">Camera trước</option>
-      </select>
+      <span>Mã kính cần xem</span>
+      <input type="text" id="set-device" autocomplete="off" spellcheck="false" placeholder="để trống = kính hiện tại">
+      <small>Để trống: xem kính hiện tại (<code>VISIONCARE_DEVICE_ID</code> ở server). Trang này chỉ xem, không bật camera hay micro.</small>
     </label>
 
     <div class="dlg-foot"><button class="btn btn-primary" value="save" id="set-save">Lưu</button></div>

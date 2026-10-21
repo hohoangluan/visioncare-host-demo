@@ -281,6 +281,39 @@ def health():
     return {"status": "ok"}
 
 
+@app.get("/device/status")
+async def device_status(request: Request, device_id: str = "") -> dict:
+    """Kính `device_id` có đang giữ phiên `/v2/session` không (app điện thoại hỏi để hiện "đang hoạt động").
+
+    Cùng token kính như `/v2/turn`. Không có phiên WS thì `online=false`; `known` chỉ nói máy chủ này
+    được cấu hình để nhận kính đó (kính mặc định hoặc kính có token riêng), không ghi nhớ lịch sử kết nối.
+    Không có Wi-Fi/firmware ở đây (máy chủ không giữ), nên các trường đó là null.
+    """
+    from live.device_session import session_for
+
+    guard.check_token(request.headers)
+    auth = guard.authenticate(request.headers, device_id or None)
+    if auth is None:
+        raise HTTPException(status_code=403, detail="token does not belong to that device")
+    device = device_id or auth.device_id
+    online = session_for(device) is not None
+    known = online or device == config.VISIONCARE_DEVICE_ID or any(d == device for d, _ in guard.device_tokens())
+    return {
+        "status": "ok",
+        "data": {
+            "device_id": device,
+            "known": known,
+            "online": online,
+            "wifi_ssid": None,
+            "fw_version": None,
+            "latest_version": None,
+            "update_available": False,
+            "downlink_open": online,
+            "paired_to": None,
+        },
+    }
+
+
 def _require_callback_auth(request: Request) -> None:
     """Callback của backend: chỉ từ `CALLBACK_ALLOWED_NETWORKS` và mang `VISIONCARE_CALLBACK_TOKEN`."""
     host = request.client.host if request.client else ""
@@ -980,6 +1013,15 @@ async def call_media_lane(ws: WebSocket, token: str = "") -> None:
         await ws.close(code=4401)
         return
     await call.attach_app(ws)
+
+
+@app.websocket("/v2/observe")
+async def observe_lane(ws: WebSocket) -> None:
+    """Phiên CHỈ XEM cho trang demo giám khảo: nhận bản sao thứ kính gửi/nhận + khung debug, không điều khiển gì."""
+    from live.observers import serve
+
+    await ws.accept()
+    await serve(ws)
 
 
 @app.websocket("/v2/session")

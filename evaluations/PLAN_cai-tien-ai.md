@@ -24,7 +24,7 @@ riêng (val / nửa A), báo trên test / nửa B. Thay đổi giữ lại mới
 
 ## 2. Còn thiếu (chưa đo được / chưa có bàn đo)
 
-1. **Tìm đồ (`find_object`)** — chức năng AI chưa có bàn đo nào. Dữ liệu có sẵn: VizWiz-Grounding (đã tải) → chấm hướng nói ra (giờ đồng hồ) với vị trí mask ±1 giờ.
+1. **Tìm đồ (`find_object`)** — người dùng chốt 2026-10-21: xem là **chức năng bổ sung, chạy được nhưng CHƯA đo** (không làm bàn đo đợt này; báo cáo ghi rõ chưa có số). Trước đó: chức năng AI chưa có bàn đo nào. Dữ liệu có sẵn: VizWiz-Grounding (đã tải) → chấm hướng nói ra (giờ đồng hồ) với vị trí mask ±1 giờ.
 2. **Mô tả nguy hiểm theo yêu cầu (`describe_hazard`)** — chưa đo (VLM); có thể dùng ảnh Obstacle test: câu trả lời có nêu vật trong lối đi không.
 3. **Chấm độc lập cho C4 (VizWiz)** — `handcheck_50.csv` chưa có người chấm. Codex KHÔNG có trên máy này (không thấy extension `openai.chatgpt`) → thay bằng **Claude Sonnet nhìn ảnh, chấm mù** (bản `handcheck_blind.csv` không có cột phán quyết của Gemma), báo đồng thuận Gemma-chấm vs Sonnet-chấm. Không thay được người, ghi rõ.
 4. **Độ trễ vật cản đầu-cuối có mạng** (kính giả lập → Cloudflare → bíp, C1c phần ii) — chưa đo.

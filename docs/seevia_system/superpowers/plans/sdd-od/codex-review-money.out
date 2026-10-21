@@ -1,0 +1,7 @@
+- **Cao — `config.py:280`, `pipeline/final_router.py:172-176`:** Khi đặt `MONEY_RETRY=0`, lượt quay về đường đọc cũ nhưng ngưỡng mặc định vẫn tăng từ `0,995` lên `0,999`. Ví dụ nhãn có xác suất `0,997`: trước đây đọc ra mệnh giá, nay bị từ chối mà không mở live. Vì vậy cờ tắt retry không giữ nguyên hành vi cũ.
+
+- **Vừa — `lanes/ocr_live.py:203-205, 211-213`:** Mốc 1 giây và 3 giây bắt đầu **trước** khi gửi lệnh `cam`. Nếu gửi lệnh bị chậm 1,2 giây, khung đầu tiên sau khi camera bật đã qua thời gian chỉnh tay và chỉ còn khoảng 1,8 giây chờ. Ngoài ra, lọc khung sớm dựa trên lúc server xử lý (`time.monotonic()`), không phải lúc nhận khung; nếu xử lý bị trễ qua mốc 1 giây, khung chụp trong giây đầu có thể được nhận nhầm.
+
+- **Thấp — `handlers/read_money.py:130-133, 158-160`:** Nếu model trả nhãn `"không rõ"` nhưng thiếu logprobs (hoặc `prefix_prob` không tính được), `top_labels()` trả danh sách rỗng, làm mất nhãn top-1. `hint()` khi đó chọn “Đưa tờ tiền lại gần hơn một chút” thay vì hướng dẫn lùi ra xa theo spec.
+
+Tôi không thấy lỗi đáng kể ở số lượt model đọc chắc: vẫn một lượt; nhãn và ngưỡng được dùng như đường cũ ngoài thay đổi ngưỡng chủ ý nói trên.

@@ -9,6 +9,7 @@ import asyncio
 import contextlib
 import io
 import logging
+import math
 import threading
 import time
 from collections.abc import AsyncIterator
@@ -33,6 +34,15 @@ _SUMMARIZE = prompts._COMMON + (
     "ngắn, dễ nghe. Giữ đúng mọi con số, tên riêng, ngày tháng quan trọng."
 )
 _NO_TEXT = "Không thấy chữ nào đọc được."
+# Nói SAU câu trả lời khi có chữ số model đọc kém chắc (xác suất token < OCR_DIGIT_HEDGE_PROB).
+# Đo dev 2026-10-21 (SROIE + ViTextVQA, 424 câu có số): AUROC 0,82; τ 0,9 bắt ~1/3 số đọc sai, gắn
+# cảnh báo cho ~5 % câu — vẫn đọc số (không mất câu đúng), chỉ báo người mù nên kiểm lại.
+DIGIT_HEDGE = "Có con số tôi đọc chưa chắc, bạn đưa lại gần để tôi đọc lại."
+# Báo thoát chế độ cho người chỉ nghe (2-3 từ; dựng sẵn qua STATIC_SPEECH). Nói SAU nội dung chính, chỉ khi OCR live
+# tự kết thúc: huỷ bằng lượt mới, kính ngắt kết nối hay phiên bị thay thì im (đã có việc khác đang nói).
+EXIT_READ = "Thoát đọc chữ."
+EXIT_MONEY = "Thoát đọc tiền."
+STATIC_SPEECH: tuple[str, ...] = (EXIT_READ, EXIT_MONEY)
 
 # device -> (text, lúc lưu); "đọc lại" dùng trong 5 phút.
 _LAST_TEXT: dict[str, tuple[str, float]] = {}
@@ -71,7 +81,19 @@ def pick_image(hi_res: bytes | None, fallback_jpeg: bytes | None, best_vga: byte
 async def read_image(jpeg: bytes, mode: str, device: str) -> AsyncIterator[str]:
     """Ảnh high-res -> từng mảnh text đọc lên. Lưu `last_text` khi xong."""
     image = await asyncio.to_thread(resize_jpeg, jpeg, config.LLM_OCR_IMAGE_MAX_SIDE, 90)
-    stream = llm.stream_chat([llm.user_message(_prompt(mode), image)], max_tokens=1024, temperature=0.0)
+    if mode == "money" and config.MONEY_MODE == "choice":
+        async for piece in read_money.read_choice([image]):
+            yield piece
+        return
+    message = llm.user_message(_prompt(mode), image)
+    digit_probs: list[float] = []
+
+    def seen(items: list[dict]) -> None:
+        digit_probs.extend(math.exp(it["logprob"]) for it in items
+                           if it.get("logprob") is not None and any(c.isdigit() for c in it.get("token", "")))
+
+    hedge = config.OCR_DIGIT_HEDGE_PROB > 0
+    stream = llm.stream_chat([message], max_tokens=1024, temperature=0.0, on_logprobs=seen if hedge else None)
     head, released, reply = "", False, []
     peek = len(prompts.NO_TEXT_SENTINEL) + 4
     async for piece in stream:
@@ -91,8 +113,17 @@ async def read_image(jpeg: bytes, mode: str, device: str) -> AsyncIterator[str]:
         reply.append(head)
         yield head
     text = "".join(reply).strip()
+    if hedge and digit_probs and min(digit_probs) < config.OCR_DIGIT_HEDGE_PROB:
+        logger.info("đọc chữ: chữ số kém chắc (p min %.3f) -> cảnh báo", min(digit_probs))
+        yield " " + DIGIT_HEDGE
     if text and mode != "money":
         _remember(device, text)
+
+
+async def read_money_frame(jpeg: bytes, min_prob: float) -> tuple[str, list[tuple[str, float]] | None]:
+    """Đọc tiền đúng MỘT khung (cỡ ảnh như `read_image`): (câu nói, top-2 nhãn; None khi lỗi mạng/model)."""
+    image = await asyncio.to_thread(resize_jpeg, jpeg, config.LLM_OCR_IMAGE_MAX_SIDE, 90)
+    return await read_money.read_ranked(image, min_prob)
 
 
 def spoken(jpeg: bytes, mode: str, device: str) -> AsyncIterator[str]:
@@ -116,11 +147,14 @@ class _Mailbox:
 
     def __init__(self) -> None:
         self.frame: bytes | None = None
+        self.received_at = 0.0  # lúc `put` khung đang giữ
+        self.taken_at = 0.0     # lúc NHẬN của khung `take` vừa trả (khác lúc xử lý khi vòng lặp bận)
         self.event = asyncio.Event()
         self.closed = False
 
     def put(self, frame: bytes) -> None:
         self.frame = frame
+        self.received_at = time.monotonic()
         self.event.set()
 
     async def take(self, timeout: float) -> bytes | None:
@@ -130,6 +164,7 @@ class _Mailbox:
             return None
         self.event.clear()
         frame, self.frame = self.frame, None
+        self.taken_at = self.received_at
         return frame
 
 
@@ -170,6 +205,49 @@ async def speak_ws(ws: WebSocket, text) -> None:
                 await ws.send_bytes(protocol.audio(chunk))
 
 
+async def _money_retry(ws: WebSocket, box: _Mailbox, session: LiveSession) -> None:
+    """Đọc tiền lại MỘT lần sau câu hướng dẫn (final_router._money): bỏ khung trong MONEY_RETRY_SETTLE_S đầu cho người
+    dùng chỉnh tay, lấy khung đầu tiên đủ nét (độ nét >= MONEY_BLUR_HINT); hết MONEY_RETRY_TIMEOUT_S thì khung nét nhất
+    đã thấy; không có khung nào thì nói "vẫn chưa đọc chắc". Không bao giờ đọc lần thứ hai (người khiếm thị không kẹt vòng lặp)."""
+    await ws.send_text(protocol.cam("vga", 5))
+    # Đồng hồ tính từ SAU khi gửi `cam` (gửi chậm không được ăn vào thời gian chỉnh tay / hạn đọc).
+    started = time.monotonic()
+    settle_end, deadline = started + config.MONEY_RETRY_SETTLE_S, started + config.MONEY_RETRY_TIMEOUT_S
+    best, best_score = None, -1.0
+    while not box.closed and not session.closed.is_set():
+        left = deadline - time.monotonic()
+        if left <= 0:
+            break
+        frame = await box.take(min(0.5, left))
+        if frame is None or box.taken_at < settle_end:
+            continue  # chưa có khung, hoặc khung NHẬN lúc người dùng còn đang chỉnh tay (không tính lúc xử lý)
+        score = await asyncio.to_thread(read_money.blur_score, frame)
+        if score is None:
+            continue
+        if score > best_score:
+            best, best_score = frame, score
+        if score >= config.MONEY_BLUR_HINT:
+            break
+    if box.closed or session.closed.is_set():
+        return
+    sentence = read_money.RETRY_FAILED
+    if best is not None:
+        logger.info("đọc tiền đọc lại: dùng khung nét %.0f (ngưỡng %.0f) sau %.1fs", best_score,
+                    config.MONEY_BLUR_HINT, time.monotonic() - started)
+        said, _ = await read_money_frame(best, config.MONEY_RETRY_PROB)
+        if said in read_money.LABELS:
+            sentence = said
+    else:
+        logger.info("đọc tiền đọc lại: không có khung nào trong %.1fs", config.MONEY_RETRY_TIMEOUT_S)
+    if box.closed or session.closed.is_set():
+        return
+    await speak_ws(ws, [sentence])
+    if box.closed or session.closed.is_set():
+        return
+    await speak_ws(ws, [EXIT_MONEY])
+    await ws.send_text(protocol.end())
+
+
 async def run(ws: WebSocket, session: LiveSession) -> None:
     mode = session.params.get("mode", "read")
     box = _Mailbox()
@@ -181,6 +259,9 @@ async def run(ws: WebSocket, session: LiveSession) -> None:
     best_vga: bytes | None = None
     debug = getattr(ws, "debug", None)  # chỉ có trên LiveSocket của phiên bật debug (demo)
     try:
+        if mode == "money_retry":
+            await _money_retry(ws, box, session)
+            return
         await ws.send_text(protocol.cam("vga", 5))
         capture_sent = False
         capture_deadline = 0.0
@@ -212,7 +293,8 @@ async def run(ws: WebSocket, session: LiveSession) -> None:
                 debug({"t": "ocr", "w": gray.shape[1], "h": gray.shape[0],
                        "boxes": [[int(v) for v in b] for b in boxes],
                        "cue": action.cue if action is not None and action.kind == "cue" else None,
-                       "capture": action is not None and action.kind == "capture"})
+                       "capture": action is not None and action.kind == "capture",
+                       protocol.DEBUG_JPEG: frame})
             if action is None:
                 continue
             if action.kind == "cue":
@@ -223,10 +305,16 @@ async def run(ws: WebSocket, session: LiveSession) -> None:
                 await ws.send_text(protocol.capture("uxga"))
 
         image = pick_image(hi_res, session.params.get("fallback_jpeg"), best_vga)
-        if image is None or box.closed or session.closed.is_set():
+        if box.closed or session.closed.is_set():
+            return
+        if image is None:  # hết trần mà không có ảnh nào: đừng im lặng như bị treo
+            await speak_ws(ws, [EXIT_READ])
             return
         loop = asyncio.get_running_loop()
         await speak_ws(ws, speech.sync_iter(spoken(image, mode, session.device), loop))
+        if box.closed or session.closed.is_set():
+            return
+        await speak_ws(ws, [EXIT_READ])
         await ws.send_text(protocol.end())
     except (WebSocketDisconnect, RuntimeError) as exc:
         logger.info("OCR live: kính ngắt kết nối (%r), huỷ", exc)

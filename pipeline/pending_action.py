@@ -9,6 +9,7 @@ chạy đua nhau cũng không bao giờ để fn đã huỷ chạy.
 
 import logging
 import threading
+import time
 from typing import Callable, Dict
 
 import config
@@ -19,6 +20,10 @@ log = logging.getLogger("pending_action")
 _lock = threading.Lock()
 _pending: Dict[str, "PendingAction"] = {}
 _generation: Dict[str, int] = {}
+# device -> lúc một lệnh chờ bị lượt mới huỷ (chưa kịp chạy). Để lượt "Không"/"Thôi" đứng một mình biết mình
+# vừa huỷ được lệnh nào đó và nói "Đã huỷ" thay vì "chưa hỏi gì".
+_cancelled_by_turn: Dict[str, float] = {}
+_RECENT_CANCEL_S = 20.0
 
 
 def begin_turn(device: str) -> int:
@@ -30,8 +35,17 @@ def begin_turn(device: str) -> int:
     with _lock:
         _generation[device] = _generation.get(device, 0) + 1
         gen = _generation[device]
-    cancel(device, "lượt mới")
+    if cancel(device, "lượt mới"):
+        with _lock:
+            _cancelled_by_turn[device] = time.monotonic()
     return gen
+
+
+def take_recent_cancel(device: str) -> bool:
+    """Lượt hiện tại vừa huỷ một lệnh chờ chưa chạy? Lấy ra (dùng một lần)."""
+    with _lock:
+        at = _cancelled_by_turn.pop(device, None)
+    return at is not None and time.monotonic() - at <= _RECENT_CANCEL_S
 
 
 def generation(device: str) -> int:

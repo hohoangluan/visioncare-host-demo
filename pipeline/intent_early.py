@@ -23,7 +23,7 @@ logger = logging.getLogger("blind_assist")
 
 # intent -> làn (§8). `ocr` reread đi làn A, xử lý ở router.
 LANE = {
-    "chat": "A", "space": "A", "hazard": "A",
+    "chat": "A", "space": "A", "ask": "A", "hazard": "A",
     "ocr": "B", "money": "B", "find": "B",
     "nav_start": "D", "nav_stop": "D", "alert_on": "C", "alert_off": "C",
     "contact_call": "D", "emergency_call": "D", "message_send": "D", "message_read": "D", "ride_quote": "D",
@@ -60,6 +60,9 @@ _RULES: tuple[tuple[re.Pattern, str, str], ...] = tuple(
         (r"chuyên ngành|hợp đồng|đơn thuốc|toa thuốc|hướng dẫn sử dụng", "ocr", "specialized"),
         (r"^(?:hãy |xin |làm ơn )?đọc", "ocr", "read"),
         (r"có an toàn|vật cản|chướng ngại|có nguy hiểm không", "hazard", ""),
+        # Câu hỏi một chi tiết về vật đang cầm. Đứng trước `space` vì "trên nhãn có ghi gì" chứa "có gì".
+        (r"màu gì|vị gì|hãng (?:gì|nào)|loại gì|hạn (?:sử dụng|dùng)|ghi gì|viết gì|"
+         r"(?:cái|thứ|vật|hộp|chai|lọ|gói) (?:này|kia|đó) là (?:gì|cái gì)", "ask", ""),
         (r"trước mặt|có gì|xung quanh|khung cảnh", "space", ""),
         (r"tìm|ở đâu rồi|để đâu", "find", ""),
     )
@@ -197,12 +200,16 @@ class EarlyIntent:
 
         rule = keyword_rule(text)
         if result is not None and result.confidence >= config.CLEF_MIN_CONFIDENCE:
-            mode = result.ocr_mode
+            intent, mode = result.intent, result.ocr_mode
             # Luật từ khoá chắc hơn model ở chế độ OCR ("tóm tắt", "đọc lại" nói thẳng ra).
             if result.intent == "ocr" and rule is not None and rule[0] == "ocr":
                 mode = rule[1]
+            # Lệnh ĐỌC nói thẳng ("đọc nguyên văn bức thư") là đọc cả văn bản, không phải hỏi một chi tiết:
+            # gold dev 2026-10-21 có câu này bị Gemma gán `ask`.
+            if result.intent == "ask" and rule is not None and rule[0] == "ocr":
+                intent, mode = rule
             return Decision(
-                result.intent, mode, result.needs_web, source,
+                intent, mode, result.needs_web, source,
                 result.confidence, time.monotonic() - started,
                 backend=getattr(result, "source", "") or "",
                 confidence_known=getattr(result, "confidence_known", True),

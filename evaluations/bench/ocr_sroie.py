@@ -103,8 +103,12 @@ async def run(args):
     from models.ocr import prompts
 
     cfg_parts = {"task": TASK, "ask_template": L.ASK_TEMPLATE_FOR_HASH(), "common": prompts._COMMON}
-    cache = L.Cache(TASK, L.cfg_hash(cfg_parts))
-    df = pd.read_parquet(PARQUET)
+    L.set_ocr_tiles(args.tiles, cfg_parts)
+    cache = L.Cache(TASK, L.cfg_hash(cfg_parts), name="cache.jsonl" if args.split == "test" else "cache_dev.jsonl")
+    if args.split == "dev":  # chỉnh cấu hình trên 120 hoá đơn của tập TRAIN (seed 0), báo trên test
+        df = pd.read_parquet(PARQUET.replace("test-", "train-")).sample(n=120, random_state=0)
+    else:
+        df = pd.read_parquet(PARQUET)
     if args.limit:
         df = df.iloc[: args.limit]
     rows = []
@@ -147,13 +151,15 @@ async def run(args):
             np.stack([lab("wrong"), lab("wrong") + lab("correct")], 1), L.ratio_stat)
     payload = {"meta": common.run_meta({"task": TASK, "limit": args.limit, "cfg_hash": cache.cfg, "questions": [Q_TOTAL, Q_DATE],
                                         "ask_template": L.ASK_TEMPLATE_FOR_HASH(), "llm_max_tokens": 1024, "temperature": 0.0,
+                                        "split": args.split, "ocr_tiles": args.tiles,
                                         "first_sentence_max_words": config.FIRST_SENTENCE_MAX_WORDS,
                                         "method": "total = số đầu tiên trong câu trả lời, so ±0,005; date = ngày đầu tiên parse được, so (d,m,y)"}),
                "metrics": metrics, "n_receipts": len(rows), "n_errors": sum(1 for x in per if x["error"]),
                "n_gt_unparsed": sum(1 for x in per if x.get("label") == "gt_unparsed"),
                "latency": {"ttft": common.latency_summary(ttft), "total": common.latency_summary(total_ms)},
                "per_sample": per}
-    path = common.write_result(TASK, f"ask_spoken{'_limit%d' % args.limit if args.limit else ''}", payload, args.out)
+    tag = f"ask_spoken{'_tiles%d' % args.tiles if args.tiles else ''}{'_dev' if args.split == 'dev' else ''}"
+    path = common.write_result(TASK, f"{tag}{'_limit%d' % args.limit if args.limit else ''}", payload, args.out)
     print(path)
     for k, v in metrics.items():
         print(f"{k}: {v['value']:.4f} [{v['ci'][0]:.4f}, {v['ci'][1]:.4f}] n={v['n']}")
@@ -166,6 +172,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=None, help="chỉ N hoá đơn đầu (2 câu/hoá đơn)")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--tiles", type=int, default=0, help="OCR_TILES: gửi thêm N mảnh cắt của ảnh (VH có cờ này)")
+    ap.add_argument("--split", choices=["test", "dev"], default="test")
     args = ap.parse_args()
     L.new_loop_run(run(args))
 

@@ -152,9 +152,8 @@ async def extract(intent: str, text: str) -> dict:
             params["direction"] = "up"
         elif re.search(r"giảm|nhỏ lại|nhỏ đi|bé lại|vặn nhỏ", lowered):
             params["direction"] = "down"
-    elif intent == "emergency_call":
-        if number := re.search(r"\b(11[345]|\d{3,11})\b", lowered):
-            params["emergency_number"] = number.group(1)
+    # Khẩn cấp (`emergency_call`) KHÔNG có tham số: chỉ gọi người thân đã cài, không bao giờ trích/quay số từ câu nói
+    # (115/114/113 hay số bất kỳ). Đừng thêm lại.
 
     slot = SLOT.get(intent)
     if slot is None:
@@ -279,7 +278,7 @@ def ask_confirm(intent: str, params: dict) -> str:
 
 _CONFIRM: dict[str, tuple[str, dict, float]] = {}  # device -> (intent, params, lúc hỏi)
 _CONFIRM_TTL_S = 30.0
-_YES_WORDS = {"đúng", "phải", "ừ", "ừm", "có", "ok", "đồng ý", "gọi đi", "được", "vâng", "dạ"}
+_YES_WORDS = {"đúng", "phải", "ừ", "ừm", "có", "ok", "đồng ý", "gọi đi", "được", "vâng", "dạ", "đúng rồi", "phải rồi"}
 _NO_WORDS = {"không", "thôi", "huỷ", "hủy", "sai"}
 
 
@@ -307,6 +306,34 @@ def is_yes(text: str) -> bool:
 
 def is_no(text: str) -> bool:
     return _pure(text, _NO_WORDS)
+
+
+# Đuôi lịch sự của lời đáp ("Vâng ạ", "Được nhé"): bỏ đi trước khi xét có phải lời đáp trống không.
+_REPLY_FILLERS = {"ạ", "nhé", "nha", "à"}
+
+
+def is_bare_reply(text: str) -> bool:
+    """Cả câu chỉ là lời đáp có/không ("Đúng", "Vâng ạ", "Thôi"), không kèm lệnh nào."""
+    words = [w for w in _norm(text).split() if w not in _REPLY_FILLERS]
+    rest = " ".join(words)
+    return bool(rest) and (is_yes(rest) or is_no(rest))
+
+
+def has_pending(device: str) -> bool:
+    """Có câu hỏi nào đang chờ lượt sau trả lời cho `device` (xác nhận, tên còn thiếu, chọn người, mời nhắn, lời nhắn)?
+
+    Không lấy ra khỏi hàng chờ. Dùng để biết "Đúng"/"Không" đứng một mình là đang trả lời hay là lạc đề.
+    """
+    now = time.monotonic()
+    with _PENDING_LOCK:
+        checks = (
+            (_CONFIRM.get(device), 2, _CONFIRM_TTL_S),
+            (_PENDING.get(device), 2, _PENDING_TTL_S),
+            (_CHOICE.get(device), 2, _CHOICE_TTL_S),
+            (_OFFER.get(device), 2, _OFFER_TTL_S),
+            (_BODY.get(device), 1, _BODY_TTL_S),
+        )
+    return any(item is not None and now - item[at] <= ttl for item, at, ttl in checks)
 
 
 def set_pending_confirm(device: str, intent: str, params: dict) -> None:

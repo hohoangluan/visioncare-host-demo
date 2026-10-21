@@ -1,0 +1,34 @@
+# Report D: bảng demo cho ban giám khảo (demo-web) + D5 ô Điện thoại
+
+Nhánh `demo-ux` (worktree `SeeVia_system/wt-demo-ux`). Chỉ sửa `demo-web/` và `tests/`; `live/observers.py` KHÔNG phải sửa (xem D5). Đã gọi skill ui-ux-pro-max trước khi sửa UI.
+
+## Kết quả kiểm
+- `browser_e2e.py --mode fake`: **47/47** (trước: 15/15; thêm 3 kịch bản `fake-tour`, `fake-client`, `phone-mirror`). Baseline mới: `baseline-fake.json`.
+- `browser_e2e.py --mode real` (serve.py từ worktree ở cổng 18090, upstream 18888, server thật): **47/47**, số đo không tụt: tiếng đầu 322-340 ms (nền 316-563), nav 8 fps / 116 khung det, ocr-live 76 khung, không cuộn ngang. Baseline mới: `baseline-real.json`. Một lần chạy đầu hỏng 1 ca vì kiểm chữ "SEEVIA" trong lịch sử (nhãn đổi thành "Kính trả lời"): đã sửa kiểm tra, chạy lại `describe` đạt.
+- `pytest tests/test_observe.py tests/test_demo_serve_proxy.py`: 40 xanh (thêm 1 test observe, 5 test phone-mirror). `demo-web/selftest.py` đạt.
+- Ảnh 1920x1080: `docs/2026-10-21-ux-khiem-thi/demo-index.png` (sau tour 8 lượt, fake server), `demo-index-phone-mirror.png` (ô Điện thoại có luồng ảnh thật từ adb GIẢ, thẻ tác vụ dưới khung).
+
+## D1 Dòng hội thoại
+Cột giữa "Hội thoại" (to nhất, lên trên timeline). Mỗi lượt một thẻ: *Người dùng nói*, *Ý định* (intent, làn, nguồn, %), *Kính trả lời* (câu lặp gộp ×N), chip **Tiếng đầu X ms**, hàng *Điện thoại* với trạng thái Chờ bạn trả lời / Đã gửi lệnh / Đang làm / Xong / Lỗi / Chưa có kết quả (suy từ `trace` làn D + `pending`, `reply_end`, `result-*`, `call_state`). Mọi lượt giữ lại, lượt mới cuộn vào; cuộn lên đọc cũ thì không giật về mà hiện nút "Lượt mới nhất". Kết quả `result-*` và câu live thành thẻ riêng. Timeline "Server xử lý lượt hiện tại" gọn thành một dòng mỗi bước (giữ nguyên DOM nên e2e cũ vẫn đọc được).
+
+## D2 Ảnh thu nhỏ đúng khung
+`makeThumb` vẽ khung JPEG ngay trước `det`/`ocr` (đúng khung server tính) + box, 240x180. Gắn vào: log "Vật cản đã cảnh báo kính" (mỗi dòng có ảnh), thẻ "Kính nói · trực tiếp" (cảnh báo mức, hoặc ảnh chụp `capture` khi đọc chữ; chỉ dùng bằng chứng trong 12 s gần nhất), thẻ lượt hỏi cảnh/đọc chữ (ảnh `0x01` lúc bấm nút).
+
+## D3 client.html
+Giữ Space (bất kỳ đâu trừ ô nhập/hộp thoại/nút khác; bấm chuột vào nút bật camera/micro xong thì bỏ focus nên Space sau đó là "nói", không bật/tắt lại nút) + nút giữ; thanh mức âm micro `role="meter"` (kèm câu "đang nghe / chưa thấy tiếng / quá to"); `#status` `role=status aria-live=polite`; `aria-keyshortcuts="Space"`; nút camera/micro bỏ `aria-pressed` (nhãn là hành động "Bật/Tắt …", tránh đọc kép); dải lỗi kết nối đỏ trên đầu; tiếng kính trả lời vẫn phát như cũ, trạng thái nói rõ "Kính đang trả lời…". Kịch bản `fake-client` kiểm tự động.
+
+## D4 Đánh bóng
+Thứ bậc: hội thoại là trung tâm, timeline/vật cản/điện thoại phụ; ba cột ở >= 1500 px, hai cột 1000-1499, một cột < 1000. Thanh "Chế độ kính" có nhãn, chip tắt mờ / chip bật đặc + đổ bóng + tick, có `role=status` đọc "Chế độ đang bật: …". Trạng thái rỗng và lỗi có câu rõ (chưa nối server / kính chưa kết nối / chưa có lượt; dải đỏ khi mất kết nối hoặc sai token). `prefers-reduced-motion` giữ (quy tắc chung vô hiệu mọi animation mới). `fake-tour` đo ở 1920x1080: không phần tử nào bị cắt chữ (`scrollWidth > clientWidth` trên chip/nhãn/hàng thẻ/tên tác vụ...) và không cuộn ngang; 1440 và 390 px cũng không cuộn ngang.
+
+## D5 Ô "Điện thoại"
+- **(b) Không cáp (mặc định):** khung điện thoại vẽ bằng HTML trong cột phải (< 1500 px thì thành thẻ trong cột hội thoại): tác vụ đang/vừa làm (Chỉ đường, Gọi điện, Nhắn tin, Gọi khẩn cấp, Tìm xe, Phát nhạc…), tham số chính, chip trạng thái, câu kết quả, trạng thái cuộc gọi từ `call_state`. Câu hỏi treo ("Gọi cho mẹ phải không?") rồi "Đúng" được gộp vào cùng một tác vụ; "Không/Huỷ" thành "Đã bỏ". **Dữ liệu lấy hết từ khung observe đã có** (`trace` làn D, `reply_end`, `reply result-*`/`say`, `call_state`, `mode`): thêm test `test_observer_sees_phone_result_for_the_phone_panel` chứng minh `result-*` tới người xem; nên không đổi `live/observers.py`.
+- **(a) Có cáp:** `serve.py --phone-mirror` (opt-in) + `/phone/stream.mjpg` (multipart MJPEG): `adb -H 127.0.0.1 -P 5037 exec-out screenrecord --output-format=h264 --size 540x1170 --bit-rate 2000000 -` | `ffmpeg -probesize 32768 -analyzeduration 0 -flags low_delay -f h264 -i - -f mjpeg -q:v 6 -r 10 -`. Một đường ống dùng chung, chạy khi có người xem, dừng và dọn tiến trình khi hết người xem, tự chạy lại khi screenrecord hết 180 s (thử lại tối đa 3 lần liên tiếp không ra khung thì bỏ). **adb chỉ được gọi khi `127.0.0.1:5037` đang LISTEN** (thử kết nối trước mỗi lần khởi chạy và trước mỗi lần chạy lại); không có thì `/phone/stream.mjpg` 503 (test khẳng định adb KHÔNG được gọi), `/config.json` báo `phone_mirror:false`, trang về khung vẽ và thử lại sau 20 s. Tab ẩn thì trang ngắt luồng. Có luồng: ảnh thật trong khung, thẻ tác vụ nhỏ ngay dưới. Biến: `SEEVIA_ADB` (mặc định `~/android-sdk/platform-tools/adb`), `SEEVIA_FFMPEG`, `SEEVIA_ADB_PORT`, `SEEVIA_ADB_SERIAL`.
+- Kiểm bằng adb GIẢ (script phát h264 từ `ffmpeg testsrc`; tôi không chạy adb thật): 5 test pytest (404 khi không bật, `config.phone_mirror` theo cổng, 503 + adb không được gọi khi cổng đóng, multipart + đúng dòng lệnh adb, chạy lại sau 180 s giả + dừng hẳn khi hết người xem + không tự chạy lại, chia sẻ giữa 2 người xem) và kịch bản e2e `phone-mirror` (ảnh 540 px thật giải mã trong trình duyệt, thẻ tác vụ nằm dưới khung).
+
+## Cần controller làm / để ý
+1. Thử trên máy thật: `serve.py --phone-mirror --upstream ...` khi tunnel 5037 đang chạy; chưa có thử nghiệm với screenrecord thật (độ trễ probe của ffmpeg, màn hình đứng yên không phát khung: server giữ kết nối bằng cách gửi lại khung cuối mỗi 3 s).
+2. Rủi ro còn lại: nếu tunnel 5037 rớt ĐÚNG lúc một tiến trình adb đang chạy, adb client có thể tự thử dựng daemon cục bộ trước khi bị giết (vòng lặp chỉ chặn việc gọi mới). Giảm nhẹ: `-H 127.0.0.1 -P port` rõ ràng; muốn chắc hơn thì chặn bằng cách đổi `SEEVIA_ADB` sang wrapper.
+3. `--phone-mirror` công khai màn hình điện thoại cho mọi người mở được trang (`--lan` là cả mạng): chỉ dùng trong mạng demo.
+4. Trạng thái "Lỗi" của lệnh điện thoại suy từ từ khoá trong câu kết quả (`lỗi`, `không thể`, `từ chối`, `hết giờ`…) và `call_state` (`reason`), vì server chưa gửi khung trạng thái hành động có cấu trúc; chưa có kết quả sau 25 s thì "Chưa có kết quả" (không khẳng định lỗi). Muốn chính xác hơn cần thêm khung `action_state {id,state}` ở `live/` (ngoài phạm vi D).
+5. Lỗi có sẵn, chưa sửa (ngoài phạm vi): `send_error(502, "Không nối được…")` trong `serve.py` dùng chữ Việt trong dòng trạng thái HTTP (latin-1) nên văng UnicodeEncodeError khi upstream chết; phần mới đã dùng thông điệp ASCII.
+6. Chạy `--mode real` thao tác thật trên mã kính `glasses-123` (như README e2e dặn); lần chạy này đã dọn serve.py cổng 18090.

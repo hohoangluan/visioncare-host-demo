@@ -4,7 +4,8 @@ Mẫu 300 câu `sample(seed=0)`. Câu hỏi EN dịch sang tiếng Việt MỘT 
 Trả lời: `general.answer("space", câu_vi, ảnh 896 px)` (đường production làn A). Chấm: LLM (temperature 0) nhận câu hỏi +
 câu trả lời VN + 10 đáp án EN -> JSON {"refused", "matches"}; VQA acc = min(#người trùng/3, 1).
 Câu trả lời bị chấm 'từ chối' thì khớp với các đáp án "unanswerable" (xác định bằng mã, không nhờ LLM).
-Ghi results/vqa_vizwiz/handcheck_50.csv để người chấm tay.
+Ghi results/vqa_vizwiz/handcheck_50[_<intent>].csv để người chấm tay.
+--intent ask: prompt hỏi-về-ảnh (handlers/ask_image.py, 2026-10-21). --split dev: 100 câu riêng để chỉnh prompt.
 """
 
 import argparse
@@ -130,12 +131,16 @@ async def run(args):
     os.makedirs(OUT_DIR, exist_ok=True)
     allv = json.load(open(os.path.join(VZ, "vqa", "val.json"), encoding="utf-8"))
     items = common.sample(allv, 300, seed=0)
+    if args.split == "dev":
+        # Tập chỉnh prompt: 100 câu khác hẳn 300 câu test, để không chọn prompt bằng chính tập báo cáo.
+        test_imgs = {it["image"] for it in items}
+        items = common.sample([it for it in allv if it["image"] not in test_imgs], 100, seed=1)
     if args.limit:
         items = items[: args.limit]
-    tr = await translate(items, os.path.join(OUT_DIR, "questions_vi.json"))
+    tr = await translate(items, os.path.join(OUT_DIR, "questions_vi.json" if args.split == "test" else "questions_vi_dev.json"))
     items = [it for it in items if tr.get(it["image"])]
 
-    cfg_parts = {"task": TASK, "system": general._VISION_SYSTEM, "space": general._vision_task("space", ""),
+    cfg_parts = {"task": TASK, "system": general._VISION_SYSTEM, "space": general._vision_task(args.intent, ""),
                  "translate": TRANSLATE_PROMPT}
     cache = L.Cache(TASK, L.cfg_hash(cfg_parts))
     jcache = L.Cache(TASK, L.cfg_hash({"judge": JUDGE_PROMPT, "schema": JUDGE_SCHEMA, "ans": cache.cfg}), name="judge_cache.jsonl")
@@ -145,7 +150,7 @@ async def run(args):
             return L.to_jpeg(f.read(), quality=90)
 
     def factory(it):
-        return general.answer("space", tr[it["image"]], resize_jpeg(load(it), config.LLM_IMAGE_MAX_SIDE))
+        return general.answer(args.intent, tr[it["image"]], resize_jpeg(load(it), config.LLM_IMAGE_MAX_SIDE))
 
     res = await L.run_items(items, lambda it: it["image"], factory, cache, TASK)
 
@@ -156,7 +161,8 @@ async def run(args):
                "answer_type": it.get("answer_type"), "answerable": int(it["answerable"]),
                "gt_answers": [a["answer"] for a in it["answers"]], "output": r["text"], "ttft_ms": r.get("ttft_ms"),
                "total_ms": r.get("total_ms"), "error": r.get("error"), "cached": r["cached"],
-               "gate_reason": image_quality.reject_reason("space", load(it))}
+               "gate_reason": image_quality.reject_reason(args.intent, load(it)),
+               "words": len(r["text"].split())}
         if "error" not in r:
             ttft.append(r["ttft_ms"])
             total.append(r["total_ms"])
@@ -181,6 +187,8 @@ async def run(args):
             metrics["vqa_acc_unanswerable"] = L.ci_entry(A(una, lambda x: x["vqa_acc"]))
             metrics["fabricate_rate_unanswerable"] = L.ci_entry(A(una, lambda x: not x["refused"]))
         metrics["refusal_rate"] = L.ci_entry(A(ok, lambda x: x["refused"]))
+        # Độ dài câu nói ra (chấm tay 2026-10-21: lỗi chính là trả lời thừa). ~3,6 từ/giây khi đọc TTS.
+        metrics["words_mean"] = L.ci_entry(A(ok, lambda x: x["words"]))
         if ans:
             metrics["refusal_rate_answerable"] = L.ci_entry(A(ans, lambda x: x["refused"]))
         # Nếu có cổng chất lượng ảnh như production (reject_reason): bị cổng chặn = từ chối (không gọi LLM)
@@ -196,14 +204,16 @@ async def run(args):
             A([x for x in ok if x["refused"]], lambda x: x["answerable"] == 0)) if tp + fp else None
         metrics["refusal_recall"] = L.ci_entry(A(una, lambda x: x["refused"])) if tp + fn else None
     # Kiểm tay: 50 mẫu seed 0 trong mẫu đã chạy
-    hand = common.sample(per, 50, seed=0)
-    csv_path = os.path.join(OUT_DIR, "handcheck_50.csv")
+    hand = common.sample(per, 50, seed=0) if args.split == "test" else []
+    csv_path = os.path.join(OUT_DIR, "handcheck_50.csv" if args.intent == "space" else f"handcheck_50_{args.intent}.csv")
     old = {}
-    if os.path.exists(csv_path):  # giữ phần người chấm đã điền
+    if not hand:  # tập dev: không có mẫu kiểm tay — không được ghi đè file của tập test
+        csv_path = None
+    elif os.path.exists(csv_path):  # giữ phần người chấm đã điền
         with open(csv_path, encoding="utf-8", newline="") as f:
             for row in csv.DictReader(f):
                 old[row["image"]] = row
-    with open(csv_path, "w", encoding="utf-8", newline="") as f:
+    with open(csv_path or os.devnull, "w", encoding="utf-8", newline="") as f:
         cols = ["image", "question_en", "question_vi", "answerable_gt", "gt_answers_en", "answer_vi", "llm_refused",
                 "llm_matches", "llm_vqa_acc", "human_refused", "human_n_match", "human_note"]
         w = csv.DictWriter(f, fieldnames=cols)
@@ -217,7 +227,7 @@ async def run(args):
                         "human_refused": o.get("human_refused", ""), "human_n_match": o.get("human_n_match", ""),
                         "human_note": o.get("human_note", "")})
     payload = {"meta": common.run_meta({"task": TASK, "limit": args.limit, "cfg_hash": cache.cfg, "sample": 300, "seed": 0,
-                                        "intent": "space", "translate_prompt": TRANSLATE_PROMPT, "judge_prompt": JUDGE_PROMPT,
+                                        "intent": args.intent, "split": args.split, "translate_prompt": TRANSLATE_PROMPT, "judge_prompt": JUDGE_PROMPT,
                                         "judge": "llm.generate_json (json_schema), temperature 0",
                                         "acc_formula": "min(#đáp án trùng/3, 1) trên 10 đáp án (không phải leave-one-out chính thức)"}),
                "metrics": {k: v for k, v in metrics.items() if v}, "n_questions": len(items), "n_judged": len(ok),
@@ -225,7 +235,7 @@ async def run(args):
                "n_unanswerable": len(una), "n_answerable": len(ans),
                "latency": {"ttft": common.latency_summary(ttft), "total": common.latency_summary(total)},
                "handcheck_csv": csv_path, "per_sample": per}
-    path = common.write_result(TASK, f"general_space{'_limit%d' % args.limit if args.limit else ''}", payload, args.out)
+    path = common.write_result(TASK, f"general_{args.intent}{'_dev' if args.split == 'dev' else ''}{'_limit%d' % args.limit if args.limit else ''}", payload, args.out)
     print(path)
     for k, v in payload["metrics"].items():
         print(f"{k}: {v['value']:.4f} [{v['ci'][0]:.4f}, {v['ci'][1]:.4f}] n={v['n']}")
@@ -236,6 +246,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--limit", type=int, default=None, help="chỉ N câu đầu của mẫu 300")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--intent", default="space", help="intent làn A dùng để trả lời (space | ask)")
+    ap.add_argument("--split", default="test", choices=["test", "dev"], help="dev = 100 câu không trùng test, để chỉnh prompt")
     args = ap.parse_args()
     L.new_loop_run(run(args))
 

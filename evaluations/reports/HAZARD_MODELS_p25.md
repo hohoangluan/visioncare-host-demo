@@ -1,0 +1,55 @@
+# HAZARD_MODELS — so model vật cản (V1 ngưỡng · V2 model COCO lớn hơn · V3 fine-tune)
+
+Sinh tự động bởi `bench/hazard_models.py report`. Tập: Obstacle-Dataset **test** (1.583 ảnh); số chính = nhóm **non_coco**, ảnh **qua kính** (QVGA + JPEG q15), recall@IoU0,5 không phân lớp của hộp GT trong lối đi. Ngưỡng t* chọn trên **val** (không nhìn test). Ghép đôi với baseline yolo11n@0,35 trên CÙNG 775 hộp GT (CI của Δ bootstrap theo ảnh). Ngân sách trễ: tổng chuỗi server p90 ≤ 10 ms và detect p90 ≤ baseline + 5 ms.
+
+| Model | Ngưỡng | **Recall trong lối** [CI] | Δ vs baseline [CI Δ] (bắt thêm / mất) | Precision trong lối | Precision đúng lớp | mAP@0,5 (số lớp) | detect p50/p90 ms | tổng chuỗi p90 ms | Trong ngân sách |
+|---|---|---|---|---|---|---|---|---|---|
+| yolo11n COCO (production) | 0.35 | **37.3 % [33.4–41.0]** | — | 90.6 % | 56.9 % | 0.213 (8) | 6.49 / 7.37 | 7.95 | ✅ |
+| yolo11n COCO (production) | 0.2 (t*, val) | **43.0 % [39.2–47.2]** | +5.7 đ.% [+4.1; +7.2] (44 / 0) | 83.6 % | 43.8 % | 0.213 (8) | 6.49 / 7.37 | 7.95 | ✅ |
+| coco_11m | 0.35 | **39.0 % [34.6–43.6]** | +1.7 đ.% [-0.9; +4.3] (58 / 45) | 94.7 % | 64.3 % | 0.231 (8) | 6.94 / 7.39 | 7.99 | ✅ |
+| coco_11m | 0.175 (t*, val) | **43.0 % [38.6–47.2]** | +5.7 đ.% [+3.0; +8.4] (77 / 33) | 90.4 % | 54.1 % | 0.231 (8) | 6.94 / 7.39 | 7.99 | ✅ |
+| coco_11s | 0.35 | **40.6 % [36.4–45.1]** | +3.4 đ.% [+1.1; +5.7] (56 / 30) | 92.2 % | 58.4 % | 0.233 (8) | 5.05 / 5.39 | 6.02 | ✅ |
+| coco_11s | 0.25 (t*, val) | **44.3 % [40.0–48.6]** | +7.0 đ.% [+4.6; +9.4] (78 / 24) | 88.9 % | 50.9 % | 0.233 (8) | 5.05 / 5.39 | 6.02 | ✅ |
+| coco_26m | 0.35 | **35.7 % [31.1–39.8]** | -1.5 đ.% [-4.3; +1.4] (49 / 61) | 94.0 % | 66.0 % | 0.253 (8) | 6.87 / 7.13 | 7.8 | ✅ |
+| coco_26m | 0.175 (t*, val) | **39.9 % [35.2–44.3]** | +2.6 đ.% [-0.3; +5.4] (66 / 46) | 89.0 % | 54.9 % | 0.253 (8) | 6.87 / 7.13 | 7.8 | ✅ |
+| coco_26s | 0.35 | **38.8 % [34.8–43.2]** | +1.5 đ.% [-1.0; +4.3] (58 / 46) | 94.5 % | 62.6 % | 0.235 (8) | 6.45 / 6.93 | 7.53 | ✅ |
+| coco_26s | 0.225 (t*, val) | **42.6 % [38.6–47.1]** | +5.3 đ.% [+2.8; +8.1] (71 / 30) | 91.5 % | 53.2 % | 0.235 (8) | 6.45 / 6.93 | 7.53 | ✅ |
+| ft_11m | 0.35 | **90.7 % [88.4–92.9]** | +53.4 đ.% [+48.8; +57.7] (428 / 14) | 94.8 % | 83.5 % | 0.535 (14) | 6.55 / 6.77 | 7.45 | ✅ |
+| ft_11m | 0.05 (t*, val) | **94.3 % [92.5–96.1]** | +57.0 đ.% [+52.7; +61.2] (451 / 9) | 87.7 % | 51.3 % | 0.535 (14) | 6.55 / 6.77 | 7.45 | ✅ |
+| ft_11s | 0.35 | **88.1 % [85.7–90.5]** | +50.8 đ.% [+46.7; +54.8] (400 / 6) | 91.0 % | 74.1 % | 0.395 (14) | 4.61 / 5.11 | 5.65 | ✅ |
+| ft_11s | 0.225 (t*, val) | **91.1 % [88.9–93.0]** | +53.8 đ.% [+49.8; +57.9] (423 / 6) | 85.5 % | 61.1 % | 0.395 (14) | 4.61 / 5.11 | 5.65 | ✅ |
+| ft_26m | 0.35 | **85.3 % [82.5–87.9]** | +48.0 đ.% [+44.0; +52.1] (384 / 12) | 93.5 % | 82.0 % | 0.452 (14) | 6.64 / 7.04 | 7.7 | ✅ |
+| ft_26m | 0.2 (t*, val) | **89.0 % [86.6–91.3]** | +51.7 đ.% [+47.7; +55.7] (409 / 8) | 88.4 % | 68.4 % | 0.452 (14) | 6.64 / 7.04 | 7.7 | ✅ |
+| ft_26s | 0.35 | **83.9 % [81.1–86.4]** | +46.6 đ.% [+42.3; +50.8] (376 / 15) | 94.9 % | 86.0 % | 0.425 (14) | 5.08 / 5.47 | 6.16 | ✅ |
+| ft_26s | 0.2 (t*, val) | **89.0 % [86.7–91.3]** | +51.7 đ.% [+47.7; +55.8] (407 / 6) | 89.8 % | 71.9 % | 0.425 (14) | 5.08 / 5.47 | 6.16 | ✅ |
+
+Recall trong lối theo lớp (ngưỡng 0,35, non_coco, qua kính) — 6 lớp đầu là lớp NGOÀI COCO:
+
+| Model | reflective_cone | warning_column | spherical_roadblock | ashcan | pole | tricycle | person | motorbike | car | bicycle |
+|---|---|---|---|---|---|---|---|---|---|---|
+| yolo11n COCO (production) | 12 % | 7 % | 9 % | 5 % | 0 % | 68 % | 73 % | 29 % | 56 % | 77 % |
+| coco_11m | 6 % | 2 % | 0 % | 5 % | 0 % | 75 % | 77 % | 29 % | 80 % | 79 % |
+| coco_11s | 6 % | 4 % | 6 % | 5 % | 3 % | 76 % | 82 % | 38 % | 69 % | 83 % |
+| coco_26m | 2 % | 0 % | 2 % | 3 % | 0 % | 60 % | 76 % | 33 % | 84 % | 75 % |
+| coco_26s | 4 % | 2 % | 0 % | 7 % | 0 % | 71 % | 82 % | 38 % | 64 % | 85 % |
+| ft_11m | 96 % | 98 % | 92 % | 97 % | 70 % | 98 % | 80 % | 62 % | 89 % | 83 % |
+| ft_11s | 92 % | 93 % | 91 % | 94 % | 59 % | 98 % | 84 % | 52 % | 82 % | 75 % |
+| ft_26m | 85 % | 80 % | 94 % | 88 % | 49 % | 96 % | 86 % | 48 % | 89 % | 88 % |
+| ft_26s | 86 % | 89 % | 98 % | 91 % | 41 % | 92 % | 84 % | 38 % | 73 % | 79 % |
+
+## Dữ liệu fine-tune
+
+- **train**: 5066 ảnh, bỏ 12 ảnh trùng/gần trùng test (md5 hoặc dHash ≤ 4 bit), giữ 5054; hộp theo lớp: {'stop_sign': 807, 'person': 8813, 'bicycle': 859, 'bus': 676, 'truck': 1591, 'car': 7203, 'motorbike': 1082, 'reflective_cone': 1714, 'ashcan': 983, 'warning_column': 1492, 'spherical_roadblock': 1199, 'pole': 2721, 'dog': 623, 'tricycle': 665, 'fire_hydrant': 654, 'chair': 139, 'bench': 83, 'plant': 137, 'traffic_light': 1252, 'parking_meter': 56}; nhãn giả bỏ vì trùng GT: 34; thêm 5054 bản 'như kính gửi' (rộng 320, JPEG q15–30).
+- **val**: 1266 ảnh, bỏ 3 ảnh trùng/gần trùng test (md5 hoặc dHash ≤ 4 bit), giữ 1263; hộp theo lớp: {'stop_sign': 217, 'person': 2218, 'bicycle': 263, 'bus': 199, 'truck': 430, 'car': 2026, 'motorbike': 223, 'reflective_cone': 462, 'ashcan': 282, 'warning_column': 315, 'spherical_roadblock': 280, 'pole': 661, 'dog': 134, 'tricycle': 153, 'fire_hydrant': 125, 'chair': 32, 'bench': 15, 'plant': 18, 'traffic_light': 334, 'parking_meter': 21}; nhãn giả bỏ vì trùng GT: 10.
+- 5 lớp COCO SeeVia đang cảnh báo (chair, bench, plant, traffic_light, parking_meter) là **nhãn giả** từ YOLO11m COCO (conf ≥ 0.5) — chống quên lớp; không có nhãn thật để chấm các lớp này trên test.
+- Huấn luyện `ft_11m`: 94 epoch, mAP50 val tốt nhất 0.575 (epoch 74).
+- Huấn luyện `ft_11s`: 26 epoch, mAP50 val tốt nhất 0.551 (epoch 1).
+- Huấn luyện `ft_26m`: 26 epoch, mAP50 val tốt nhất 0.658 (epoch 1).
+- Huấn luyện `ft_26s`: 26 epoch, mAP50 val tốt nhất 0.562 (epoch 1).
+
+## Giới hạn
+
+- Model fine-tune được huấn luyện trên CHÍNH Obstacle-Dataset (train) → test là **cùng phân phối** (vỉa hè Trung Quốc); không chứng minh cho vỉa hè Việt Nam. Model COCO thì zero-shot.
+- mAP của model COCO tính trên 9 lớp ánh xạ được (8 có GT trong non_coco), model fine-tune trên 15 lớp → **không so mAP chéo**; so bằng recall trong lối (cùng định nghĩa).
+- Nhóm ảnh COCO vẫn rò với mọi model (đều khởi từ trọng số COCO) → chỉ trích non_coco.
+- Thay model trong VH chỉ sau khi người dùng xem bảng này (cần đổi `HAZARD_MODEL_PATH` + bảng lớp `_CLASSES`).

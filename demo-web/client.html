@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="theme-color" content="#FFFFFF">
+  <title>SeeVia Kính giả lập</title>
+  <meta name="description" content="Kính giả lập chạy trên trình duyệt: bật camera và micro, giữ để nói, gửi lên server như kính thật. Trang giám sát của ban giám khảo (index.html) chỉ xem lại những gì trang này gửi.">
+  <link rel="icon" type="image/svg+xml" href="assets/favicon.svg">
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="client.css">
+</head>
+<body>
+
+<!-- Bộ icon dùng chung (nét 2px, bo tròn). Không dùng emoji. -->
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <defs>
+    <symbol id="i-mic" viewBox="0 0 24 24"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><path d="M12 19v3"/></symbol>
+    <symbol id="i-mic-off" viewBox="0 0 24 24"><path d="m2 2 20 20"/><path d="M9 9v3a3 3 0 0 0 5.1 2.1M15 9.3V5a3 3 0 0 0-5.9-.7"/><path d="M19 10v2a7 7 0 0 1-.9 3.4M5 10v2a7 7 0 0 0 11.5 5.4M12 19v3"/></symbol>
+    <symbol id="i-camera" viewBox="0 0 24 24"><path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3Z"/><circle cx="12" cy="13" r="3"/></symbol>
+    <symbol id="i-camera-off" viewBox="0 0 24 24"><path d="m2 2 20 20"/><path d="M9.5 4h5L17 7h3a2 2 0 0 1 2 2v9a2 2 0 0 1-.4 1.2M7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h14"/><path d="M9.9 9.9a3 3 0 0 0 4.2 4.2"/></symbol>
+    <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M21 4h-7M10 4H3M21 12h-9M8 12H3M21 20h-5M12 20H3M14 2v4M8 10v4M16 18v4"/></symbol>
+    <symbol id="i-x" viewBox="0 0 24 24"><path d="M18 6 6 18M6 6l12 12"/></symbol>
+    <symbol id="i-warn" viewBox="0 0 24 24"><path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0Z"/><path d="M12 9v4M12 17h.01"/></symbol>
+  </defs>
+</svg>
+
+<div class="app">
+  <header class="top">
+    <img class="logo" src="assets/logo.svg" alt="SeeVia" width="209" height="72">
+    <p class="top-sub">Kính giả lập: camera và micro của thiết bị này</p>
+    <a class="top-link" href="index.html">Mở bảng giám sát</a>
+  </header>
+
+  <p class="banner" id="banner" aria-hidden="true" hidden><svg class="i" aria-hidden="true"><use href="#i-warn"/></svg><span id="banner-text"></span></p>
+
+  <main class="client">
+    <section class="cam" aria-label="Camera và micro của kính giả lập">
+      <div class="stage-box"><div class="stage" id="stage" data-rec="0" data-video="0">
+        <video id="video" playsinline muted aria-label="Hình xem trước từ camera"></video>
+        <div class="stage-empty" id="stage-empty">
+          <svg class="i i-lg" aria-hidden="true"><use href="#i-camera-off"/></svg>
+          <p>Camera đang tắt. Bấm “Bật camera” để kính gửi hình lên server.</p>
+        </div>
+        <div class="corner corner-tl mono" id="live-badge" hidden>live: --</div>
+        <div class="corner corner-bl" id="rec-badge" hidden><span class="rec-dot"></span>Đang nghe bạn <span class="mono" id="rec-time">0,0 s</span></div>
+      </div></div>
+
+      <div class="toggles">
+        <button class="btn btn-toggle" type="button" id="btn-cam" data-on="0">
+          <svg class="i" aria-hidden="true"><use id="cam-icon" href="#i-camera-off"/></svg><span id="cam-text">Bật camera</span>
+        </button>
+        <button class="btn btn-toggle" type="button" id="btn-mic" data-on="0">
+          <svg class="i" aria-hidden="true"><use id="mic-icon" href="#i-mic-off"/></svg><span id="mic-text">Bật micro</span>
+        </button>
+      </div>
+
+      <div class="meter-box" id="meter-box" data-active="0">
+        <span class="meter-label" id="meter-label">Mức âm micro</span>
+        <div class="meter" id="meter" role="meter" aria-labelledby="meter-label" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0" aria-valuetext="Micro đang nghỉ"><i id="meter-fill"></i></div>
+        <span class="meter-state" id="meter-state">Micro nghỉ. Giữ nút Nói hoặc phím Space để bắt đầu.</span>
+      </div>
+
+      <p class="status" id="status" role="status" aria-live="polite">Chưa kết nối</p>
+    </section>
+  </main>
+
+  <footer class="dock">
+    <div class="conn" role="status">
+      <span class="dot" id="conn-dot" data-state="off"></span>
+      <span id="conn-text">Chưa kết nối</span>
+    </div>
+
+    <div class="dock-mid">
+      <p class="note" id="note" role="alert" hidden></p>
+      <button class="ptt" type="button" id="ptt" aria-pressed="false" aria-keyshortcuts="Space" aria-describedby="ptt-hint">
+        <svg class="i i-lg" aria-hidden="true"><use href="#i-mic"/></svg>
+        <span id="ptt-text">Giữ để nói</span>
+      </button>
+      <p class="ptt-hint" id="ptt-hint">hoặc giữ phím <kbd>Space</kbd> (thả để gửi)</p>
+    </div>
+
+    <button class="btn btn-ghost" type="button" id="btn-settings"><svg class="i" aria-hidden="true"><use href="#i-sliders"/></svg><span>Cài đặt</span></button>
+  </footer>
+</div>
+
+<dialog id="dlg-settings" aria-labelledby="dlg-settings-title">
+  <form method="dialog" class="dlg">
+    <div class="dlg-head">
+      <h2 id="dlg-settings-title">Cài đặt</h2>
+      <button class="btn btn-icon" type="button" data-close aria-label="Đóng"><svg class="i" aria-hidden="true"><use href="#i-x"/></svg></button>
+    </div>
+
+    <label class="field">
+      <span>Server</span>
+      <input type="text" id="set-base" inputmode="url" autocomplete="off" spellcheck="false" placeholder="/api">
+      <small>Mặc định <code>/api</code>: <code>serve.py</code> chuyển tiếp WebSocket <code>/v2/session</code> tới server kính. Có thể dán địa chỉ đầy đủ như <code>wss://host</code>.</small>
+    </label>
+
+    <label class="field">
+      <span>Token thiết bị</span>
+      <input type="password" id="set-token" autocomplete="off" spellcheck="false">
+      <small>Để trống: <code>serve.py</code> tự gắn token đã cấu hình ở server (<code>.env</code>). Chỉ nhập khi nối thẳng tới server khác.</small>
+    </label>
+
+    <label class="field">
+      <span>Mã kính</span>
+      <input type="text" id="set-device" autocomplete="off" spellcheck="false" placeholder="để trống = kính hiện tại">
+      <small>Để trống: dùng mã kính hiện tại (<code>VISIONCARE_DEVICE_ID</code> ở server) nên trang này chính là kính đó: nếu kính thật đang nối cùng mã thì phiên của một bên bị thay (<code>4000</code>).</small>
+    </label>
+
+    <label class="field">
+      <span>Camera</span>
+      <select id="set-facing">
+        <option value="environment">Camera sau (hướng ra ngoài)</option>
+        <option value="user">Camera trước</option>
+      </select>
+    </label>
+
+    <div class="dlg-foot"><button class="btn btn-primary" value="save" id="set-save">Lưu</button></div>
+  </form>
+</dialog>
+
+<script type="module" src="client.js"></script>
+</body>
+</html>

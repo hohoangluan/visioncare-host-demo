@@ -44,7 +44,7 @@ STATIC_SPEECH: tuple[str, ...] = (_TOO_DARK, _TOO_BRIGHT, _TOO_BLURRY, _NO_IMAGE
 # thoại) vẫn nhận tham số `image` nhưng bỏ qua nó, nên chất lượng ảnh không đổi
 # được một chữ nào trong câu trả lời — chặn chúng chỉ là từ chối oan.
 _READS_IMAGE = frozenset({
-    Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE, Intent.HAZARD,
+    Intent.OCR, Intent.FIND, Intent.MONEY, Intent.SPACE, Intent.ASK, Intent.HAZARD,
 })
 
 # Chỉ `money` mới chặn thêm theo độ nét, và đây là ngưỡng phòng xa chứ không

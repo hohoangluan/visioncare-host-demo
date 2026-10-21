@@ -12,8 +12,7 @@ LOẠI chứ không phải trích chuỗi con:
     volume_direction  direction     up/down
     ride_confirm    confirm         true/false
 
-Những tham số còn lại (`destination`, `contact_name`, `song`, `volume` dạng số,
-`emergency_number`) là TRÍCH SPAN — tên riêng, địa danh, tên bài hát. Không head
+Những tham số còn lại (`destination`, `contact_name`, `song`, `volume` dạng số) là TRÍCH SPAN — tên riêng, địa danh, tên bài hát. Không head
 phân loại nào làm được, và cũng là chỗ sai thì hậu quả thật (dẫn nhầm đường, gọi
 nhầm người), nên chúng ở lại với Gemini.
 

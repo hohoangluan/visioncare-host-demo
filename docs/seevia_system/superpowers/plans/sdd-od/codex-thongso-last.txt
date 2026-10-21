@@ -1,0 +1,1 @@
+Đã tạo nháp báo cáo tại [THONG_SO_CHOT_nhap_ai.md](/workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system/evaluations/reports/THONG_SO_CHOT_nhap_ai.md). Báo cáo có bảng so baseline, thông số mặc định, CI và đường dẫn nguồn JSON cùng ghi chú lượt đo. Chỉ tạo file này; không chạy test.

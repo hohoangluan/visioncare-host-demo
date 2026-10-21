@@ -1,0 +1,64 @@
+/* Trang kính giả lập (client.html). Dùng chung token màu, .stage, .dock, .btn, hộp thoại của styles.css. */
+
+.top-link {
+  margin-left: auto; font-size: 14px; font-weight: 600; color: var(--accent);
+  min-height: 44px; display: inline-flex; align-items: center;
+}
+
+.client { padding: var(--gap) 20px; display: grid; justify-items: center; align-content: start; min-height: 0; }
+.cam { width: min(100%, 720px); display: grid; gap: 12px; }
+
+/* Khung xem trước cắt theo 4:3 như camera kính; video cắt giữa cho khớp ảnh đã gửi. */
+.stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: var(--stage-bg); }
+.stage[data-video="1"] .stage-empty { display: none; }
+
+.toggles { display: flex; flex-wrap: wrap; gap: 10px; }
+.btn-toggle {
+  flex: 1 1 180px; border-color: var(--line); background: var(--panel); color: var(--text);
+  transition: background-color .2s var(--ease), color .2s var(--ease), border-color .2s var(--ease);
+}
+.btn-toggle:hover { background: var(--panel-2); }
+.btn-toggle[data-on="1"] { background: var(--action); border-color: var(--action); color: var(--on-action); }
+
+/* chỉ báo mức âm micro: đầy lên theo tiếng nói khi đang giữ nút */
+.meter-box { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; align-items: center; }
+.meter-label { font-size: 12px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.meter { height: 14px; border-radius: 999px; background: var(--panel); border: 1px solid var(--line); overflow: hidden; }
+.meter i { display: block; height: 100%; width: 0; border-radius: inherit; background: linear-gradient(90deg, var(--sapphire), var(--sky)); transition: width .08s linear; }
+.meter-box[data-active="1"] .meter { border-color: var(--action); }
+.meter-state { grid-column: 1 / -1; font-size: 13px; color: var(--muted); }
+.meter-box[data-active="1"] .meter-state { color: var(--text); font-weight: 600; }
+
+.status { font-size: 14px; font-weight: 500; color: var(--muted); min-height: 21px; }
+
+.dock-mid { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 4px 16px; }
+.ptt-hint { font-size: 12px; color: var(--muted); }
+.note { flex-basis: 100%; max-width: 56ch; text-align: center; font-size: 13px; font-weight: 600; color: var(--lv-3-ink); }
+
+.ptt {
+  position: relative; min-width: 240px; min-height: 60px; padding: 0 30px;
+  display: inline-flex; align-items: center; justify-content: center; gap: 12px;
+  border: 0; border-radius: 999px; cursor: pointer;
+  background: var(--action); color: var(--on-action);
+  font-weight: 700; font-size: 18px;
+  touch-action: none; user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+  --lvl: 0;
+  transition: transform .15s var(--ease), background-color .15s;
+}
+.ptt::before { /* quầng sáng gradient theo âm lượng micro */
+  content: ""; position: absolute; inset: -7px; border-radius: inherit; z-index: -1;
+  background: linear-gradient(120deg, var(--sapphire), var(--sky));
+  opacity: calc(var(--lvl) * .9);
+  transform: scale(calc(1 + var(--lvl) * .06));
+}
+.ptt[aria-pressed="true"] { background: var(--navy); color: #FFFFFF; transform: scale(.98); }
+.ptt:disabled { cursor: not-allowed; background: var(--panel-2); color: var(--muted); }
+
+@media (prefers-reduced-motion: reduce) { .meter i { transition: none; } }
+
+@media (min-width: 1000px) {
+  /* styles.css cho .stage-box co theo chiều cao còn lại (cột POV); ở đây cột camera cao tuỳ nội dung. */
+  .app { height: auto; min-height: 100dvh; }
+  .client .stage-box { container-type: normal; display: block; }
+  .client .stage { width: 100%; }
+}

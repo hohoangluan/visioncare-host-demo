@@ -1,0 +1,320 @@
+cedaa8a vật cản: sửa sau review cuối — cổng nhoè tương đối, góc cúi trung vị kẹp bất đối xứng, reset khi mất khung lâu, chặn NaN
+ live/hazard.py               | 19 +++++++++++--
+ live/hazard_predict.py       | 52 ++++++++++++++++++++++++++--------
+ live/hazard_track.py         |  5 +++-
+ tests/test_hazard_predict.py | 66 ++++++++++++++++++++++++++++++++++++++++++++
+ 4 files changed, 128 insertions(+), 14 deletions(-)
+diff --git a/live/hazard.py b/live/hazard.py
+index 549436d..ba131d5 100644
+--- a/live/hazard.py
++++ b/live/hazard.py
+@@ -263,24 +263,39 @@ class AntiAnnoy:
+                 return True
+             return False
+         return None
+ 
+     def _send(self, level: int, now: float) -> None:
+         self.current, self._last_sent = level, now
+         if level == 1:
+             self._last_l1 = now
+ 
+ 
++_warned_logic = False
++
++
++def _logic() -> str:
++    """HAZARD_LOGIC hợp lệ ("area"/"predict"); giá trị lạ -> cảnh báo một lần và chạy area."""
++    global _warned_logic
++    v = config.HAZARD_LOGIC
++    if v in ("area", "predict"):
++        return v
++    if not _warned_logic:
++        _warned_logic = True
++        logger.warning("HAZARD_LOGIC=%r không hợp lệ (area|predict); chạy area", v)
++    return "area"
++
++
+ def make_tracker():
+     """HazardTracker (luật diện tích, mặc định) hoặc PredictTracker (HAZARD_LOGIC=predict)."""
+-    if config.HAZARD_LOGIC == "predict":
++    if _logic() == "predict":
+         from live import hazard_predict
+         return hazard_predict.PredictTracker(hazard_predict.PredictParams.from_config())
+     return HazardTracker()
+ 
+ 
+ def make_anti(clock=time.monotonic) -> AntiAnnoy:
+     """AntiAnnoy theo HAZARD_LOGIC: predict thì bật phiếu mức 3 và giữ khi hạ; area giữ y hệt bản cũ."""
+-    if config.HAZARD_LOGIC == "predict":
++    if _logic() == "predict":
+         return AntiAnnoy(clock, l3_vote=config.HAZARD_L3_VOTE, down_hold=config.HAZARD_DOWN_HOLD,
+                          bypass_vote=config.HAZARD_NEW_BYPASS_VOTE == "1", release_s=config.HAZARD_RELEASE_S)
+     return AntiAnnoy(clock)
+diff --git a/live/hazard_predict.py b/live/hazard_predict.py
+index ccb9abe..b64797f 100644
+--- a/live/hazard_predict.py
++++ b/live/hazard_predict.py
+@@ -1,30 +1,34 @@
+ """Làn C (predict): xếp mức nguy hiểm theo THỜI GIAN TỚI HÀNH LANG (TTE) thay vì diện tích hộp.
+ 
+ Mỗi detection -> (X, Z) mét (`hazard_geom`) -> track Kalman (`hazard_track`) -> dự đoán quỹ đạo từng bước 0,125 s:
+ bước đầu tiên vật ở trong hành lang (Z < danger_z, |X| < lane_half) là TTE. Người đi chậm hơn vật tới thì TTE dài, vật
+ đi sượt qua không cắt hành lang thì không bíp; vật mới hiện đã sát người thì báo ngay (urgent), khỏi chờ phiếu.
+ 
+ Bật bằng HAZARD_LOGIC=predict (`hazard.make_tracker`). Cùng chữ ký `assess` với `HazardTracker`.
+ """
+ 
+ import math
++from collections import deque
+ from dataclasses import dataclass
+ 
+ import config
+ from live import ego_motion, hazard, hazard_geom
+ from live.hazard_geom import Camera
+ from live.hazard_track import DT_DEFAULT, TrackSet
+ 
+-_PITCH_ALPHA = 0.1     # EMA của góc cúi
+-_PITCH_MAX = 0.1       # rad, kẹp góc cúi
+-_BLUR_MIN = 30.0       # phương sai Laplacian dưới mức này = ảnh nhoè (đang quay đầu nhanh)
++_PITCH_N = 31          # số mẫu góc cúi gần nhất; góc cúi = trung vị (chịu được 50 % mẫu lệch như trẻ em)
++_PITCH_LO = -0.02      # rad, kẹp bất đối xứng: cúi xuống thật hiếm, ngẩng/cúi lệch thì không để kéo Z ra xa
++_PITCH_HI = 0.10
++_BLUR_ALPHA = 0.1      # EMA độ nét của phiên
++_BLUR_REL = 0.35       # nhoè <=> độ nét < 0,35 · EMA (tương đối, cảnh ít chi tiết không bị coi là nhoè)
++_BLUR_MAX_RUN = 2      # tối đa chừng này khung nhoè liên tiếp bị chặn tạo track; khung kế luôn cho tạo
+ _BLUR_R_SCALE = 4.0    # ảnh nhoè: nhân R lên chừng này lần, không tạo track mới
+ _NEAR_LEVEL1_Z = 8.0   # không cắt hành lang mà gần hơn mức này (m) -> mức 1
+ 
+ 
+ @dataclass
+ class PredictParams:
+     tte_l3_s: float = 1.5
+     tte_l2_s: float = 3.0
+     horizon_s: float = 3.0
+     new_near_m: float = 3.0
+@@ -70,40 +74,63 @@ def _tte(x: float, z: float, vx: float, vz: float, p: PredictParams, lane: float
+ 
+ 
+ class PredictTracker:
+     """Từ detection mỗi khung (+ mốc thời gian, chuyển động đầu) -> mức nguy hiểm cao nhất, theo quỹ đạo dự đoán."""
+ 
+     def __init__(self, params: PredictParams | None = None, cam: Camera | None = None) -> None:
+         self.params = params or PredictParams.from_config()
+         self.cam = cam or Camera.default()
+         self.tracks = TrackSet(self.params.coast, self.params.q)
+         self.pitch_rad = 0.0
++        self._pitch_samples: deque[float] = deque(maxlen=_PITCH_N)
++        self._blur_ema: float | None = None
++        self._blur_run = 0  # số khung nhoè liên tiếp đã bị chặn tạo track
+ 
+     def _learn_pitch(self, detections: list[hazard.Detection]) -> None:
+         for det in detections:
+             s = hazard_geom.pitch_sample(det, self.cam)
+-            if s is not None:
+-                s = min(max(s, -_PITCH_MAX), _PITCH_MAX)
+-                self.pitch_rad = min(max(self.pitch_rad + _PITCH_ALPHA * (s - self.pitch_rad), -_PITCH_MAX), _PITCH_MAX)
++            if s is not None and math.isfinite(s):
++                self._pitch_samples.append(s)
++        if self._pitch_samples:
++            m = sorted(self._pitch_samples)
++            self.pitch_rad = min(max(m[len(m) // 2], _PITCH_LO), _PITCH_HI)
++
++    @staticmethod
++    def _finite(det: hazard.Detection) -> bool:
++        return all(math.isfinite(v) for v in det.box)
+ 
+     def assess(
+         self, detections: list[hazard.Detection], t: float | None = None, ego: "ego_motion.Ego | None" = None,
+     ) -> hazard.Hazard:
+         p, cam = self.params, self.cam
++        n_in = len(detections)
++        keep = [i for i, d in enumerate(detections) if self._finite(d)]  # box NaN/inf: bỏ qua, mức 0
++        if len(keep) != n_in:
++            detections = [detections[i] for i in keep]
+         ests = [hazard_geom.estimate(d, cam, self.pitch_rad) for d in detections]
+         rad = shift = 0.0
+         r_scale, allow_new = 1.0, True
+         if ego is not None:
+             shift = ego.shift_x
+             rad = shift * cam.w / cam.f_px  # góc: tỉ lệ bề rộng · w / f
+-            if ego.blur < _BLUR_MIN:
+-                r_scale, allow_new = _BLUR_R_SCALE, False
++            b = ego.blur
++            if math.isfinite(b):
++                self._blur_ema = b if self._blur_ema is None else self._blur_ema + _BLUR_ALPHA * (b - self._blur_ema)
++                if b < _BLUR_REL * self._blur_ema:
++                    r_scale = _BLUR_R_SCALE
++                    if self._blur_run < _BLUR_MAX_RUN:
++                        allow_new = False
++                        self._blur_run += 1
++                    else:
++                        self._blur_run = 0  # khung thứ 3 liên tiếp: cho tạo track, đếm lại
++                else:
++                    self._blur_run = 0
+         tracks = self.tracks.update(detections, ests, t, ego_shift_rad=rad, box_shift_x=shift,
+                                     r_scale=r_scale, allow_new=allow_new)
+         if allow_new:  # khung nhoè cho Z sai, không dạy góc cúi từ nó
+             self._learn_pitch(detections)
+ 
+         lane = p.lane_half_m
+         by_id: dict[int, tuple[int, bool]] = {}  # id track -> (mức, urgent)
+         best, best_tr, urgent = 0, None, False
+         for tr in tracks:
+             x, z, vx, vz = tr.x.tolist()
+@@ -119,18 +146,21 @@ class PredictTracker:
+                     lvl = 3
+                 elif tte is not None and tte < p.tte_l2_s:
+                     lvl = 2
+                 else:
+                     lvl = 1 if z < _NEAR_LEVEL1_Z else 0
+                 urg = False
+             by_id[tr.id] = (lvl, urg)
+             urgent = urgent or urg
+             if lvl > best:
+                 best, best_tr = lvl, tr
+-        levels = []
+-        for tr in self.tracks.last_matched:
+-            levels.append(by_id[tr.id][0] if tr is not None else 0)
++        levels = [by_id[tr.id][0] if tr is not None else 0 for tr in self.tracks.last_matched]
++        if len(keep) != n_in:  # trả về đúng độ dài/thứ tự detection gốc
++            full = [0] * n_in
++            for i, lv in zip(keep, levels):
++                full[i] = lv
++            levels = full
+         if best_tr is None:
+             return hazard.Hazard(0, levels=levels)
+         x = float(best_tr.x[0])
+         direction = "left" if x < -lane else "right" if x > lane else "center"
+         return hazard.Hazard(best, direction, best_tr.kind, levels, urgent)
+diff --git a/live/hazard_track.py b/live/hazard_track.py
+index 0edaf64..52f2508 100644
+--- a/live/hazard_track.py
++++ b/live/hazard_track.py
+@@ -79,20 +79,22 @@ class TrackSet:
+         self, dets: list[hazard.Detection], ests: list[Estimate], t: float | None,
+         ego_shift_rad: float = 0.0, box_shift_x: float = 0.0, r_scale: float = 1.0, allow_new: bool = True,
+     ) -> list[Track]:
+         """Cập nhật track bằng các detection của một khung, trả mọi track còn sống (đang thấy + đang coast).
+ 
+         `ego_shift_rad`: góc cảnh trượt sang phải do quay đầu (dương = X đo của vật đứng yên tăng); mỗi track được
+         dời X thêm Z·rad vào hệ camera mới trước khi dự đoán nên vận tốc ước lượng là của vật, không của đầu.
+         `box_shift_x`: cùng độ trượt ấy theo tỉ lệ bề rộng ảnh, để gán IoU không rớt khi quay nhanh.
+         `r_scale`: nhân R (ảnh nhoè thì đo kém tin). `allow_new=False`: không tạo track từ khung này.
+         """
++        if t is not None and self._t_prev is not None and t - self._t_prev > DT_MAX:
++            self.reset()  # mất khung lâu: track cũ không còn đáng tin
+         dt = self._dt(t)
+         tracks = old = self._tracks
+         for tr in tracks:
+             if ego_shift_rad:
+                 tr.x[0] += tr.x[1] * ego_shift_rad
+         pairs = self._match(tracks, dets, box_shift_x)
+         matched_det: set[int] = set()
+         for ti, di in pairs:
+             tr, det, est = tracks[ti], dets[di], ests[di]
+             if est.source == "clipped":
+@@ -113,21 +115,22 @@ class TrackSet:
+                 self._set_anchor(tr, est.z_m, det.box)
+             tr.box, tr.kind, tr.hits, tr.misses = det.box, det.kind, tr.hits + 1, 0
+             matched_det.add(di)
+         matched_tr = {ti for ti, _ in pairs}
+         for ti, tr in enumerate(tracks):
+             tr.age += 1
+             if ti not in matched_tr:
+                 _axis(tr.x, tr.P, 0, dt, self.q, None, 0.0)
+                 _axis(tr.x, tr.P, 1, dt, self.q, None, 0.0)
+                 tr.misses += 1
+-        self._tracks = tracks = [tr for tr in tracks if tr.misses <= self.coast]
++        self._tracks = tracks = [tr for tr in tracks if tr.misses <= self.coast
++                                 and np.isfinite(tr.x).all() and np.isfinite(tr.P).all()]
+         by_det: list[Track | None] = [None] * len(dets)
+         for ti, di in pairs:
+             by_det[di] = old[ti]
+         if allow_new:
+             for di, (det, est) in enumerate(zip(dets, ests)):
+                 if di not in matched_det:
+                     by_det[di] = self._new(det, est)
+                     tracks.append(by_det[di])
+         self.last_matched = by_det
+         return list(tracks)
+diff --git a/tests/test_hazard_predict.py b/tests/test_hazard_predict.py
+index 1749405..a4686e8 100644
+--- a/tests/test_hazard_predict.py
++++ b/tests/test_hazard_predict.py
+@@ -465,10 +465,76 @@ def test_lateral_clip_no_fake_inward_velocity():
+     assert all(o[2] < 2 for o in out)
+ 
+ 
+ def test_lateral_clip_real_entry_still_warns():
+     n = 17  # người đi vào hành lang 1 m/s ngang, đồng thời tiến 1 m/s
+     xs = lambda k: max(1.5 - 1.0 * DT * k, 0.0)
+     zs = lambda k: 4.0 - 1.0 * DT * k
+     out = _walk_by(xs, zs, n)
+     first = next(i for i, o in enumerate(out) if o[2] >= 2)
+     assert abs(out[first][0]) >= 0.6
++
++
++# ---- Fix cuối: cổng nhoè tương đối, góc cúi trung vị, reset, NaN, HAZARD_LOGIC lạ ----
++
++def test_low_texture_scene_still_creates_tracks():
++    tr = _tracker()  # cảnh ít chi tiết: blur cố định 10 (dưới ngưỡng tuyệt đối cũ 30) vẫn phải có track
++    ego = ego_motion.Ego(0.0, 10.0)
++    lvls = {}
++    for k in range(40):
++        z = 8.0 - 0.15 * k
++        if z < 2.5:
++            break
++        lvls[round(z, 2)] = tr.assess([_person(0.0, z)], k * DT, ego).level
++    assert tr.tracks._tracks
++    assert max(v for z, v in lvls.items() if z >= 3.8) >= 2
++
++
++def test_blur_burst_blocks_at_most_two_frames():
++    tr = _tracker()
++    sharp, blur = ego_motion.Ego(0.0, 100.0), ego_motion.Ego(0.0, 5.0)
++    for k in range(10):
++        tr.assess([], k * DT, sharp)
++    seen = []
++    for k in range(10, 16):
++        tr.assess([_person(0.0, 6.0)], k * DT, blur)
++        seen.append(bool(tr.tracks._tracks))
++    assert seen[:2] == [False, False] and seen[2] is True
++
++
++def test_pitch_children_do_not_push_far():
++    tr = _tracker()
++    for k in range(60):
++        z = 12.0 - 0.1 * k
++        kid = Detection("person", "person", 0.9, _proj(-1.0, z, 1.15, 0.4))
++        tr.assess([_person(0.8, z), kid] if k % 2 == 0 else [kid, kid, _person(0.8, z)], k * DT)
++    assert tr.pitch_rad >= -0.02
++    e = hazard_geom.estimate(_person(0.0, 4.0), CAM, tr.pitch_rad)
++    assert e.z_m <= 4.0 * 1.05
++
++
++def test_long_gap_resets_tracks():
++    tr = _tracker()
++    for k in range(5):
++        tr.assess([_person(0.0, 6.0)], k * DT)
++    assert tr.tracks._tracks
++    tr.assess([], 5.0)
++    assert not tr.tracks._tracks
++
++
++def test_nan_box_ignored():
++    tr = _tracker()
++    bad = Detection("person", "person", 0.9, (float("nan"), 0.2, 0.6, 0.8))
++    h = tr.assess([bad, _person(0.0, 6.0), Detection("person", "person", 0.9, (0.1, float("inf"), 0.3, 0.9))], 0.0)
++    assert len(h.levels) == 3 and h.levels[0] == 0 and h.levels[2] == 0
++    assert len(tr.tracks._tracks) == 1
++    assert np.isfinite(tr.tracks._tracks[0].x).all()
++
++
++def test_unknown_hazard_logic_warns_once_and_runs_area(monkeypatch, caplog):
++    monkeypatch.setattr(config, "HAZARD_LOGIC", "bogus")
++    monkeypatch.setattr(hazard, "_warned_logic", False)
++    with caplog.at_level("WARNING", logger="blind_assist"):
++        a, b = hazard.make_tracker(), hazard.make_tracker()
++        hazard.make_anti()
++    assert isinstance(a, hazard.HazardTracker) and isinstance(b, hazard.HazardTracker)
++    assert sum("HAZARD_LOGIC" in r.message for r in caplog.records) == 1

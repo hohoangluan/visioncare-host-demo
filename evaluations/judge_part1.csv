@@ -1,0 +1,41 @@
+row,direct_1,extra_1,correct_1,halluc_1,refused_1,fix_1,direct_2,extra_2,correct_2,halluc_2,refused_2,fix_2,better,note
+95,0,1,1,0,1,0,1,0,1,0,1,1,2,A2 nói thẳng không thấy kèm cách sửa; A1 tả bàn thừa
+96,1,0,1,0,0,0,0,1,1,0,0,0,1,A1 trả lời thẳng; A2 mở bằng cái bàn
+97,1,0,1,0,0,0,1,1,1,0,0,0,1,A1 ngắn gọn; A2 thêm tả không gian thừa
+98,1,0,1,0,0,0,0,1,1,0,0,0,1,"Cùng đúng; A1 gọn hơn, A2 mở bằng mô tả thẻ"
+99,0,1,1,0,0,0,1,0,1,0,0,0,2,A2 nêu ngay hãng Blue Buffalo; A1 tả bao bì thừa
+100,0,1,0,0,0,0,1,0,1,0,0,0,2,A2 nói đúng một đô la; A1 không trả lời mệnh giá
+101,0,1,1,0,0,0,1,0,1,0,0,0,2,A2 ngắn và trúng; A1 mở bằng tả hũ
+102,0,1,0,1,0,0,1,1,1,0,0,0,2,"A2 nêu Spaghetti Seasoning; A1 sai là mặt sau, không trả lời"
+103,1,1,1,0,0,0,1,1,1,0,0,0,1,"Cùng đúng; A1 ngắn hơn, ít chi tiết thừa"
+104,0,0,1,0,0,0,1,0,1,1,0,0,1,A2 bịa người mặc đồ tối; A1 mở bằng Trong nhà
+105,1,0,1,0,0,0,0,1,1,0,0,0,1,A1 nêu thẳng vị kem; A2 mở bằng Trong nhà
+106,1,0,1,0,1,1,0,1,1,0,1,0,1,A1 nói thẳng kèm cách xoay; A2 tả hộp nhựa
+107,1,0,1,0,1,1,0,0,0,1,1,0,1,A2 bảo là trang giấy sai; A1 từ chối kèm cách sửa
+108,1,0,1,0,0,0,1,0,1,0,0,0,tie,Hai câu giống hệt và đúng
+109,0,1,1,0,0,0,1,0,1,0,0,0,2,"A2 nêu ngay khu bếp; A1 mở bằng Trong nhà, thừa"
+110,1,1,1,0,0,0,1,0,1,0,0,0,2,A2 gọn không hỏi lại; A1 thêm câu hỏi thừa
+111,1,0,1,0,0,0,1,0,1,0,0,0,tie,Hai câu giống hệt và đúng
+112,1,0,1,0,1,1,0,1,0,0,0,0,1,"A1 nói không thấy mã; A2 không trả lời, tả đàn"
+113,0,1,0,1,0,0,0,1,1,0,0,0,2,A1 bịa nhãn Kitchen Dry Goods; A2 đọc đúng
+114,1,0,1,0,1,1,0,1,1,0,1,0,1,A1 từ chối kèm cách sửa; A2 tả phòng thừa
+115,1,0,1,0,0,0,1,1,1,0,0,0,1,"A1 gọn, nêu đúng hũ dưa cải; A2 thêm tả"
+116,1,0,0,0,1,0,1,0,0,0,1,0,tie,"Hai câu giống hệt, đều từ chối sai khi bài 9 rô thấy được"
+117,1,1,0,1,0,0,1,0,1,0,1,1,2,A1 bảo không có chai là sai; A2 từ chối đúng kèm cách sửa
+118,0,1,1,0,0,0,1,0,1,0,0,0,2,A2 trả lời thẳng về bầu trời; A1 tả nhà và bãi xe thừa
+119,0,1,1,0,0,0,1,0,1,0,0,0,2,"A2 nêu ngay vị; A1 mở bằng hộp bánh, thêm cân nặng"
+120,1,0,1,0,0,0,0,1,1,0,0,0,1,A1 gọn; A2 nêu tên thiết bị và hỏi lại thừa
+121,1,0,1,0,0,0,0,0,0,0,0,0,1,A1 đọc đủ hướng dẫn giặt; A2 không đọc nội dung
+122,1,0,1,0,1,0,1,0,1,0,1,0,tie,Cùng từ chối và khuyên đi khám; A2 tả thêm vết đỏ
+123,1,0,1,0,0,0,1,1,1,0,0,0,1,A1 gọn; A2 thêm tả nhiều hộp xung quanh
+124,0,1,1,0,0,0,1,0,1,0,0,0,2,A2 gọi đúng bộ dụng cụ gỗ; A1 tả cả phòng
+125,1,1,0,1,0,0,1,0,0,0,1,1,2,A1 bịa chai nước suối; A2 từ chối nhưng ít hại hơn
+126,1,0,1,0,1,1,1,1,1,0,1,1,1,A1 từ chối gọn nói cần đưa áo lại gần; A2 thêm câu thừa
+127,0,1,1,0,0,0,1,0,1,0,0,0,2,A2 nêu ngay nội dung; A1 mở bằng tên thiết bị
+128,1,0,1,0,0,0,1,1,1,0,0,0,1,A1 gọn; A2 tả laptop Toshiba và bàn thừa
+129,1,0,1,0,0,0,0,1,1,0,0,0,1,A1 nêu thẳng loại thuốc; A2 mở bằng Ngoài trời
+130,0,1,0,0,0,0,1,0,1,0,1,1,2,A2 từ chối đúng kèm cách xoay; A1 tả đồ xung quanh
+131,0,1,1,0,0,0,1,0,1,0,0,0,2,"A2 nêu ngay bánh panini gà tây; A1 mở bằng bao bì, hỏi lại"
+132,1,1,1,0,0,0,1,1,1,0,0,0,1,A1 nêu Skype như người dùng; cả hai thêm chi tiết thừa
+133,0,1,1,0,1,0,1,0,1,0,1,1,2,A2 nói thẳng không thấy ngày kèm cách xoay hộp
+134,1,0,1,0,0,0,0,1,1,0,0,0,1,A1 trả lời một câu; A2 tả sàn nhà thừa

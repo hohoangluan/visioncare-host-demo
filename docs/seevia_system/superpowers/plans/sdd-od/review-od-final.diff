@@ -1,0 +1,1444 @@
+20decde vật cản: hộp cắt đáy -> chặn Z trên theo mặt đất thấy được gần nhất (×1,15)
+e91bd7b vật cản: hộp chạm mép bên -> X theo cạnh trong + nửa bề rộng lớp (hết vận tốc ngang ảo khi đi lướt qua)
+111d84b vật cản: lớp không có chiều cao điển hình (cột, biển…) chỉ dùng mặt đất + tỉ lệ bề rộng
+f270b38 vật cản: đuôi nhả HAZARD_RELEASE_S — thoát nguy hiểm thì kêu thêm chút rồi dừng hẳn
+5206c82 vật cản: đáy hộp bị cắt -> Z theo tỉ lệ bề rộng (bỏ công thức cạnh trên sai)
+9264fea vật cản: HAZARD_LOGIC=predict — TTE theo dự đoán quỹ đạo, vật mới gần báo ngay, phiếu 2/3 + hysteresis; ego_motion
+b991631 vật cản: hazard_track — track IoU + Kalman (X, Z) theo mốc thời gian thật
+f6406a0 vật cản: hazard_geom — ước lượng khoảng cách theo chiều cao lớp + đáy hộp; cờ HAZARD_LOGIC
+
+ config.py                    |  30 +++
+ lanes/nav_live.py            |  21 +-
+ live/ego_motion.py           |  38 ++++
+ live/hazard.py               |  80 +++++++-
+ live/hazard_geom.py          | 207 +++++++++++++++++++
+ live/hazard_predict.py       | 136 +++++++++++++
+ live/hazard_track.py         | 191 +++++++++++++++++
+ tests/test_hazard_predict.py | 474 +++++++++++++++++++++++++++++++++++++++++++
+ 8 files changed, 1166 insertions(+), 11 deletions(-)
+
+diff --git a/config.py b/config.py
+index 845222d..0a68dae 100644
+--- a/config.py
++++ b/config.py
+@@ -376,20 +376,50 @@ TEXT_DETECTOR = get("TEXT_DETECTOR", "auto")
+ 
+ # Hazard (§11). File ONNX YOLO; trống/thiếu file thì làn C không có detector.
+ HAZARD_MODEL_PATH = get("HAZARD_MODEL_PATH", os.path.join(_ROOT, "models", "hazard", "yolo11n.onnx"))
+ HAZARD_IMGSZ = int(get("HAZARD_IMGSZ", "320"))
+ HAZARD_MIN_SCORE = float(get("HAZARD_MIN_SCORE", "0.35"))
+ HAZARD_NUM_THREADS = int(get("HAZARD_NUM_THREADS", "4"))
+ HAZARD_REPEAT_S = float(get("HAZARD_REPEAT_S", "2"))
+ HAZARD_LEVEL1_GAP_S = float(get("HAZARD_LEVEL1_GAP_S", "5"))
+ # Mức thấp nhất được gửi cho kính. 2 = bỏ mức 1 (vật xa/ngoài lối đi) cho đỡ ồn; 1 = gửi cả mức 1.
+ HAZARD_MIN_LEVEL = int(get("HAZARD_MIN_LEVEL", "2"))
++# Logic hazard: "area" = luật diện tích hộp (hành vi cũ, mặc định); "predict" = ước lượng khoảng cách +
++# dự đoán quỹ đạo, xếp mức theo thời gian tới hành lang (TTE). Chỉ bật bằng env.
++HAZARD_LOGIC = get("HAZARD_LOGIC", "area")
++# Camera danh nghĩa của kính (QVGA 320x240): góc nhìn ngang và độ cao so với mặt đất.
++HAZARD_CAM_HFOV_DEG = float(get("HAZARD_CAM_HFOV_DEG", "66.0"))
++HAZARD_CAM_HEIGHT_M = float(get("HAZARD_CAM_HEIGHT_M", "1.6"))
++# Hành lang nguy hiểm tính theo TÂM vật (khớp nhãn C1b): Z < DANGER_Z và |X| < LANE_HALF.
++HAZARD_DANGER_Z_M = float(get("HAZARD_DANGER_Z_M", "2.0"))
++HAZARD_LANE_HALF_M = float(get("HAZARD_LANE_HALF_M", "0.6"))
++# Thời gian dự kiến chạm hành lang (TTE): dưới L3 -> mức 3, dưới L2 -> mức 2; nhìn trước tối đa HORIZON.
++HAZARD_TTE_L3_S = float(get("HAZARD_TTE_L3_S", "1.5"))
++HAZARD_TTE_L2_S = float(get("HAZARD_TTE_L2_S", "3.0"))
++HAZARD_HORIZON_S = float(get("HAZARD_HORIZON_S", "3.0"))
++# Track mới xuất hiện gần hơn mức này (m) mà đã trong hành lang thì báo ngay (urgent). 0 = tắt.
++HAZARD_NEW_NEAR_M = float(get("HAZARD_NEW_NEAR_M", "3.0"))
++# Số khung giữ track khi mất detection (coast) trước khi xoá.
++HAZARD_COAST_FRAMES = int(get("HAZARD_COAST_FRAMES", "3"))
++# Hệ số nới hành lang theo độ bất định ngang của dự đoán (0 = không nới).
++HAZARD_SIGMA_K = float(get("HAZARD_SIGMA_K", "0.0"))
++# AntiAnnoy khi predict: mức 3 cần L3_VOTE/3 khung (urgent vượt phiếu nếu BYPASS), hạ mức phải giữ DOWN_HOLD khung.
++HAZARD_L3_VOTE = int(get("HAZARD_L3_VOTE", "2"))
++HAZARD_NEW_BYPASS_VOTE = get("HAZARD_NEW_BYPASS_VOTE", "1")
++# Nhiễu quá trình của Kalman (gia tốc trắng, m^2/s^3).
++HAZARD_KF_Q = float(get("HAZARD_KF_Q", "1.0"))
++HAZARD_DOWN_HOLD = int(get("HAZARD_DOWN_HOLD", "2"))
++# Đuôi nhả (chỉ predict): hết dấu hiệu nguy hiểm thì kêu thêm chừng này giây rồi dừng hẳn. 0 = tắt.
++HAZARD_RELEASE_S = float(get("HAZARD_RELEASE_S", "0.5"))
++# Bảng lớp của detector: trống = COCO hard-code trong live/hazard.py; có giá trị = file JSON {id: [kind, nhóm]}
++# (định dạng evaluations/train/classes_vh.json) cho model fine-tune (ft_11s_last).
++HAZARD_CLASSES_JSON = get("HAZARD_CLASSES_JSON", "")
+ # Bật GET /v2/debug/stats (số request Gemma đang bay/đỉnh/tổng) cho tools/bench_load.py. Mặc định tắt:
+ # endpoint không tồn tại (404) khi cờ này không phải "1".
+ V2_DEBUG_STATS = get("V2_DEBUG_STATS", "") == "1"
+ # Tắt bước warm mạng/detector lúc khởi động (test đặt 0).
+ V2_WARM = get("V2_WARM", "1") != "0"
+ # Model ONNX của server (hazard, text detector): "auto" = CUDA nếu có, "cpu", "cuda".
+ ONNX_DEVICE = get("ONNX_DEVICE", "auto")
+ ONNX_GPU_ID = int(get("ONNX_GPU_ID", "0"))
+ TEXT_DET_MODEL_PATH = get(
+     "TEXT_DET_MODEL_PATH", os.path.join(_ROOT, "models", "text_det", "ch_PP-OCRv4_det_infer.onnx")
+diff --git a/lanes/nav_live.py b/lanes/nav_live.py
+index db30ba8..a41f071 100644
+--- a/lanes/nav_live.py
++++ b/lanes/nav_live.py
+@@ -13,40 +13,45 @@ import contextlib
+ import logging
+ import queue
+ import time
+ 
+ import cv2
+ import numpy as np
+ from starlette.websockets import WebSocket, WebSocketDisconnect
+ 
+ import config
+ from lanes.ocr_live import _Mailbox, receive_frames
+-from live import hazard, protocol
++from live import ego_motion, hazard, protocol
+ from live.session import LiveSession, sessions
+ from pipeline import speech
+ 
+ logger = logging.getLogger("blind_assist")
+ 
+ 
+ def _decode(jpeg: bytes) -> np.ndarray | None:
+     return cv2.imdecode(np.frombuffer(jpeg, dtype=np.uint8), cv2.IMREAD_COLOR)
+ 
+ 
+ def process_frame(
+-    det, tracker: hazard.HazardTracker, jpeg: bytes,
++    det, tracker: hazard.HazardTracker, jpeg: bytes, t: float | None = None,
++    meter: "ego_motion.EgoMeter | None" = None,
+ ) -> tuple[hazard.Hazard, list[hazard.Detection], tuple[int, int]]:
+-    """-> (hazard, detections của khung, (rộng, cao) ảnh đã giải mã); hazard.levels là mức từng detection."""
++    """-> (hazard, detections của khung, (rộng, cao) ảnh đã giải mã); hazard.levels là mức từng detection.
++
++    `t` = mốc thời gian lúc nhận khung (cho Kalman của predict), `meter` = đo chuyển động đầu (chỉ khi predict).
++    """
+     bgr = _decode(jpeg)
+     if bgr is None:
+         return hazard.Hazard(0), [], (0, 0)
++    ego = meter.measure(bgr) if meter is not None else None
+     detections = det.detect(bgr)
+-    return tracker.assess(detections), detections, (bgr.shape[1], bgr.shape[0])
++    return tracker.assess(detections, t, ego), detections, (bgr.shape[1], bgr.shape[0])
+ 
+ 
+ def _det_frame(result: hazard.Hazard, detections: list[hazard.Detection], size: tuple[int, int], sent: bool) -> dict:
+     """Khung debug `det` cho trang demo: hộp chuẩn hoá 0..1 + mức từng hộp."""
+     levels = result.levels or [0] * len(detections)
+     return {
+         "t": "det", "w": size[0], "h": size[1],
+         "boxes": [{"kind": d.kind, "score": round(d.score, 3), "box": [round(v, 4) for v in d.box], "level": lvl}
+                   for d, lvl in zip(detections, levels)],
+         "hazard": {"level": result.level, "dir": result.dir, "kind": result.kind} if result.level else None,
+@@ -109,34 +114,36 @@ async def _speak_outbox(ws: WebSocket, session: LiveSession, clock: _HazardClock
+                     await ws.send_bytes(protocol.audio(chunk))
+ 
+ 
+ async def run(ws: WebSocket, session: LiveSession) -> None:
+     box = _Mailbox()
+     receiver = asyncio.create_task(receive_frames(ws, box, session))
+     clock = _HazardClock()
+     talker = asyncio.create_task(_speak_outbox(ws, session, clock))
+     det = hazard.detector()
+     debug = getattr(ws, "debug", None)  # chỉ có trên LiveSocket của phiên bật debug (demo)
+-    tracker, anti = hazard.HazardTracker(), hazard.AntiAnnoy()
++    tracker, anti = hazard.make_tracker(), hazard.make_anti()
++    meter = ego_motion.EgoMeter() if config.HAZARD_LOGIC == "predict" else None
+     frames, total_ms = 0, 0.0
+     try:
+         await ws.send_text(protocol.cam("qvga", 8, quality=15))
+         while not box.closed and not session.closed.is_set():
+             frame = await box.take(0.5)
+             if frame is None or det is None:
+                 continue
+             started = time.perf_counter()
+-            result, detections, size = await asyncio.to_thread(process_frame, det, tracker, frame)
++            result, detections, size = await asyncio.to_thread(
++                process_frame, det, tracker, frame, time.monotonic(), meter)
+             if result.level >= _HIGH_LEVEL:
+                 clock.mark()  # TRƯỚC khi gửi: audio outbox phải dừng ngay, hazard đi trước
+             # Mức dưới HAZARD_MIN_LEVEL coi như an toàn: không tới AntiAnnoy, không gửi kính.
+-            sent = anti.step(result.level if result.level >= config.HAZARD_MIN_LEVEL else 0)
++            sent = anti.step(result.level if result.level >= config.HAZARD_MIN_LEVEL else 0, result.urgent)
+             if sent:
+                 await ws.send_text(protocol.hazard(result.level, result.dir, result.kind))
+                 logger.info("hazard level=%d dir=%s kind=%s", result.level, result.dir, result.kind)
+             if debug is not None and size[0]:  # SAU hazard, không chờ gửi; JPEG hỏng (0x0) thì bỏ khung
+                 debug({**_det_frame(result, detections, size, bool(sent)), protocol.DEBUG_JPEG: frame})
+             frames += 1
+             total_ms += (time.perf_counter() - started) * 1000
+         if session.closed.is_set() and not box.closed:
+             await ws.send_text(protocol.end())
+     except (WebSocketDisconnect, RuntimeError) as exc:
+diff --git a/live/ego_motion.py b/live/ego_motion.py
+new file mode 100644
+index 0000000..566a34c
+--- /dev/null
++++ b/live/ego_motion.py
+@@ -0,0 +1,38 @@
++"""Làn C (predict): đo chuyển động của chính camera giữa hai khung (quay đầu) và độ nhoè, không IMU.
++
++Ảnh xám thu về 80×60, `cv2.phaseCorrelate` với khung trước cho độ trượt ngang của cả cảnh. Quay đầu làm mọi vật trượt
++cùng một lượng; không bù thì vật đứng yên bị đọc thành đang đi ngang. Rẻ (< 1 ms), chạy trên khung QVGA đã giải mã.
++"""
++
++from dataclasses import dataclass
++
++import cv2
++import numpy as np
++
++_W, _H = 80, 60
++_MAX_SHIFT = 0.25      # tỉ lệ bề rộng; trượt lớn hơn là nhiễu hoặc cảnh đổi hẳn, không tin
++_MIN_RESPONSE = 0.05   # độ tin cậy phaseCorrelate: dưới mức này (ảnh trống/tối) coi như không trượt
++
++
++@dataclass(frozen=True)
++class Ego:
++    shift_x: float  # tỉ lệ bề rộng ảnh, dương = cảnh trượt sang phải
++    blur: float     # phương sai Laplacian: càng thấp càng nhoè
++
++
++class EgoMeter:
++    def __init__(self) -> None:
++        self._prev: np.ndarray | None = None
++        self._window = cv2.createHanningWindow((_W, _H), cv2.CV_32F)  # bỏ hiệu ứng biên khi tương quan pha
++
++    def measure(self, bgr: np.ndarray) -> Ego:
++        gray = cv2.cvtColor(bgr, cv2.COLOR_BGR2GRAY)
++        blur = float(cv2.Laplacian(gray, cv2.CV_32F).var())
++        small = cv2.resize(gray, (_W, _H), interpolation=cv2.INTER_AREA).astype(np.float32)
++        shift = 0.0
++        if self._prev is not None:
++            (dx, _), response = cv2.phaseCorrelate(self._prev, small, self._window)
++            if response >= _MIN_RESPONSE and abs(dx) / _W <= _MAX_SHIFT:
++                shift = dx / _W
++        self._prev = small
++        return Ego(shift, blur)
+diff --git a/live/hazard.py b/live/hazard.py
+index 69bb7c5..549436d 100644
+--- a/live/hazard.py
++++ b/live/hazard.py
+@@ -1,19 +1,20 @@
+ """Làn C: hazard detector + luật mức + chống làm phiền (§11).
+ 
+ Detector: YOLO nano COCO xuất ONNX (`tools/export_hazard_onnx.py`), chạy bằng
+ onnxruntime-gpu (CUDA), CPU dự phòng (`models/onnx_session.py`). Không kéo torch
+ vào runtime.
+ 
+ Mức: 0 Safe (không gửi) · 1 Danger · 2 High Danger · 3 Critical.
+ """
+ 
++import json
+ import logging
+ import os
+ import time
+ from dataclasses import dataclass, field
+ from functools import lru_cache
+ 
+ import cv2
+ import numpy as np
+ 
+ import config
+@@ -32,20 +33,30 @@ _CLASSES = {
+     9: ("traffic_light", "static"),
+     10: ("hydrant", "static"),
+     11: ("stop_sign", "static"),
+     12: ("parking_meter", "static"),
+     13: ("bench", "static"),
+     56: ("chair", "static"),
+     58: ("plant", "static"),
+ }
+ 
+ 
++def _load_classes(path: str) -> dict[int, tuple[str, str]]:
++    """Bảng lớp của model fine-tune: file JSON {id: [kind, nhóm]} (evaluations/train/classes_vh.json)."""
++    with open(path, encoding="utf-8") as f:
++        return {int(i): (kind, group) for i, (kind, group) in json.load(f).items()}
++
++
++if config.HAZARD_CLASSES_JSON:  # trống = COCO ở trên; có giá trị = bảng của model fine-tune
++    _CLASSES = _load_classes(config.HAZARD_CLASSES_JSON)
++
++
+ @dataclass
+ class Detection:
+     kind: str
+     group: str
+     score: float
+     box: tuple[float, float, float, float]  # tỉ lệ [0,1]: x0, y0, x1, y1
+ 
+     @property
+     def area(self) -> float:
+         return max(0.0, self.box[2] - self.box[0]) * max(0.0, self.box[3] - self.box[1])
+@@ -136,29 +147,32 @@ def level_of(det: Detection, approaching: bool) -> int:
+     return 0
+ 
+ 
+ @dataclass
+ class Hazard:
+     level: int
+     dir: str = "center"
+     kind: str = ""
+     # Mức từng detection (cùng thứ tự đầu vào của `assess`), chỉ để hiện debug; không tham gia so sánh.
+     levels: list[int] = field(default_factory=list, compare=False, repr=False)
++    # Vật mới hiện đã sát người (HAZARD_LOGIC=predict): AntiAnnoy gửi mức 3 ngay, không chờ phiếu. Không tham gia so sánh.
++    urgent: bool = field(default=False, compare=False)
+ 
+ 
+ class HazardTracker:
+     """Từ danh sách detection mỗi khung -> mức nguy hiểm cao nhất của khung."""
+ 
+     def __init__(self) -> None:
+         self._prev: dict[tuple[str, str], float] = {}  # (kind, dir) -> diện tích khung trước
+ 
+-    def assess(self, detections: list[Detection]) -> Hazard:
++    def assess(self, detections: list[Detection], t: float | None = None, ego=None) -> Hazard:
++        """`t` (mốc thời gian) và `ego` (chuyển động đầu) chỉ dành cho PredictTracker; luật diện tích bỏ qua."""
+         best = Hazard(0)
+         current: dict[tuple[str, str], float] = {}
+         levels: list[int] = []
+         for det in detections:
+             key = (det.kind, direction(det.cx))
+             prev = self._prev.get(key)
+             approaching = prev is not None and det.area > prev * 1.15  # hộp lớn dần
+             current[key] = max(current.get(key, 0.0), det.area)
+             lvl = level_of(det, approaching)
+             levels.append(lvl)
+@@ -167,48 +181,106 @@ class HazardTracker:
+         self._prev = current
+         best.levels = levels
+         return best
+ 
+ 
+ class AntiAnnoy:
+     """Chống làm phiền (§11):
+     - chỉ gửi khi mức TĂNG, hoặc nhắc lại mỗi 2 s khi mức >= 2;
+     - mức phải giữ 2 khung liên tiếp mới gửi (trừ level 3: gửi ngay);
+     - level 1 tối đa 1 lần / 5 s.
++
++    Hai nút cho HAZARD_LOGIC=predict (mặc định giữ nguyên hành vi trên):
++    - `l3_vote` = n: mức 3 chỉ gửi khi >= n trong 3 khung gần nhất là 3 (trừ `urgent` khi `bypass_vote`);
++      chưa đủ phiếu thì xử lý như mức 2;
++    - `down_hold` = n: `current` chỉ hạ khi mức thấp hơn giữ n khung liên tiếp (luật 2 khung ở trên đã là n = 2).
+     """
+ 
+-    def __init__(self, clock=time.monotonic) -> None:
++    def __init__(self, clock=time.monotonic, l3_vote: int = 1, down_hold: int = 1, bypass_vote: bool = True,
++                 release_s: float = 0.0) -> None:
+         self._clock = clock
++        self.l3_vote, self.down_hold, self.bypass_vote = l3_vote, down_hold, bypass_vote
++        self.release_s = release_s
++        self._low = 0                       # số khung liên tiếp có mức < 2
++        self._rel_until: float | None = None  # đang nhả: tới mốc này thì dừng hẳn
++        self._muted = False                 # đã nhả xong: im tới khi có mức >= 2
++        self._recent: list[int] = []  # mức thô của 3 khung gần nhất
+         self._frame_level = -1
+         self._streak = 0
+         self.current = 0
+         self._last_sent = -1e9
+         self._last_l1 = -1e9
+ 
+-    def step(self, level: int) -> bool:
++    def step(self, level: int, urgent: bool = False) -> bool:
+         now = self._clock()
++        self._recent = (self._recent + [level])[-3:]
++        if level == 3 and self.l3_vote > 1 and not (urgent and self.bypass_vote):
++            if self._recent.count(3) < self.l3_vote:
++                level = 2  # chưa đủ phiếu: chưa dám kêu mức 3
++        if self.release_s > 0:
++            done = self._release(level, now)
++            if done is not None:
++                return done
+         if level == self._frame_level:
+             self._streak += 1
+         else:
+             self._frame_level, self._streak = level, 1
+         if not (level == 3 or self._streak >= 2):
+             return False
+         if level == 0:
+             self.current = 0
+             return False
+         if level > self.current:
+             if level == 1 and now - self._last_l1 < config.HAZARD_LEVEL1_GAP_S:
+                 self.current = 1
+                 return False
+             self._send(level, now)
+             return True
+         if level >= 2 and level == self.current and now - self._last_sent >= config.HAZARD_REPEAT_S:
+             self._send(level, now)
+             return True
+-        if level < self.current:
++        if level < self.current and self._streak >= self.down_hold:
+             self.current = level
+         return False
+ 
++    def _release(self, level: int, now: float) -> bool | None:
++        """Đuôi nhả (release_s > 0): hết dấu hiệu nguy hiểm (mức < 2 giữ `down_hold` khung) thì kêu thêm release_s giây
++        như mức cũ vẫn còn (một lần nhắc đến hạn vẫn gửi), rồi dừng hẳn, không nhắc 2 s nữa, tới khi có mức >= 2.
++        Trả bool khi đã xử lý xong khung này, None khi để luồng thường chạy."""
++        if level >= 2:
++            self._low, self._rel_until, self._muted = 0, None, False  # nguy hiểm quay lại: huỷ nhả
++            return None
++        self._low += 1
++        if self._muted:
++            return False
++        if self.current >= 2 and self._low >= self.down_hold:
++            if self._rel_until is None:
++                self._rel_until = now + self.release_s
++            if now >= self._rel_until:
++                self.current, self._rel_until, self._muted = 0, None, True
++                return False
++            if now - self._last_sent >= config.HAZARD_REPEAT_S:
++                self._send(self.current, now)
++                return True
++            return False
++        return None
++
+     def _send(self, level: int, now: float) -> None:
+         self.current, self._last_sent = level, now
+         if level == 1:
+             self._last_l1 = now
++
++
++def make_tracker():
++    """HazardTracker (luật diện tích, mặc định) hoặc PredictTracker (HAZARD_LOGIC=predict)."""
++    if config.HAZARD_LOGIC == "predict":
++        from live import hazard_predict
++        return hazard_predict.PredictTracker(hazard_predict.PredictParams.from_config())
++    return HazardTracker()
++
++
++def make_anti(clock=time.monotonic) -> AntiAnnoy:
++    """AntiAnnoy theo HAZARD_LOGIC: predict thì bật phiếu mức 3 và giữ khi hạ; area giữ y hệt bản cũ."""
++    if config.HAZARD_LOGIC == "predict":
++        return AntiAnnoy(clock, l3_vote=config.HAZARD_L3_VOTE, down_hold=config.HAZARD_DOWN_HOLD,
++                         bypass_vote=config.HAZARD_NEW_BYPASS_VOTE == "1", release_s=config.HAZARD_RELEASE_S)
++    return AntiAnnoy(clock)
+diff --git a/live/hazard_geom.py b/live/hazard_geom.py
+new file mode 100644
+index 0000000..d74acc3
+--- /dev/null
++++ b/live/hazard_geom.py
+@@ -0,0 +1,207 @@
++"""Làn C (predict): ước lượng khoảng cách và lệch ngang của vật từ MỘT hộp QVGA, camera đơn, không IMU.
++
++Hai nguồn độc lập, gộp theo nghịch đảo phương sai khi cả hai hợp lệ:
++- height: Z = f·H/h_px với H = chiều cao điển hình của lớp (sai số tương đối theo lớp);
++- ground: đáy hộp chạm mặt đất, Z = cam_h·f / (y_đáy − cy + f·tan(cúi)) — không cần biết lớp.
++Hộp chạm mép ảnh thì nguồn đó mất tin cậy. Đáy chạm mép dưới (camera cao 1,6 m chỉ thấy đất từ ~3,3 m) thì KHÔNG có
++Z từ một khung: `estimate` trả source="clipped", z_m=NaN; TrackSet lấy Z = Z_track_trước · w_trước / w_nay (bề rộng
++không bị mép dưới cắt), track mới thì dùng `z_width` từ bảng bề rộng lớp.
++
++Toạ độ: X ngang (dương = bên phải), Z phía trước, mét, gốc là camera.
++"""
++
++import math
++from dataclasses import dataclass
++from functools import cached_property
++
++import config
++from live import hazard
++
++# Chiều cao điển hình (m) của từng `kind` (COCO của hazard._CLASSES + evaluations/train/classes_vh.json).
++CLASS_HEIGHT_M: dict[str, float] = {
++    "person": 1.65,               # người lớn Việt Nam đứng
++    "dog": 0.5,                   # chó cỡ trung, tới vai
++    "bicycle": 1.1,               # xe đạp có người ngồi nhìn từ sau/trước: tới đầu
++    "motorbike": 1.2,             # xe máy tính cả người ngồi (đa số ảnh có người lái)
++    "tricycle": 1.3,              # xe ba bánh/xích lô: mái che thấp
++    "car": 1.5,                   # sedan/SUV nhỏ, bỏ qua xe cao
++    "bus": 3.0,                   # xe buýt/khách
++    "truck": 3.0,                 # xe tải
++    "pole": 1.0,                  # cột bị khung cắt thường xuyên -> chiều cao không đáng tin (σ lớn)
++    "warning_column": 1.0,        # trụ cảnh báo, cao 0,6-1,2 m tuỳ loại (σ lớn)
++    "reflective_cone": 0.7,       # cọc tiêu giao thông chuẩn 70 cm
++    "spherical_roadblock": 0.6,   # bi chặn xe hình cầu trước vỉa hè
++    "ashcan": 0.9,                # thùng rác công cộng
++    "bench": 0.45,                # ghế đá: tính mặt ghế (lưng ghế bị che/cắt)
++    "chair": 0.85,                # ghế có lưng
++    "plant": 0.8,                 # chậu cây ven đường (σ lớn: kích thước rất khác nhau)
++    "hydrant": 0.7,               # trụ cứu hoả (nhãn COCO)
++    "fire_hydrant": 0.7,          # trụ cứu hoả (nhãn classes_vh)
++    "stop_sign": 2.2,             # biển báo treo trên cột: tính tới đỉnh biển
++    "traffic_light": 3.0,         # đèn giao thông trên trụ
++    "parking_meter": 1.2,         # cột thu phí đỗ xe
++}
++
++# Lớp KHÔNG có chiều cao điển hình (cột phố cao ~1-8 m): không cho Z theo chiều cao, chỉ mặt đất + tỉ lệ bề rộng.
++NO_HEIGHT_KINDS = frozenset({"pole", "warning_column", "traffic_light", "stop_sign", "plant", "parking_meter"})
++
++# Bề rộng điển hình (m) của từng `kind`, chỉ để định Z cho track MỚI có đáy hộp bị cắt (σ = 0,4·Z).
++CLASS_WIDTH_M: dict[str, float] = {
++    "person": 0.5,                # vai người lớn nhìn thẳng
++    "dog": 0.35,                  # chó cỡ trung nhìn trước/sau
++    "bicycle": 0.6,               # xe đạp nhìn trước/sau: tay lái + người
++    "motorbike": 0.8,             # xe máy nhìn trước/sau tính cả người ngồi
++    "tricycle": 1.1,              # xe ba bánh/xích lô
++    "car": 1.8,                   # thân xe con
++    "bus": 2.5,                   # xe buýt/khách
++    "truck": 2.4,                 # xe tải
++    "pole": 0.15,                 # cột đèn/cột điện đường kính ~15 cm
++    "warning_column": 0.2,        # trụ cảnh báo
++    "reflective_cone": 0.3,       # đế cọc tiêu
++    "spherical_roadblock": 0.5,   # bi chặn đường kính ~50 cm
++    "ashcan": 0.5,                # thùng rác công cộng
++    "bench": 1.5,                 # ghế đá dài
++    "chair": 0.5,                 # ghế có lưng
++    "plant": 0.6,                 # chậu cây
++    "hydrant": 0.3,               # trụ cứu hoả (nhãn COCO)
++    "fire_hydrant": 0.3,          # trụ cứu hoả (nhãn classes_vh)
++    "stop_sign": 0.75,            # biển báo tròn/bát giác
++    "traffic_light": 0.4,         # hộp đèn giao thông
++    "parking_meter": 0.25,        # cột thu phí đỗ xe
++}
++_UNKNOWN_W = 0.5      # lớp ngoài bảng bề rộng
++
++# Sai số tương đối của chiều cao lớp. Mặc định 0,15; cột/cây/biển có kích thước rất khác nhau nên 0,5.
++CLASS_HEIGHT_REL_SIGMA: dict[str, float] = {
++    "pole": 0.5, "warning_column": 0.5, "plant": 0.5, "stop_sign": 0.5, "traffic_light": 0.5,
++}
++_REL_SIGMA_DEFAULT = 0.15
++_EDGE = 0.01          # cạnh hộp cách mép ảnh <= mức này (tỉ lệ) coi như bị cắt
++_CLIP_Z_MARGIN = 1.15  # chừa 15% sai số độ cao camera/góc cúi khi chặn Z của hộp cắt đáy
++_WIDTH_REL = 0.4     # σ_Z của Z theo bề rộng danh nghĩa
++_PITCH_MIN_Z = 3.0    # mẫu góc cúi chỉ lấy khi Z theo chiều cao >= mức này (gần quá thì sai số lớp phóng đại)
++_GROUND_REL = 0.03    # σ_Z = Z²·0,03/cam_h (≈ ±4 px sai số đáy hộp ở QVGA)
++_GROUND_MIN_PX = 2.0  # đáy phải nằm dưới đường chân trời ít nhất ngần này px
++_Z_MAX = 60.0
++_LAT_VAR = 4.0        # hộp chạm mép bên: phương sai X ×4 (cạnh trong + bề rộng lớp kém tin hơn tâm)
++_LAT_VAR_BOTH = 25.0  # cắt cả hai bên: vật choán hết bề ngang, X = 0 với phương sai rất lớn
++_UNKNOWN_H = 1.0      # lớp ngoài bảng: chỉ dùng khi phải rơi về nguồn width
++
++
++@dataclass(frozen=True)
++class Camera:
++    """Camera danh nghĩa: ảnh w×h, góc nhìn ngang, độ cao so với mặt đất."""
++
++    w: int
++    h: int
++    hfov_deg: float
++    height_m: float
++
++    @cached_property  # gọi mỗi detection mỗi khung: tính một lần
++    def f_px(self) -> float:
++        return (self.w / 2) / math.tan(math.radians(self.hfov_deg / 2))
++
++    @staticmethod
++    def default() -> "Camera":
++        return Camera(320, 240, config.HAZARD_CAM_HFOV_DEG, config.HAZARD_CAM_HEIGHT_M)
++
++
++@dataclass
++class Estimate:
++    z_m: float
++    x_m: float
++    z_sigma: float
++    source: str  # "height" | "ground" | "fused" | "width" | "clipped"
++    # "clipped" (đáy hộp chạm mép dưới): z_m = x_m = z_sigma = NaN, "Z cần track". `bearing` = X/Z (tan góc ngang),
++    # `z_width` = Z theo bề rộng danh nghĩa của lớp (dùng khi track mới, σ = 0,4·Z).
++    bearing: float = 0.0
++    z_width: float = math.nan
++    # Hộp chạm mép trái/phải: tâm hộp sai (vật bị cắt). X lấy từ CẠNH TRONG: X = lat_bearing·Z + lat_off_m
++    # (lat_off_m = ∓ nửa bề rộng lớp); phương sai X nhân x_var_scale. lat_bearing = NaN: hộp không bị cắt ngang.
++    lat_bearing: float = math.nan
++    lat_off_m: float = 0.0
++    x_var_scale: float = 1.0
++    z_max: float = math.nan
++
++
++def _height_z(det: hazard.Detection, cam: Camera, h_px: float) -> tuple[float, float] | None:
++    """(Z, σ) theo chiều cao lớp; None nếu lớp lạ hoặc hộp bị cắt trên/dưới."""
++    H = CLASS_HEIGHT_M.get(det.kind)
++    if H is None or det.kind in NO_HEIGHT_KINDS or det.box[1] <= _EDGE or det.box[3] >= 1 - _EDGE or h_px <= 1.0:
++        return None
++    z = cam.f_px * H / h_px
++    return z, CLASS_HEIGHT_REL_SIGMA.get(det.kind, _REL_SIGMA_DEFAULT) * z
++
++
++def _ground_z(cam: Camera, y_bot: float, pitch_rad: float) -> tuple[float, float] | None:
++    """(Z, σ) theo đáy hộp chạm đất; None nếu đáy chạm mép dưới hoặc chưa dưới đường chân trời."""
++    if y_bot >= cam.h * (1 - _EDGE):
++        return None
++    d = y_bot - cam.h / 2 + cam.f_px * math.tan(pitch_rad)
++    if d < _GROUND_MIN_PX:
++        return None
++    z = min(cam.height_m * cam.f_px / d, _Z_MAX)
++    return z, z * z * _GROUND_REL / cam.height_m
++
++
++def _lateral(det: hazard.Detection, cam: Camera) -> tuple[float, float, float]:
++    """(lat_bearing, lat_off_m, x_var_scale) theo cạnh trong khi hộp chạm mép trái/phải; NaN nếu không chạm."""
++    x0, _, x1, _ = det.box
++    left, right = x0 <= _EDGE, x1 >= 1 - _EDGE
++    half = CLASS_WIDTH_M.get(det.kind, _UNKNOWN_W) / 2
++    if left and right:
++        return 0.0, 0.0, _LAT_VAR_BOTH
++    if right:  # thấy cạnh trái của vật; tâm = cạnh trái + nửa bề rộng (ra phía ngoài = bên phải)
++        return (x0 * cam.w - cam.w / 2) / cam.f_px, half, _LAT_VAR
++    if left:
++        return (x1 * cam.w - cam.w / 2) / cam.f_px, -half, _LAT_VAR
++    return math.nan, 0.0, 1.0
++
++
++def estimate(det: hazard.Detection, cam: Camera, pitch_rad: float = 0.0) -> Estimate:
++    """Hộp -> (Z, X, σ_Z). `pitch_rad` > 0 = ảnh trượt lên (camera ngẩng); chỉ nguồn ground phụ thuộc nó."""
++    x0, y0, x1, y1 = det.box
++    y_top, y_bot = y0 * cam.h, y1 * cam.h
++    cx_px = (x0 + x1) / 2 * cam.w
++    height = _height_z(det, cam, y_bot - y_top)
++    ground = _ground_z(cam, y_bot, pitch_rad)
++    if height and ground:
++        wh, wg = 1 / height[1] ** 2, 1 / ground[1] ** 2
++        z, sigma, source = (height[0] * wh + ground[0] * wg) / (wh + wg), (wh + wg) ** -0.5, "fused"
++    elif height:
++        (z, sigma), source = height, "height"
++    elif ground:
++        (z, sigma), source = ground, "ground"
++    elif y_bot >= cam.h * (1 - _EDGE):
++        w_px = max((x1 - x0) * cam.w, 1.0)
++        zw = min(cam.f_px * CLASS_WIDTH_M.get(det.kind, _UNKNOWN_W) / w_px, _Z_MAX)
++        # Đáy bị cắt => chân vật dưới hàng ảnh cuối => vật gần hơn mặt đất thấy được gần nhất (pitch đã kẹp ±0,1 rad nên d > 0)
++        d = cam.h / 2 + cam.f_px * math.tan(pitch_rad)
++        z_max = cam.height_m * cam.f_px / d * _CLIP_Z_MARGIN
++        zw = min(zw, z_max)
++        bearing = (cx_px - cam.w / 2) / cam.f_px
++        lb, lo, lv = _lateral(det, cam)
++        return Estimate(math.nan, math.nan, math.nan, "clipped", bearing, zw, lb, lo, lv, z_max)
++    else:  # không nguồn nào hợp lệ (vd. đáy trên đường chân trời, lớp lạ): dùng bề rộng, rộng chuẩn = 0,5·H
++        w_px = max((x1 - x0) * cam.w, 1.0)
++        w_m = CLASS_WIDTH_M.get(det.kind, _UNKNOWN_W) if det.kind in NO_HEIGHT_KINDS else 0.5 * CLASS_HEIGHT_M.get(det.kind, _UNKNOWN_H)
++        z = min(cam.f_px * w_m / w_px, _Z_MAX)
++        sigma, source = z * _WIDTH_REL, "width"
++    lb, lo, lv = _lateral(det, cam)
++    x = (cx_px - cam.w / 2) * z / cam.f_px if math.isnan(lb) else lb * z + lo
++    return Estimate(z, x, sigma, source, (cx_px - cam.w / 2) / cam.f_px, math.nan, lb, lo, lv)
++
++
++def pitch_sample(det: hazard.Detection, cam: Camera) -> float | None:
++    """Một mẫu góc cúi (rad) khi hộp có cả nguồn height lẫn ground: tìm góc làm hai Z khớp nhau.
++
++    Z_height không phụ thuộc góc, nên tan(p) = cam_h/Z_h − (y_đáy − cy)/f. Chỉ lấy lớp có σ chiều cao nhỏ
++    và Z_h đủ xa; còn lại None.
++    """
++    if CLASS_HEIGHT_REL_SIGMA.get(det.kind, _REL_SIGMA_DEFAULT) > _REL_SIGMA_DEFAULT:
++        return None
++    y_bot = det.box[3] * cam.h
++    height = _height_z(det, cam, (det.box[3] - det.box[1]) * cam.h)
++    if height is None or height[0] < _PITCH_MIN_Z or y_bot >= cam.h * (1 - _EDGE):
++        return None
++    return math.atan(cam.height_m / height[0] - (y_bot - cam.h / 2) / cam.f_px)
+diff --git a/live/hazard_predict.py b/live/hazard_predict.py
+new file mode 100644
+index 0000000..ccb9abe
+--- /dev/null
++++ b/live/hazard_predict.py
+@@ -0,0 +1,136 @@
++"""Làn C (predict): xếp mức nguy hiểm theo THỜI GIAN TỚI HÀNH LANG (TTE) thay vì diện tích hộp.
++
++Mỗi detection -> (X, Z) mét (`hazard_geom`) -> track Kalman (`hazard_track`) -> dự đoán quỹ đạo từng bước 0,125 s:
++bước đầu tiên vật ở trong hành lang (Z < danger_z, |X| < lane_half) là TTE. Người đi chậm hơn vật tới thì TTE dài, vật
++đi sượt qua không cắt hành lang thì không bíp; vật mới hiện đã sát người thì báo ngay (urgent), khỏi chờ phiếu.
++
++Bật bằng HAZARD_LOGIC=predict (`hazard.make_tracker`). Cùng chữ ký `assess` với `HazardTracker`.
++"""
++
++import math
++from dataclasses import dataclass
++
++import config
++from live import ego_motion, hazard, hazard_geom
++from live.hazard_geom import Camera
++from live.hazard_track import DT_DEFAULT, TrackSet
++
++_PITCH_ALPHA = 0.1     # EMA của góc cúi
++_PITCH_MAX = 0.1       # rad, kẹp góc cúi
++_BLUR_MIN = 30.0       # phương sai Laplacian dưới mức này = ảnh nhoè (đang quay đầu nhanh)
++_BLUR_R_SCALE = 4.0    # ảnh nhoè: nhân R lên chừng này lần, không tạo track mới
++_NEAR_LEVEL1_Z = 8.0   # không cắt hành lang mà gần hơn mức này (m) -> mức 1
++
++
++@dataclass
++class PredictParams:
++    tte_l3_s: float = 1.5
++    tte_l2_s: float = 3.0
++    horizon_s: float = 3.0
++    new_near_m: float = 3.0
++    coast: int = 3
++    sigma_k: float = 0.0
++    q: float = 1.0
++    l3_vote: int = 2
++    bypass_vote: bool = True
++    down_hold: int = 2
++    release_s: float = 0.5
++    danger_z_m: float = 2.0
++    lane_half_m: float = 0.6
++
++    @staticmethod
++    def from_config() -> "PredictParams":
++        return PredictParams(
++            tte_l3_s=config.HAZARD_TTE_L3_S, tte_l2_s=config.HAZARD_TTE_L2_S, horizon_s=config.HAZARD_HORIZON_S,
++            new_near_m=config.HAZARD_NEW_NEAR_M, coast=config.HAZARD_COAST_FRAMES, sigma_k=config.HAZARD_SIGMA_K,
++            q=config.HAZARD_KF_Q, l3_vote=config.HAZARD_L3_VOTE, bypass_vote=config.HAZARD_NEW_BYPASS_VOTE == "1",
++            down_hold=config.HAZARD_DOWN_HOLD, release_s=config.HAZARD_RELEASE_S, danger_z_m=config.HAZARD_DANGER_Z_M,
++            lane_half_m=config.HAZARD_LANE_HALF_M,
++        )
++
++
++def _tte(x: float, z: float, vx: float, vz: float, p: PredictParams, lane: float) -> float | None:
++    """Bước 0,125 s đầu tiên (<= horizon) mà vật ở trong hành lang; None nếu không có. Giải kín, không lặp.
++
++    Z_pred < danger và |X_pred| < lane là giao của hai khoảng thời gian mở; lấy bước lưới đầu tiên nằm trong giao.
++    """
++    lo, hi = 0.0, p.horizon_s + 1e-9
++    if vz < -1e-9:
++        lo = max(lo, (z - p.danger_z_m) / -vz)
++    elif z >= p.danger_z_m:
++        return None
++    if abs(vx) < 1e-9:
++        if abs(x) >= lane:
++            return None
++    else:
++        a, b = (-lane - x) / vx, (lane - x) / vx
++        lo, hi = max(lo, min(a, b)), min(hi, max(a, b))
++    t = max(math.floor(lo / DT_DEFAULT + 1e-9) + 1, 1) * DT_DEFAULT  # mở: bước đầu tiên LỚN HƠN lo, từ bước 1
++    return t if t < hi else None
++
++
++class PredictTracker:
++    """Từ detection mỗi khung (+ mốc thời gian, chuyển động đầu) -> mức nguy hiểm cao nhất, theo quỹ đạo dự đoán."""
++
++    def __init__(self, params: PredictParams | None = None, cam: Camera | None = None) -> None:
++        self.params = params or PredictParams.from_config()
++        self.cam = cam or Camera.default()
++        self.tracks = TrackSet(self.params.coast, self.params.q)
++        self.pitch_rad = 0.0
++
++    def _learn_pitch(self, detections: list[hazard.Detection]) -> None:
++        for det in detections:
++            s = hazard_geom.pitch_sample(det, self.cam)
++            if s is not None:
++                s = min(max(s, -_PITCH_MAX), _PITCH_MAX)
++                self.pitch_rad = min(max(self.pitch_rad + _PITCH_ALPHA * (s - self.pitch_rad), -_PITCH_MAX), _PITCH_MAX)
++
++    def assess(
++        self, detections: list[hazard.Detection], t: float | None = None, ego: "ego_motion.Ego | None" = None,
++    ) -> hazard.Hazard:
++        p, cam = self.params, self.cam
++        ests = [hazard_geom.estimate(d, cam, self.pitch_rad) for d in detections]
++        rad = shift = 0.0
++        r_scale, allow_new = 1.0, True
++        if ego is not None:
++            shift = ego.shift_x
++            rad = shift * cam.w / cam.f_px  # góc: tỉ lệ bề rộng · w / f
++            if ego.blur < _BLUR_MIN:
++                r_scale, allow_new = _BLUR_R_SCALE, False
++        tracks = self.tracks.update(detections, ests, t, ego_shift_rad=rad, box_shift_x=shift,
++                                    r_scale=r_scale, allow_new=allow_new)
++        if allow_new:  # khung nhoè cho Z sai, không dạy góc cúi từ nó
++            self._learn_pitch(detections)
++
++        lane = p.lane_half_m
++        by_id: dict[int, tuple[int, bool]] = {}  # id track -> (mức, urgent)
++        best, best_tr, urgent = 0, None, False
++        for tr in tracks:
++            x, z, vx, vz = tr.x.tolist()
++            lane_x = lane + p.sigma_k * tr.sigma_x()
++            new_near = tr.hits == 1 and tr.misses == 0 and 0 < p.new_near_m and z < p.new_near_m and abs(x) < lane
++            if new_near:
++                lvl, urg = 3, True
++            elif z < p.danger_z_m and abs(x) < lane:
++                lvl, urg = 3, False
++            else:
++                tte = _tte(x, z, vx, vz, p, lane_x)
++                if tte is not None and tte < p.tte_l3_s:
++                    lvl = 3
++                elif tte is not None and tte < p.tte_l2_s:
++                    lvl = 2
++                else:
++                    lvl = 1 if z < _NEAR_LEVEL1_Z else 0
++                urg = False
++            by_id[tr.id] = (lvl, urg)
++            urgent = urgent or urg
++            if lvl > best:
++                best, best_tr = lvl, tr
++        levels = []
++        for tr in self.tracks.last_matched:
++            levels.append(by_id[tr.id][0] if tr is not None else 0)
++        if best_tr is None:
++            return hazard.Hazard(0, levels=levels)
++        x = float(best_tr.x[0])
++        direction = "left" if x < -lane else "right" if x > lane else "center"
++        return hazard.Hazard(best, direction, best_tr.kind, levels, urgent)
+diff --git a/live/hazard_track.py b/live/hazard_track.py
+new file mode 100644
+index 0000000..0edaf64
+--- /dev/null
++++ b/live/hazard_track.py
+@@ -0,0 +1,191 @@
++"""Làn C (predict): gán detection qua các khung thành track và lọc Kalman (X, Z, vX, vZ) theo mốc thời gian thật.
++
++Vận tốc không đổi, nhiễu quá trình dạng gia tốc trắng. Đo (X, Z) có R chéo nên hai trục tách rời nhau:
++mỗi trục là một bộ lọc 2 trạng thái (vị trí, vận tốc) tính bằng số thực thuần Python (nhanh hơn numpy cho
++ma trận 2×2, phần ngân sách 1 ms/khung). `x` và `P` vẫn giữ dạng 4 / 4×4 theo thứ tự [X, Z, vX, vZ].
++"""
++
++import math
++from dataclasses import dataclass
++
++import numpy as np
++
++from live import hazard
++from live.hazard_geom import Estimate
++
++DT_DEFAULT = 0.125     # 8 fps; dùng khi mốc thời gian thiếu / trùng / lùi / nhảy quá xa
++DT_MAX = 1.0
++IOU_MIN = 0.2          # ngưỡng gán track <-> detection (hộp dự đoán = hộp cũ)
++X_REL_SIGMA = 0.1      # σ_X đo = 0,1·Z (cùng góc ngang, Z càng xa X càng lệch)
++_EDGE_X = 0.01        # hộp cách mép trái/phải <= mức này (tỉ lệ) = bị cắt ngang
++V_SIGMA_NEW = 3.0      # m/s: vận tốc ban đầu của track mới chưa biết gì
++
++
++@dataclass
++class Track:
++    id: int
++    kind: str
++    group: str
++    box: tuple
++    x: np.ndarray  # [X, Z, vX, vZ]
++    P: np.ndarray  # 4x4
++    hits: int = 1
++    misses: int = 0
++    age: int = 1
++    anchor_z: float = float('nan')  # Z đo thô lần cuối KHÔNG bị cắt đáy (neo cho tỉ lệ bề rộng)
++    anchor_w: float = float('nan')  # bề rộng hộp (tỉ lệ) lúc đó
++
++    def predict_xz(self, t_ahead: float) -> tuple[float, float]:
++        return float(self.x[0] + self.x[2] * t_ahead), float(self.x[1] + self.x[3] * t_ahead)
++
++    def sigma_x(self) -> float:
++        return float(max(self.P[0, 0], 0.0) ** 0.5)
++
++
++def _axis(x: np.ndarray, P: np.ndarray, i: int, dt: float, q: float, meas: float | None, r: float) -> None:
++    """Một trục (i=0: X/vX, i=1: Z/vZ): dự đoán dt giây rồi (nếu có đo) cập nhật. Ghi thẳng vào x, P."""
++    j = i + 2
++    p, v = float(x[i]), float(x[j])
++    a, b, d = float(P[i, i]), float(P[i, j]), float(P[j, j])
++    p += dt * v
++    a, b, d = a + 2 * dt * b + dt * dt * d + q * dt ** 3 / 3, b + dt * d + q * dt * dt / 2, d + q * dt
++    if meas is not None:
++        s = a + r
++        y = meas - p
++        p, v = p + a / s * y, v + b / s * y
++        a, b, d = a - a * a / s, b - a * b / s, d - b * b / s
++    x[i], x[j] = p, v
++    P[i, i], P[i, j], P[j, i], P[j, j] = a, b, b, d
++
++
++class TrackSet:
++    def __init__(self, coast: int, q: float) -> None:
++        self.coast, self.q = coast, q
++        self._tracks: list[Track] = []
++        self._next_id = 1
++        self._t_prev: float | None = None
++        self.last_matched: list[Track | None] = []  # theo thứ tự detection của lần update gần nhất; None = không có track
++
++    def reset(self) -> None:
++        self._tracks, self._t_prev, self.last_matched = [], None, []
++
++    def _dt(self, t: float | None) -> float:
++        prev, self._t_prev = self._t_prev, t
++        if t is None or prev is None or not (0.0 < t - prev <= DT_MAX):  # mốc trùng/lùi/None/nhảy: coi như 1 khung
++            return DT_DEFAULT
++        return t - prev
++
++    def update(
++        self, dets: list[hazard.Detection], ests: list[Estimate], t: float | None,
++        ego_shift_rad: float = 0.0, box_shift_x: float = 0.0, r_scale: float = 1.0, allow_new: bool = True,
++    ) -> list[Track]:
++        """Cập nhật track bằng các detection của một khung, trả mọi track còn sống (đang thấy + đang coast).
++
++        `ego_shift_rad`: góc cảnh trượt sang phải do quay đầu (dương = X đo của vật đứng yên tăng); mỗi track được
++        dời X thêm Z·rad vào hệ camera mới trước khi dự đoán nên vận tốc ước lượng là của vật, không của đầu.
++        `box_shift_x`: cùng độ trượt ấy theo tỉ lệ bề rộng ảnh, để gán IoU không rớt khi quay nhanh.
++        `r_scale`: nhân R (ảnh nhoè thì đo kém tin). `allow_new=False`: không tạo track từ khung này.
++        """
++        dt = self._dt(t)
++        tracks = old = self._tracks
++        for tr in tracks:
++            if ego_shift_rad:
++                tr.x[0] += tr.x[1] * ego_shift_rad
++        pairs = self._match(tracks, dets, box_shift_x)
++        matched_det: set[int] = set()
++        for ti, di in pairs:
++            tr, det, est = tracks[ti], dets[di], ests[di]
++            if est.source == "clipped":
++                zm = self._width_ratio_z(tr, det)
++                if zm is not None and math.isfinite(est.z_max):
++                    zm = min(zm, est.z_max)
++                if zm is None:  # Z không quan sát được: chỉ dự đoán Z, X vẫn lấy từ góc ngang
++                    _axis(tr.x, tr.P, 1, dt, self.q, None, 0.0)
++                    zp = max(float(tr.x[1]), 0.3)
++                    _axis(tr.x, tr.P, 0, dt, self.q, self._x_at(est, zp), (X_REL_SIGMA * zp) ** 2 * r_scale * est.x_var_scale)
++                else:
++                    _axis(tr.x, tr.P, 1, dt, self.q, zm, (0.1 * zm) ** 2 * r_scale)
++                    _axis(tr.x, tr.P, 0, dt, self.q, self._x_at(est, zm), (X_REL_SIGMA * zm) ** 2 * r_scale * est.x_var_scale)
++            else:
++                z_sigma = max(est.z_sigma, 1e-3)
++                _axis(tr.x, tr.P, 0, dt, self.q, est.x_m, (X_REL_SIGMA * est.z_m) ** 2 * r_scale * est.x_var_scale)
++                _axis(tr.x, tr.P, 1, dt, self.q, est.z_m, z_sigma ** 2 * r_scale)
++                self._set_anchor(tr, est.z_m, det.box)
++            tr.box, tr.kind, tr.hits, tr.misses = det.box, det.kind, tr.hits + 1, 0
++            matched_det.add(di)
++        matched_tr = {ti for ti, _ in pairs}
++        for ti, tr in enumerate(tracks):
++            tr.age += 1
++            if ti not in matched_tr:
++                _axis(tr.x, tr.P, 0, dt, self.q, None, 0.0)
++                _axis(tr.x, tr.P, 1, dt, self.q, None, 0.0)
++                tr.misses += 1
++        self._tracks = tracks = [tr for tr in tracks if tr.misses <= self.coast]
++        by_det: list[Track | None] = [None] * len(dets)
++        for ti, di in pairs:
++            by_det[di] = old[ti]
++        if allow_new:
++            for di, (det, est) in enumerate(zip(dets, ests)):
++                if di not in matched_det:
++                    by_det[di] = self._new(det, est)
++                    tracks.append(by_det[di])
++        self.last_matched = by_det
++        return list(tracks)
++
++    @staticmethod
++    def _x_at(est: Estimate, z: float) -> float:
++        """X đo tại độ sâu z: theo cạnh trong nếu hộp bị cắt ngang, còn lại theo tâm hộp."""
++        return est.bearing * z if est.lat_bearing != est.lat_bearing else est.lat_bearing * z + est.lat_off_m
++
++    @staticmethod
++    def _set_anchor(tr: Track, z: float, box: tuple) -> None:
++        if box[0] > _EDGE_X and box[2] < 1 - _EDGE_X and box[2] - box[0] > 1e-4:
++            tr.anchor_z, tr.anchor_w = z, box[2] - box[0]
++
++    @staticmethod
++    def _width_ratio_z(tr: Track, det: hazard.Detection) -> float | None:
++        """Đáy hộp bị cắt: Z = Z_neo · w_neo / w_nay (bề rộng không bị mép dưới cắt). Neo = Z đo thô lần cuối chưa
++        bị cắt (hoặc Z theo bảng bề rộng của track mới), KHÔNG phải Z đã lọc: Z lọc đang mang độ trễ vận tốc, dùng nó
++        làm gốc thì phép đo tương đối tự nhắc lại sai số của chính bộ lọc và vật đã dừng vẫn bị kéo lại gần.
++        None nếu hộp nay chạm mép trái/phải, chưa có neo, hoặc bề rộng suy biến."""
++        n0, n1 = det.box[0], det.box[2]
++        if not (tr.anchor_w > 0) or n0 <= _EDGE_X or n1 >= 1 - _EDGE_X or n1 - n0 <= 1e-4:
++            return None
++        return min(max(tr.anchor_z * tr.anchor_w / (n1 - n0), 0.3), 60.0)
++
++    def _new(self, det: hazard.Detection, est: Estimate) -> Track:
++        if est.source == "clipped":  # Z theo bề rộng danh nghĩa của lớp, σ = 0,4·Z
++            z = est.z_width
++            est = Estimate(z, self._x_at(est, z), 0.4 * z, "width", est.bearing, x_var_scale=est.x_var_scale)
++        x = np.array([est.x_m, est.z_m, 0.0, 0.0])
++        P = np.diag([(X_REL_SIGMA * est.z_m) ** 2, max(est.z_sigma, 1e-3) ** 2, V_SIGMA_NEW ** 2, V_SIGMA_NEW ** 2])
++        tr = Track(self._next_id, det.kind, det.group, det.box, x, P)
++        self._next_id += 1
++        self._set_anchor(tr, est.z_m, det.box)
++        return tr
++
++    @staticmethod
++    def _match(tracks: list[Track], dets: list[hazard.Detection], box_shift_x: float) -> list[tuple[int, int]]:
++        """Gán tham lam theo IoU giảm dần, cùng nhóm, IoU >= IOU_MIN. -> [(chỉ số track, chỉ số detection)]."""
++        if not tracks or not dets:
++            return []
++        tb = np.array([tr.box for tr in tracks], dtype=np.float64)
++        db = np.array([d.box for d in dets], dtype=np.float64)
++        if box_shift_x:
++            tb[:, [0, 2]] += box_shift_x
++        iw = np.minimum(tb[:, None, 2], db[None, :, 2]) - np.maximum(tb[:, None, 0], db[None, :, 0])
++        ih = np.minimum(tb[:, None, 3], db[None, :, 3]) - np.maximum(tb[:, None, 1], db[None, :, 1])
++        inter = np.clip(iw, 0, None) * np.clip(ih, 0, None)
++        area_t = (tb[:, 2] - tb[:, 0]) * (tb[:, 3] - tb[:, 1])
++        area_d = (db[:, 2] - db[:, 0]) * (db[:, 3] - db[:, 1])
++        union = area_t[:, None] + area_d[None, :] - inter
++        iou = np.where(union > 1e-12, inter / np.maximum(union, 1e-12), 0.0)
++        rows, cols = np.nonzero(iou >= IOU_MIN)
++        order = sorted(zip(iou[rows, cols].tolist(), rows.tolist(), cols.tolist()), reverse=True)
++        pairs, used_t, used_d = [], set(), set()
++        for _, i, j in order:
++            if i in used_t or j in used_d or tracks[i].group != dets[j].group:
++                continue
++            used_t.add(i); used_d.add(j)
++            pairs.append((i, j))
++        return pairs
+diff --git a/tests/test_hazard_predict.py b/tests/test_hazard_predict.py
+new file mode 100644
+index 0000000..1749405
+--- /dev/null
++++ b/tests/test_hazard_predict.py
+@@ -0,0 +1,474 @@
++"""HAZARD_LOGIC=predict: hình học ước lượng khoảng cách, track Kalman, xếp mức theo TTE."""
++
++import importlib
++import json
++import math
++import os
++
++import numpy as np
++import pytest
++
++import config
++from live import hazard
++from live.hazard import Detection
++from live import hazard_geom
++from live.hazard_geom import Camera, CLASS_HEIGHT_M
++
++CLASSES_VH = "/workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system/evaluations/train/classes_vh.json"
++
++CAM = Camera(320, 240, 66.0, 1.6)
++
++
++def _proj(X, Z, H, W, cam=CAM, pitch=0.0, base=0.0):
++    """Chiếu pin-hole giống `bench/hazard_scenarios.Camera.project` (hộp tỉ lệ, đã cắt biên).
++
++    `base` = độ cao đáy vật so với mặt đất; `pitch` đúng quy ước của `hazard_geom` (dương = cảnh trượt lên).
++    """
++    f = cam.f_px
++    x0 = cam.w / 2 + f * (X - W / 2) / Z
++    x1 = cam.w / 2 + f * (X + W / 2) / Z
++    y_bot = cam.h / 2 + f * ((cam.height_m - base) / Z - math.tan(pitch))
++    y_top = cam.h / 2 + f * ((cam.height_m - base - H) / Z - math.tan(pitch))
++    c = lambda v, hi: min(max(v, 0.0), hi)
++    return (c(x0, cam.w) / cam.w, c(y_top, cam.h) / cam.h, c(x1, cam.w) / cam.w, c(y_bot, cam.h) / cam.h)
++
++
++def _person(X, Z, pitch=0.0):
++    return Detection("person", "person", 0.9, _proj(X, Z, 1.65, 0.5, pitch=pitch))
++
++
++# ---- Task 1: hình học ----
++
++# Z = 3 m không dùng được: cam cao 1,6 m, VFOV ~52° thì chân người ở Z < 3,3 m đã chạm mép dưới (xem test sau).
++@pytest.mark.parametrize("Z", [4.0, 6.0, 10.0])
++def test_estimate_height_source_recovers_distance(Z):
++    e = hazard_geom.estimate(_person(0.3, Z), CAM)
++    assert abs(e.z_m - Z) / Z < 0.05
++    assert abs(e.x_m - 0.3) < 0.1
++
++
++def test_estimate_bottom_clipped_is_near():
++    e = hazard_geom.estimate(_person(0.0, 1.0), CAM)
++    assert e.source == "clipped" and math.isnan(e.z_m) and e.z_width < 1.5  # Z cần track; z_width = Z theo bề rộng bảng
++    assert e.source != "height"
++
++
++def test_estimate_bottom_clipped_width_z_reasonable():
++    for Z in (1.0, 2.0, 3.0):  # chân bị cắt: Z theo bề rộng bảng (người 0,5 m) phải sát Z thật
++        e = hazard_geom.estimate(_person(0.0, Z), CAM)
++        assert e.source == "clipped" and abs(e.z_width - Z) < 0.2
++
++
++def test_clipped_bottom_and_side_new_track_not_far():
++    det = Detection("person", "person", 0.9, _proj(1.3, 2.0, 1.7, 0.5))
++    est = hazard_geom.estimate(det, CAM)
++    assert est.source == "clipped"
++    assert det.box[2] == 1.0 and det.box[3] == 1.0
++
++    tracks = hazard_track.TrackSet(coast=3, q=1.0).update([det], [est], 0.0)
++    z_lim = CAM.height_m * CAM.f_px / (CAM.h - CAM.h / 2)
++    assert len(tracks) == 1
++    assert 1.0 <= tracks[0].x[1] <= z_lim * 1.15
++
++
++def test_clipped_width_ratio_capped():
++    ts = hazard_track.TrackSet(coast=3, q=1.0)
++    det, est = _obs(0.0, 6.0)
++    tr, = ts.update([det], [est], 0.0)
++    clipped = Detection("person", "person", 0.9, (0.49, 0.49, 0.51, 1.0))
++    est = hazard_geom.estimate(clipped, CAM)
++    assert est.source == "clipped"
++
++    for k in range(1, 5):
++        tracks = ts.update([clipped], [est], k * DT)
++    assert len(tracks) == 1
++    assert tracks[0].x[1] <= est.z_max
++
++
++def test_estimate_unknown_kind_finite():
++    det = Detection("xyz", "static", 0.5, _proj(0.0, 4.0, 1.0, 0.5))
++    e = hazard_geom.estimate(det, CAM)
++    assert math.isfinite(e.z_m) and abs(e.z_m - 4) < 1.0
++    assert math.isfinite(e.z_sigma) and e.z_sigma > 0
++
++
++def test_estimate_pitch_shifts_ground_only():
++    ground = Detection("xyz", "static", 0.5, _proj(0.0, 4.0, 1.0, 0.5))  # lớp lạ: chỉ có nguồn ground
++    a, b = hazard_geom.estimate(ground, CAM, 0.0), hazard_geom.estimate(ground, CAM, 0.03)
++    assert a.source == b.source == "ground" and abs(a.z_m - b.z_m) > 0.05
++    sign = Detection("person", "person", 0.9, _proj(0.0, 8.0, 1.65, 0.5, base=1.8))  # đáy trên đường chân trời (lớp có chiều cao)
++    a, b = hazard_geom.estimate(sign, CAM, 0.0), hazard_geom.estimate(sign, CAM, 0.03)
++    assert a.source == b.source == "height" and a.z_m == b.z_m
++
++
++def test_classes_json_overrides_coco(monkeypatch):
++    if not os.path.exists(CLASSES_VH):
++        pytest.skip("không có classes_vh.json")
++    try:
++        monkeypatch.setattr(config, "HAZARD_CLASSES_JSON", CLASSES_VH)
++        importlib.reload(hazard)
++        assert hazard._CLASSES[11] == ("pole", "static")
++        monkeypatch.setattr(config, "HAZARD_CLASSES_JSON", "")
++        importlib.reload(hazard)
++        assert hazard._CLASSES[0] == ("person", "person")
++    finally:
++        monkeypatch.undo()
++        importlib.reload(hazard)
++
++
++def test_class_table_covers_all_kinds():
++    kinds = {k for k, _ in hazard._CLASSES.values()}
++    if os.path.exists(CLASSES_VH):
++        kinds |= {v[0] for v in json.load(open(CLASSES_VH)).values()}
++    assert not kinds - set(CLASS_HEIGHT_M)
++    assert set(hazard_geom.CLASS_HEIGHT_REL_SIGMA) <= set(CLASS_HEIGHT_M)
++
++
++# ---- Task 2: track + Kalman ----
++
++from live import hazard_track
++from live.hazard_geom import Estimate
++
++DT = 0.125
++
++
++def _obs(X, Z):
++    det = _person(X, Z)
++    return det, hazard_geom.estimate(det, CAM)
++
++
++def _step(ts, t, objs, **kw):
++    pairs = [_obs(X, Z) for X, Z in objs]
++    return ts.update([d for d, _ in pairs], [e for _, e in pairs], t, **kw)
++
++
++def test_track_velocity_converges():
++    ts = hazard_track.TrackSet(coast=3, q=1.0)
++    for k in range(16):
++        tracks = _step(ts, k * DT, [(0.0, 12.0 - 1.2 * k * DT)])
++    assert len(tracks) == 1 and abs(tracks[0].x[3] + 1.2) < 0.3
++
++
++def test_track_dt_nonpositive_safe():
++    ts = hazard_track.TrackSet(coast=3, q=1.0)
++    for t in (1.0, 1.0, 0.5, None, 0.5, 100.0):  # trùng, lùi, None, nhảy xa
++        tracks = _step(ts, t, [(0.0, 8.0)])
++        for tr in tracks:
++            assert np.isfinite(tr.x).all() and np.isfinite(tr.P).all()
++    assert len(tracks) == 1
++
++
++def test_track_coast_then_drop():
++    ts = hazard_track.TrackSet(coast=3, q=1.0)
++    for k in range(5):
++        tracks = _step(ts, k * DT, [(0.0, 12.0 - 2.0 * k * DT)])
++    old_id = tracks[0].id
++    assert abs(tracks[0].x[3]) > 0.5  # đã học được vận tốc
++    for k in range(5, 9):
++        tracks = _step(ts, k * DT, [])
++        assert len(tracks) == (1 if k < 8 else 0)  # coast 3 khung rồi xoá ở khung mất thứ 4
++    tracks = _step(ts, 9 * DT, [(0.0, 10.0)])
++    assert len(tracks) == 1 and tracks[0].id != old_id
++    assert abs(tracks[0].x[3]) < 1e-6 and tracks[0].hits == 1
++
++
++def test_track_two_objects_keep_ids():
++    ts = hazard_track.TrackSet(coast=3, q=1.0)
++    ids = None
++    for k in range(10):
++        tracks = _step(ts, k * DT, [(-1.0, 12.0 - 1.2 * k * DT), (1.0, 12.0 - 1.2 * k * DT)])
++        cur = {round(tr.x[0]): tr.id for tr in tracks}
++        assert len(tracks) == 2
++        ids = ids or cur
++        assert cur == ids
++
++
++def test_ego_shift_removed():
++    def run(shift):
++        ts = hazard_track.TrackSet(coast=3, q=1.0)
++        det = Detection("person", "person", 0.9, (0.4, 0.2, 0.6, 0.8))
++        for k in range(20):
++            tr, = ts.update([det], [Estimate(5.0, 5 * 0.04 * k, 0.3, "height")], k * DT, ego_shift_rad=shift)
++        return tr
++    assert abs(run(0.04).x[2]) < 0.3
++    assert abs(run(0.0).x[2]) > 1.0  # đối chứng âm: không bù thì vật đứng yên bị đọc thành đang trượt ngang
++
++
++# ---- Task 3: xếp mức theo TTE, AntiAnnoy phiếu/hysteresis, ego ----
++
++import time
++
++import cv2
++
++from lanes import nav_live
++from live import ego_motion, hazard_predict
++
++
++class _Clock:
++    def __init__(self):
++        self.t = 0.0
++
++    def __call__(self):
++        return self.t
++
++
++def _tracker():
++    return hazard_predict.PredictTracker(hazard_predict.PredictParams(), CAM)
++
++
++def test_area_default_unchanged(monkeypatch):
++    monkeypatch.setattr(config, "HAZARD_LOGIC", "area")
++    assert type(hazard.make_tracker()) is hazard.HazardTracker
++    assert hazard.make_anti().l3_vote == 1
++    levels = [0, 1, 1, 2, 2, 2, 3, 2, 2, 0, 0, 3, 3, 1, 1, 2, 2, 0, 0, 1, 1]
++    c_old, c_new = _Clock(), _Clock()
++    old, new = hazard.AntiAnnoy(c_old), hazard.make_anti(c_new)
++    got_old, got_new = [], []
++    for lvl in levels:
++        c_old.t = c_new.t = c_old.t + 0.9
++        got_old.append(old.step(lvl))
++        got_new.append(new.step(lvl))
++    assert got_old == got_new and any(got_old)
++    monkeypatch.setattr(config, "HAZARD_LOGIC", "predict")
++    assert isinstance(hazard.make_tracker(), hazard_predict.PredictTracker) and hazard.make_anti().l3_vote == 2
++
++
++def _walk(tracker, objs, closing, n=80, stop_z=1.5):
++    """Người dùng đi `closing` m/s: Z mỗi vật giảm closing·t. objs = [(X0, Z0, vX)] -> [(Z thật, X thật, Hazard)]."""
++    out = []
++    for k in range(n):
++        t = k * DT
++        pos = [(x0 + vx * t, z0 - closing * t) for x0, z0, vx in objs]
++        if min(z for _, z in pos) < stop_z:
++            break
++        out.append((pos, tracker.assess([_person(x, z) for x, z in pos], t)))
++    return out
++
++
++def test_predict_static_person_timely():
++    run = _walk(_tracker(), [(0.0, 12.0, 0.0)], 1.2)
++    first = next(pos[0][1] for pos, h in run if h.level >= 2)
++    assert first >= 2 + 1.5 * 1.2  # bíp mức >= 2 sớm >= 1,5 s trước khi vào Z < 2
++
++
++def test_predict_pass_by_no_level2():
++    run = _walk(_tracker(), [(1.0, 14.0, 0.0)], 2.4, stop_z=1.6)
++    assert len(run) > 30 and all(h.level < 2 for _, h in run)
++
++
++def test_predict_crossing_dir_left():
++    # người dùng đi 1,2 m/s, người kia đi ngang từ X = -3 sang phải 1,0 m/s: sẽ vào hành lang (X > -0,6) lúc Z ~ 3
++    run = _walk(_tracker(), [(-3.0, 6.0, 1.0)], 1.2, stop_z=2.0)
++    hits = [(pos[0], h) for pos, h in run if h.level >= 2]
++    assert hits and hits[0][1].dir == "left" and hits[0][0][0] < -0.6  # báo khi còn ngoài hành lang, phía trái
++
++
++def test_predict_new_near_urgent():
++    h = _tracker().assess([_person(0.0, 2.5)], 0.0)
++    assert h.level == 3 and h.urgent
++
++
++def test_anti_l3_vote():
++    a = hazard.AntiAnnoy(l3_vote=2)
++    assert [a.step(3), a.step(0), a.step(0)] == [False, False, False]
++    b = hazard.AntiAnnoy(l3_vote=2)
++    assert [b.step(3), b.step(3)] == [False, True]
++    c = hazard.AntiAnnoy(l3_vote=2)
++    assert c.step(3, urgent=True) is True
++    d = hazard.AntiAnnoy(l3_vote=2, bypass_vote=False)
++    assert d.step(3, urgent=True) is False
++
++
++def test_anti_down_hold():
++    anti = hazard.AntiAnnoy(l3_vote=1, down_hold=2)
++    assert anti.step(3) is True and anti.current == 3
++    assert anti.step(2) is False and anti.current == 3  # 1 khung thấp hơn chưa hạ
++    assert anti.step(3) is False and anti.current == 3  # trở lại 3: không gửi lại
++    assert anti.step(2) is False and anti.step(2) is False and anti.current == 2  # giữ 2 khung -> hạ
++    held = hazard.AntiAnnoy(down_hold=3)
++    held.step(3); held.step(2); held.step(2)
++    assert held.current == 3
++    held.step(2)
++    assert held.current == 2
++
++
++def test_predict_crowded_frame_fast():
++    tracker = _tracker()
++    rng = np.random.default_rng(0)
++    objs = [(float(rng.choice([-1, 1]) * rng.uniform(0.9, 1.5)), 10.0 + 1.0 * i) for i in range(20)]  # dãy xe đỗ 2 bên
++    times, levels = [], []
++    for k in range(200):  # người dùng đi 0,25 m/s dọc dãy xe: Z giảm dần, không xe nào vào |X| < 0,6
++        dets = [Detection("motorbike", "vehicle", 0.9, _proj(x, z - 0.25 * k * DT, 1.2, 0.6)) for x, z in objs]
++        t0 = time.perf_counter()
++        h = tracker.assess(dets, k * DT)
++        times.append(time.perf_counter() - t0)
++        levels.append(h.level)
++    # 2 ms vì máy dùng chung; ngân sách thật 1 ms do phép đo C1c + luật chọn của bench giữ
++    assert float(np.percentile(times, 90)) < 2e-3
++    assert max(levels) < 2
++
++
++def test_ego_meter_shift_sign():
++    rng = np.random.default_rng(1)
++    img = cv2.GaussianBlur(rng.integers(0, 255, (240, 320, 3), dtype=np.uint8), (3, 3), 0)
++    meter = ego_motion.EgoMeter()
++    first = meter.measure(img)
++    assert first.shift_x == 0.0
++    ego = meter.measure(np.roll(img, 16, axis=1))
++    assert abs(ego.shift_x - 0.05) < 0.01
++    assert ego.blur > ego_motion.EgoMeter().measure(cv2.GaussianBlur(img, (0, 0), 15)).blur
++
++
++def test_process_frame_passes_time():
++    seen = []
++
++    class Det:
++        def detect(self, bgr):
++            return []
++
++    class Tracker:
++        def assess(self, dets, t=None, ego=None):
++            seen.append((t, ego))
++            return hazard.Hazard(0)
++
++    ok, jpg = cv2.imencode(".jpg", np.zeros((240, 320, 3), np.uint8))
++    nav_live.process_frame(Det(), Tracker(), jpg.tobytes(), 12.5)
++    nav_live.process_frame(Det(), Tracker(), jpg.tobytes(), 13.0, ego_motion.EgoMeter())
++    assert seen[0] == (12.5, None) and seen[1][0] == 13.0 and isinstance(seen[1][1], ego_motion.Ego)
++
++
++def test_predict_no_ghost_after_vanish_and_bad_clock():
++    tr = _tracker()
++    for k in range(10):
++        tr.assess([_person(0.0, 9.0 - 1.2 * k * DT)], k * DT)
++    levels = [tr.assess([], (10 + k) * DT).level for k in range(6)]
++    assert levels[-1] == 0  # sau coast khung không còn track ma
++    h = tr.assess([_person(0.0, 8.0)], 20 * DT)
++    assert h.level < 3 and not h.urgent
++    for t in (20 * DT, 5.0, None, -1.0):  # mốc trùng/lùi/None: không NaN, không lỗi
++        h = tr.assess([_person(0.0, 7.0)], t)
++        assert 0 <= h.level <= 3
++
++
++def test_pitch_estimate_converges():
++    tr = _tracker()
++    for k in range(40):  # người đi tới 12 -> 4,2 m, ảnh lệch góc cúi 0,03 rad
++        tr.assess([_person(0.3, 12.0 - 0.2 * k, pitch=0.03)], k * DT)
++    assert abs(tr.pitch_rad - 0.03) < 0.01
++
++
++# ---- Fix round 1: đáy hộp bị cắt -> Z theo tỉ lệ bề rộng ----
++
++def _pole(Z, X=0.0):
++    return Detection("pole", "static", 0.9, _proj(X, Z, 3.0, 0.15))
++
++
++def _approach_then_stop(z_stop, n_stop):
++    tr = _tracker()
++    zs = [8.0 - 1.2 * DT * k for k in range(int((8.0 - z_stop) / (1.2 * DT)) + 1)]
++    out = []
++    for k, z in enumerate(zs):
++        out.append((z, tr.assess([_pole(z)], k * DT).level))
++    k0 = len(zs)
++    for k in range(n_stop):
++        out.append((zs[-1], tr.assess([_pole(zs[-1])], (k0 + k) * DT).level))
++    return tr, zs, out
++
++
++def test_clipped_bottom_static_object_keeps_true_distance():
++    tr, zs, out = _approach_then_stop(3.0, 40)
++    assert abs(tr.tracks._tracks[0].x[1] - zs[-1]) < 0.4
++    after = out[len(zs):]
++    assert min(l for _, l in after[:8]) < 3
++
++
++def test_clipped_bottom_approach_still_warns():
++    tr, zs, out = _approach_then_stop(1.0, 0)
++    first3 = next(z for z, l in out if l == 3)
++    assert first3 >= 2.0
++
++
++def test_new_track_clipped_uses_width_table():
++    tr = _tracker()
++    tr.assess([_person(0.0, 2.0)], 0.0)
++    z = tr.tracks._tracks[0].x[1]
++    assert math.isfinite(z) and abs(z - 2.0) < 0.8
++
++
++# ---- Fix round 1: đuôi nhả ----
++
++class _Clk:
++    def __init__(self): self.t = 0.0
++    def __call__(self): return self.t
++
++
++def _run_anti(anti, clk, levels):
++    sent = []
++    for lv in levels:
++        sent.append((clk.t, anti.step(lv)))
++        clk.t += 0.125
++    return sent
++
++
++def test_release_tail_stops_after_tail():
++    clk = _Clk()
++    anti = hazard.AntiAnnoy(clk, down_hold=2, release_s=0.5)
++    sent = _run_anti(anti, clk, [3, 3] + [0] * 60)
++    assert sent[0][1] is True
++    t_clear = 2 * 0.125 + 0.125  # khung 0 thứ 2 (down_hold = 2)
++    assert not any(ok for t, ok in sent[2:] if t > t_clear + 0.5 + 0.125)
++    assert anti.current == 0
++    assert anti.step(3) is True  # nguy hiểm lại: gửi ngay như mức tăng mới
++
++
++def test_release_cancelled_when_danger_returns():
++    clk = _Clk()
++    anti = hazard.AntiAnnoy(clk, down_hold=2, release_s=0.5)
++    sent = _run_anti(anti, clk, [3, 3, 0, 0, 0, 3, 3, 3, 3])
++    assert anti.current == 3 and not any(ok for _, ok in sent[5:])  # không bíp thừa
++    sent = _run_anti(anti, clk, [0] * 6)
++    assert anti.current == 0
++
++
++def test_release_zero_is_old_behaviour():
++    seq = [0, 1, 1, 2, 2, 3, 3, 2, 0, 0, 3, 0, 2, 2, 2, 2, 1, 1, 0, 0, 3, 3, 3]
++    a, b = _Clk(), _Clk()
++    old, new = hazard.AntiAnnoy(a), hazard.AntiAnnoy(b, release_s=0.0)
++    assert [x for _, x in _run_anti(old, a, seq)] == [x for _, x in _run_anti(new, b, seq)]
++
++
++@pytest.mark.parametrize("Z", [4.0, 6.0, 10.0])
++def test_pole_distance_ignores_height_prior(Z):
++    e = hazard_geom.estimate(_pole(Z), CAM)
++    assert e.source == "ground" and abs(e.z_m - Z) / Z < 0.15
++
++
++# ---- Fix round 3: hộp chạm mép bên ----
++
++def _walk_by(X_of, Z_of, n, H=1.7, W=0.5):
++    tr = _tracker()
++    out = []
++    for k in range(n):
++        X, Z = X_of(k), Z_of(k)
++        det = Detection("person", "person", 0.9, _proj(X, Z, H, W))
++        h = tr.assess([det], k * DT)
++        t = tr.tracks._tracks[0] if tr.tracks._tracks else None
++        out.append((X, Z, h.level, None if t is None else t.x.copy()))
++    return out
++
++
++def test_lateral_clip_no_fake_inward_velocity():
++    n = int((8.0 - 0.8) / (1.2 * DT)) + 1
++    out = _walk_by(lambda k: 1.2, lambda k: 8.0 - 1.2 * DT * k, n)
++    assert any(o[1] < 1.6 and _proj(1.2, o[1], 1.7, 0.5)[2] >= 0.99 for o in out)  # có khung bị cắt bên phải
++    assert all(abs(o[3][2]) < 0.25 for o in out if o[3] is not None)
++    assert all(o[2] < 2 for o in out)
++
++
++def test_lateral_clip_real_entry_still_warns():
++    n = 17  # người đi vào hành lang 1 m/s ngang, đồng thời tiến 1 m/s
++    xs = lambda k: max(1.5 - 1.0 * DT * k, 0.0)
++    zs = lambda k: 4.0 - 1.0 * DT * k
++    out = _walk_by(xs, zs, n)
++    first = next(i for i, o in enumerate(out) if o[2] >= 2)
++    assert abs(out[first][0]) >= 0.6

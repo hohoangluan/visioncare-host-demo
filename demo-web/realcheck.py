@@ -1,7 +1,8 @@
 """Chạy các WAV tiếng Việt qua proxy của serve.py tới server kính THẬT và in khung debug nhận được.
 
-Như trang demo: nối `/api/v2/session` (hoặc thẳng `/v2/session` bằng --direct), hello có `debug:true`,
+Đóng vai kính như `client.html`: nối `/api/v2/session` (hoặc thẳng `/v2/session` bằng --direct), hello có `debug:true`,
 mỗi lượt gửi ảnh 0x01 + header WAV stream (size 0xFFFFFFFF) + khối PCM ~100 ms đúng nhịp thật, rồi `turn_end`.
+Mở `index.html` cùng lúc để bảng giám sát chạy theo.
 Token đọc từ VISIONCARE_DEVICE_CLIENT_TOKEN hoặc --token (không in ra).
 
     ~/.venvs/seevia/bin/python demo-web/realcheck.py --url http://127.0.0.1:8080 \
@@ -25,7 +26,7 @@ CHUNK_S = 0.1
 
 
 def stream_header() -> bytes:
-    """Header WAV PCM16 16 kHz mono, kích thước 0xFFFFFFFF như trang demo (`wav.js`)."""
+    """Header WAV PCM16 16 kHz mono, kích thước 0xFFFFFFFF như `client.html` (`wav.js`)."""
     return (b"RIFF" + struct.pack("<I", 0xFFFFFFFF) + b"WAVEfmt " + struct.pack("<IHHIIHH", 16, 1, 1, 16000, 32000, 2, 16)
             + b"data" + struct.pack("<I", 0xFFFFFFFF))
 

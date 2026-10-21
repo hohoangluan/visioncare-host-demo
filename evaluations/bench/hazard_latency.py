@@ -1,7 +1,8 @@
 """C1c — Vật cản: độ trễ đường nóng phía server (METRICS.md §C1c).
 
-Chuỗi thật của `lanes.nav_live.run` cho mỗi khung: decode JPEG q15 -> `OnnxYolo.detect` -> `HazardTracker.assess` ->
-`AntiAnnoy.step`. Đo từng chặng (decode / detect / assess / step) + tổng, và lượt thứ hai gọi thẳng
+Chuỗi thật của `lanes.nav_live.run` cho mỗi khung: decode JPEG q15 -> [`EgoMeter.measure` khi HAZARD_LOGIC=predict] ->
+`OnnxYolo.detect` -> `assess` của tracker theo `hazard.make_tracker()` -> `AntiAnnoy.step` (`hazard.make_anti()`).
+VH cũ chưa có make_tracker/make_anti thì dùng HazardTracker/AntiAnnoy như trước. Đo từng chặng (decode / detect / assess / step) + tổng, và lượt thứ hai gọi thẳng
 `nav_live.process_frame` + `step` (đường code thật) để đối chiếu.
 Ảnh: Obstacle-Dataset test thu QVGA (rộng 320, giữ tỉ lệ) + JPEG q15 như kính gửi. Khung đưa vào theo thứ tự cố định seed,
 một tracker xuyên suốt (như một phiên). Không đo mạng/kính/Cloudflare (đo sau bằng tools/e2e_full.py).
@@ -30,6 +31,25 @@ from live import hazard  # noqa: E402
 
 BUDGET_SERVER_P90_MS = 10.0
 WARMUP = 20
+DT = 0.125  # mốc thời gian giả 8 fps cho Kalman của predict (đo trễ, không đo đúng/sai)
+
+
+def _make():
+    tracker = hazard.make_tracker() if hasattr(hazard, "make_tracker") else hazard.HazardTracker()
+    anti = hazard.make_anti() if hasattr(hazard, "make_anti") else hazard.AntiAnnoy()
+    meter = None
+    if getattr(config, "HAZARD_LOGIC", "area") == "predict":
+        from live import ego_motion
+        meter = ego_motion.EgoMeter()
+    return tracker, anti, meter
+
+
+def _step(anti, hz) -> None:
+    lvl = hz.level if hz.level >= config.HAZARD_MIN_LEVEL else 0
+    if getattr(hz, "urgent", False):
+        anti.step(lvl, urgent=True)
+    else:
+        anti.step(lvl)
 
 
 def run(names: list[str], imgsz: int) -> dict:
@@ -41,35 +61,42 @@ def run(names: list[str], imgsz: int) -> dict:
         jpegs.append(hd.glass_jpeg(bgr))
     order = common.sample(list(range(len(jpegs))), None)
     order = list(np.random.default_rng(0).permutation(len(jpegs)))
-    stages = {"decode": [], "detect": [], "assess": [], "step": [], "total": []}
-    tracker, anti = hazard.HazardTracker(), hazard.AntiAnnoy()
+    stages = {"decode": [], "ego": [], "detect": [], "assess": [], "step": [], "total": []}
+    tracker, anti, meter = _make()
+    predict = meter is not None
     for k in range(WARMUP):  # warm-up, không tính
         b = nav_live._decode(jpegs[order[k % len(order)]]); det.detect(b)
-    for i in order:
+    for n, i in enumerate(order):
         t0 = time.perf_counter()
         bgr = nav_live._decode(jpegs[i])
         t1 = time.perf_counter()
+        ego = meter.measure(bgr) if predict else None
+        t1b = time.perf_counter()
         dets = det.detect(bgr)
         t2 = time.perf_counter()
-        hz = tracker.assess(dets)
+        hz = tracker.assess(dets, n * DT, ego) if predict else tracker.assess(dets)
         t3 = time.perf_counter()
-        anti.step(hz.level if hz.level >= config.HAZARD_MIN_LEVEL else 0)
+        _step(anti, hz)
         t4 = time.perf_counter()
-        for key, (a, b) in zip(("decode", "detect", "assess", "step", "total"),
-                               ((t0, t1), (t1, t2), (t2, t3), (t3, t4), (t0, t4))):
+        for key, (a, b) in zip(("decode", "ego", "detect", "assess", "step", "total"),
+                               ((t0, t1), (t1, t1b), (t1b, t2), (t2, t3), (t3, t4), (t0, t4))):
             stages[key].append((b - a) * 1000)
     # đối chiếu: đường code thật nav_live.process_frame + step
-    tracker, anti = hazard.HazardTracker(), hazard.AntiAnnoy()
+    tracker, anti, meter = _make()
     chain = []
-    for i in order:
+    for n, i in enumerate(order):
         t = time.perf_counter()
-        res, _, _ = nav_live.process_frame(det, tracker, jpegs[i])
-        anti.step(res.level if res.level >= config.HAZARD_MIN_LEVEL else 0)
+        if predict:
+            res, _, _ = nav_live.process_frame(det, tracker, jpegs[i], n * DT, meter)
+        else:
+            res, _, _ = nav_live.process_frame(det, tracker, jpegs[i])
+        _step(anti, res)
         chain.append((time.perf_counter() - t) * 1000)
     lat = {k: common.latency_summary(v) for k, v in stages.items()}
     lat["process_frame_plus_step"] = common.latency_summary(chain)
     # assess/step cỡ µs: latency_summary làm tròn 0,01 ms -> thêm bản µs
-    for k in ("assess", "step"):
+    lat["hazard_logic"] = getattr(config, "HAZARD_LOGIC", "area")
+    for k in ("ego", "assess", "step"):
         p = np.percentile(np.array(stages[k]) * 1000, [50, 90, 99])
         lat[k + "_us"] = {"p50_us": round(float(p[0]), 1), "p90_us": round(float(p[1]), 1), "p99_us": round(float(p[2]), 1)}
     lat["jpeg_bytes_mean"] = float(np.mean([len(j) for j in jpegs]))
@@ -99,7 +126,7 @@ def main() -> None:
     json.load(open(path, encoding="utf-8"))
     print("ghi", path)
     r = out["by_imgsz"][str(sizes[0])]
-    print({k: r["latency"][k] for k in ("decode", "detect", "assess", "step", "total")}, r["budget"])
+    print({k: r["latency"][k] for k in ("decode", "ego", "detect", "assess", "step", "total")}, r["budget"])
 
 
 if __name__ == "__main__":

@@ -20,7 +20,7 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 
 import config
 from lanes.ocr_live import _Mailbox, receive_frames
-from live import hazard, protocol
+from live import ego_motion, hazard, protocol
 from live.session import LiveSession, sessions
 from pipeline import speech
 
@@ -32,14 +32,19 @@ def _decode(jpeg: bytes) -> np.ndarray | None:
 
 
 def process_frame(
-    det, tracker: hazard.HazardTracker, jpeg: bytes,
+    det, tracker: hazard.HazardTracker, jpeg: bytes, t: float | None = None,
+    meter: "ego_motion.EgoMeter | None" = None,
 ) -> tuple[hazard.Hazard, list[hazard.Detection], tuple[int, int]]:
-    """-> (hazard, detections của khung, (rộng, cao) ảnh đã giải mã); hazard.levels là mức từng detection."""
+    """-> (hazard, detections của khung, (rộng, cao) ảnh đã giải mã); hazard.levels là mức từng detection.
+
+    `t` = mốc thời gian lúc nhận khung (cho Kalman của predict), `meter` = đo chuyển động đầu (chỉ khi predict).
+    """
     bgr = _decode(jpeg)
     if bgr is None:
         return hazard.Hazard(0), [], (0, 0)
+    ego = meter.measure(bgr) if meter is not None else None
     detections = det.detect(bgr)
-    return tracker.assess(detections), detections, (bgr.shape[1], bgr.shape[0])
+    return tracker.assess(detections, t, ego), detections, (bgr.shape[1], bgr.shape[0])
 
 
 def _det_frame(result: hazard.Hazard, detections: list[hazard.Detection], size: tuple[int, int], sent: bool) -> dict:
@@ -116,7 +121,8 @@ async def run(ws: WebSocket, session: LiveSession) -> None:
     talker = asyncio.create_task(_speak_outbox(ws, session, clock))
     det = hazard.detector()
     debug = getattr(ws, "debug", None)  # chỉ có trên LiveSocket của phiên bật debug (demo)
-    tracker, anti = hazard.HazardTracker(), hazard.AntiAnnoy()
+    tracker, anti = hazard.make_tracker(), hazard.make_anti()
+    meter = ego_motion.EgoMeter() if config.HAZARD_LOGIC == "predict" else None
     frames, total_ms = 0, 0.0
     try:
         await ws.send_text(protocol.cam("qvga", 8, quality=15))
@@ -125,16 +131,17 @@ async def run(ws: WebSocket, session: LiveSession) -> None:
             if frame is None or det is None:
                 continue
             started = time.perf_counter()
-            result, detections, size = await asyncio.to_thread(process_frame, det, tracker, frame)
+            result, detections, size = await asyncio.to_thread(
+                process_frame, det, tracker, frame, time.monotonic(), meter)
             if result.level >= _HIGH_LEVEL:
                 clock.mark()  # TRƯỚC khi gửi: audio outbox phải dừng ngay, hazard đi trước
             # Mức dưới HAZARD_MIN_LEVEL coi như an toàn: không tới AntiAnnoy, không gửi kính.
-            sent = anti.step(result.level if result.level >= config.HAZARD_MIN_LEVEL else 0)
+            sent = anti.step(result.level if result.level >= config.HAZARD_MIN_LEVEL else 0, result.urgent)
             if sent:
                 await ws.send_text(protocol.hazard(result.level, result.dir, result.kind))
                 logger.info("hazard level=%d dir=%s kind=%s", result.level, result.dir, result.kind)
             if debug is not None and size[0]:  # SAU hazard, không chờ gửi; JPEG hỏng (0x0) thì bỏ khung
-                debug(_det_frame(result, detections, size, bool(sent)))
+                debug({**_det_frame(result, detections, size, bool(sent)), protocol.DEBUG_JPEG: frame})
             frames += 1
             total_ms += (time.perf_counter() - started) * 1000
         if session.closed.is_set() and not box.closed:

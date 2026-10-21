@@ -1,0 +1,319 @@
+{
+  "mode": "fake",
+  "base": "http://localhost:18780",
+  "checks": [
+    {
+      "scenario": "fake-flow",
+      "name": "bảng giám sát nối server",
+      "ok": true,
+      "detail": "Đã nối server · đang xem"
+    },
+    {
+      "scenario": "fake-flow",
+      "name": "kính giả lập hiện là đã kết nối",
+      "ok": true,
+      "detail": "Kính đã kết nối · kinh-hien-tai"
+    },
+    {
+      "scenario": "fake-flow",
+      "name": "kính giả lập nối không cần nhập token",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "scenario": "fake-flow",
+      "name": "kết thúc ở chế độ Tránh vật cản",
+      "ok": true,
+      "detail": "['obstacle']"
+    },
+    {
+      "scenario": "fake-flow",
+      "name": "log có cảnh báo vật cản",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "scenario": "fake-flow",
+      "name": "mọi det đi sau đúng khung JPEG của nó",
+      "ok": true,
+      "detail": "(85, (85, 0))"
+    },
+    {
+      "scenario": "fake-flow",
+      "name": "không có lỗi JS",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "scenario": "fake-tour",
+      "name": "bảng giám sát nối server",
+      "ok": true,
+      "detail": "Đã nối server · đang xem"
+    },
+    {
+      "scenario": "fake-tour",
+      "name": "kính giả lập hiện là đã kết nối",
+      "ok": true,
+      "detail": "Kính đã kết nối · kinh-hien-tai"
+    },
+    {
+      "scenario": "fake-tour",
+      "name": "kính giả lập nối không cần nhập token",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "scenario": "fake-tour",
+      "name": "chưa có lượt: câu rỗng rõ ràng",
+      "ok": true,
+      "detail": "Chưa có lượt nào. Bấm nút trên kính và nói."
+    },
+    {
+      "scenario": "fake-tour",
+      "name": "ô Điện thoại rỗng có hướng dẫn",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "scenario": "fake-tour",
+      "name": "lệnh gọi điện chờ xác nhận",
+      "ok": true,
+      "detail": "Gọi điện\nChờ bạn trả lời\n\nmẹ\n\n15:18:18 · Chờ bạn trả lời"
+    },
+    {
+      "scenario": "fake-tour",
+      "name": "mọi lượt đều có thẻ (>= 8 thẻ người dùng)",
+      "ok": true,
+      "detail": "11"
+    },
+    {
+      "scenario": "fake-tour",
+      "name": "thẻ có 'Người dùng nói' + 'Kính trả lời' + ý định + độ trễ",
+      "ok": true,
+      "detail": "Lượt 1\n15:17:48\nTiếng đầu 308 ms\nNGƯỜI DÙNG NÓI\n\nphía trước có gì\n\nÝ ĐỊNH\ndescri"
+    },
+    {
+      "scenario": "fake-tour",
+      "name": "thẻ lệnh điện thoại có trạng thái xong + kết quả",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "scenario": "fake-tour",
+      "name": "ô Điện thoại: gọi điện + phát nhạc đã xong",
+      "ok": true,
+      "detail": "PHÁT NHẠC\nXONG\n\nNHẠC KHÔNG LỜI THƯ GIÃN\n\n“ĐÃ MỞ NHẠC KHÔNG LỜI THƯ GIÃN TRÊN ĐIỆN THOẠI.”\n\n15:18:32 · XONG\n\nGỌI ĐIỆN\nXON"
+    },
+    {
+      "scenario": "fake-tour",
+      "name": "ô Điện thoại có cuộc gọi đang diễn ra",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "scenario": "fake-tour",
+      "name": "log cảnh báo có ảnh thu nhỏ đúng khung",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "scenario": "fake-tour",
+      "name": "thẻ trực tiếp gắn ảnh thu nhỏ",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "scenario": "fake-tour",
+      "name": "không chữ bị cắt ở 1920x1080",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "scenario": "fake-tour",
+      "name": "1920x1080 không cuộn ngang",
+      "ok": true,
+      "detail": "1920"
+    },
+    {
+      "scenario": "fake-tour",
+      "name": "không có lỗi JS",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "scenario": "fake-client",
+      "name": "bảng giám sát nối server",
+      "ok": true,
+      "detail": "Đã nối server · đang xem"
+    },
+    {
+      "scenario": "fake-client",
+      "name": "kính giả lập hiện là đã kết nối",
+      "ok": true,
+      "detail": "Kính đã kết nối · kinh-hien-tai"
+    },
+    {
+      "scenario": "fake-client",
+      "name": "kính giả lập nối không cần nhập token",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "scenario": "fake-client",
+      "name": "client: có role=meter, vùng trạng thái aria-live, aria-keyshortcuts",
+      "ok": true,
+      "detail": "{'meter': 'meter', 'status': 'status', 'shortcut': 'Space', 'banner': True}"
+    },
+    {
+      "scenario": "fake-client",
+      "name": "client: micro bật, chưa nghe thì chỉ báo nghỉ",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "scenario": "fake-client",
+      "name": "client: giữ Space = nút Nói đang bấm",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "scenario": "fake-client",
+      "name": "client: trạng thái đọc được ('Đang nghe bạn…')",
+      "ok": true,
+      "detail": "Đang nghe bạn…"
+    },
+    {
+      "scenario": "fake-client",
+      "name": "client: chỉ báo mức âm micro nhích lên khi có tiếng",
+      "ok": true,
+      "detail": "49"
+    },
+    {
+      "scenario": "fake-client",
+      "name": "client: thả Space = gửi lượt",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "scenario": "fake-client",
+      "name": "client: thả phím thì chỉ báo về nghỉ",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "scenario": "fake-client",
+      "name": "client: sau lượt vẫn dùng được (không kẹt)",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "scenario": "fake-client",
+      "name": "client: không có lỗi JS",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "scenario": "phone-mirror",
+      "name": "ô Điện thoại: có luồng thật thì hiện ảnh",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "scenario": "phone-mirror",
+      "name": "ảnh điện thoại đã giải mã (540 px rộng)",
+      "ok": true,
+      "detail": "540"
+    },
+    {
+      "scenario": "phone-mirror",
+      "name": "thẻ tác vụ nằm dưới khung ảnh",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "scenario": "phone-mirror",
+      "name": "không có lỗi JS",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "scenario": "layout",
+      "name": "bảng giám sát desktop không cuộn ngang",
+      "ok": true,
+      "detail": "1440 <= 1440"
+    },
+    {
+      "scenario": "layout",
+      "name": "desktop: hộp Cài đặt không còn ô camera/chế độ mô phỏng",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "scenario": "layout",
+      "name": "desktop: không có lỗi JS",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "scenario": "layout",
+      "name": "bảng giám sát phone không cuộn ngang",
+      "ok": true,
+      "detail": "390 <= 390"
+    },
+    {
+      "scenario": "layout",
+      "name": "phone: hộp Cài đặt không còn ô camera/chế độ mô phỏng",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "scenario": "layout",
+      "name": "phone: không có lỗi JS",
+      "ok": true,
+      "detail": "[]"
+    },
+    {
+      "scenario": "bad-token",
+      "name": "token sai: bảng báo 'Token sai'",
+      "ok": true,
+      "detail": "Token sai hoặc thiếu. Mở Cài đặt để nhập token"
+    },
+    {
+      "scenario": "bad-token",
+      "name": "token sai: không hiện kính đã kết nối",
+      "ok": true,
+      "detail": ""
+    }
+  ],
+  "metrics": {
+    "fake-flow": {
+      "empty_state": "Kính đã kết nối. Bấm nút trên kính để gửi hình.",
+      "1_describe_modes": [],
+      "1_describe_fps": "live: tắt",
+      "2_ocr_live_modes": [
+        "ocr"
+      ],
+      "2_ocr_live_fps": "live vga · 5 fps · server xử lý 5,0 fps",
+      "3_nav_modes": [
+        "obstacle"
+      ],
+      "3_nav_fps": "live qvga · 8 fps · server xử lý 8,0 fps"
+    },
+    "fake-tour": {
+      "empty_state": "Kính đã kết nối. Bấm nút trên kính để gửi hình.",
+      "turn_cards": 11,
+      "phone_tasks": "PHÁT NHẠC ¦ XONG ¦  ¦ NHẠC KHÔNG LỜI THƯ GIÃN ¦  ¦ “ĐÃ MỞ NHẠC KHÔNG LỜI THƯ GIÃN TRÊN ĐIỆN THOẠI.” ¦  ¦ 15:18:32 · XONG ¦  ¦ GỌI ĐIỆN ¦ XONG ¦  ¦ MẸ ¦  ¦ “CUỘC GỌI ĐÃ KẾT NỐI VỚI MẸ.” ¦  ¦ ĐANG TRONG"
+    },
+    "fake-client": {
+      "empty_state": "Kính đã kết nối. Bấm nút trên kính để gửi hình.",
+      "meter_valuenow": 49
+    },
+    "phone-mirror": {
+      "phone_img_naturalWidth": 540
+    },
+    "layout": {
+      "viewer_desktop_scrollWidth": 1440,
+      "viewer_phone_scrollWidth": 390
+    }
+  }
+}

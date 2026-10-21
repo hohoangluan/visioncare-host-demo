@@ -4,6 +4,9 @@ import json
 
 FRAME_JPEG = 0x01  # kính -> server: 0x01 + JPEG
 FRAME_AUDIO = 0x02  # server -> kính: 0x02 + khối ADPCM
+# Khoá đặc biệt trong khung debug det/ocr: JPEG server vừa xử lý, chỉ dành cho người xem (`WS /v2/observe`),
+# `DeviceSession.emit_debug` gỡ nó ra trước khi gửi đi đâu khác.
+DEBUG_JPEG = "_jpeg"
 
 
 def cam(size: str, fps: int, quality: int = 12) -> str:

@@ -119,7 +119,7 @@ train_one() {  # $1=26s|11s|26m|11m $2=batch
       CUDA_VISIBLE_DEVICES=$g "$HOME/.venvs/yolo/bin/yolo" train resume model="$run/weights/last.pt" device=0 && return 0
     else
       CUDA_VISIBLE_DEVICES=$g "$HOME/.venvs/yolo/bin/yolo" train model="$T/weights/yolo$size.pt" data="$T/obstacle.yaml" \
-        imgsz=320 epochs=120 patience=25 batch="$batch" workers=8 seed=0 device=0 plots=False \
+        imgsz=320 epochs=120 patience="${PATIENCE:-25}" batch="$batch" workers=8 seed=0 device=0 plots=False \
         project="$T/runs" name="$name" exist_ok=True && return 0
     fi
     [ -f "$run/weights/best.pt" ] && grep -q "^" "$run/results.csv" 2>/dev/null && \

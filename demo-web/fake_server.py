@@ -9,6 +9,9 @@ có `debug:true`.
     ~/.venvs/seevia/bin/python demo-web/fake_server.py --port 18777
     python demo-web/serve.py --upstream http://127.0.0.1:18777
 
+Có cả `WS /v2/observe` (như server thật): trang giám sát `index.html` nối vào đó để xem bản sao mọi thứ kính
+(trang `client.html`) gửi/nhận cùng khung debug, kể cả khung JPEG ngay trước `det`/`ocr` của nó.
+
 Mỗi lượt bấm nút lấy một bước kế tiếp trong vòng kịch bản (hỏi cảnh, đọc chữ,
 chỉ đường, gọi điện hai lượt có xác nhận, nhạc...). Lượt nào cũng đọc ảnh/audio
 client gửi lên (đếm byte) nên có thể thấy luồng thật chạy qua proxy.
@@ -86,10 +89,36 @@ def babble(text: str) -> bytes:
     return adpcm.encode_blocks(pcm)
 
 
+OBSERVERS: set = set()  # ws của các trang chỉ xem
+
+
+def presented_token(ws, hello: dict) -> str:
+    """Token như server thật: trường `token` trong hello, không có thì header `Authorization: Bearer`."""
+    token = hello.get("token")
+    if isinstance(token, str) and token:
+        return token
+    auth = ws.request.headers.get("Authorization", "")
+    return auth[7:] if auth.lower().startswith("bearer ") else ""
+
+
+async def tee(*frames):
+    """Gửi một gói khung (bytes/str) cho mọi người xem, theo thứ tự; lỗi gửi thì bỏ người xem đó."""
+    for obs in list(OBSERVERS):
+        try:
+            for f in frames:
+                await obs.send(f)
+        except ConnectionClosed:
+            OBSERVERS.discard(obs)
+
+
 class Session:
     def __init__(self, ws, token: str):
         self.ws = ws
         self.token = token
+        self.ready = False  # đã qua hello (kính đang nối)
+        self.device = ""
+        self.session_id = ""
+        self.last_jpeg = b""  # khung live vừa đem đi "xử lý": đi kèm khung det/ocr của nó cho người xem
         self.debug = False
         self.audio_lock = asyncio.Lock()
         self.live = None  # "ocr" | "nav" | None
@@ -104,15 +133,23 @@ class Session:
         self.tasks: set[asyncio.Task] = set()
 
     # --- gửi ---
-    async def text(self, obj):
+    async def text(self, obj, observe=True):
+        data = json.dumps(obj, ensure_ascii=False)
         try:
-            await self.ws.send(json.dumps(obj, ensure_ascii=False))
+            await self.ws.send(data)
         except ConnectionClosed:
             pass
+        if observe:
+            await tee(data)
 
     async def dbg(self, obj):
+        """Khung debug: tới người xem luôn (det/ocr kèm khung JPEG của chúng), tới kính chỉ khi kính khai debug."""
+        frames = [json.dumps(obj, ensure_ascii=False)]
+        if obj["t"] in ("det", "ocr") and self.last_jpeg:
+            frames.insert(0, b"\x04" + self.last_jpeg)
+        await tee(*frames)
         if self.debug:
-            await self.text(obj)
+            await self.text(obj, observe=False)
 
     async def mode(self):
         await self.dbg({"t": "mode", **self.flags})
@@ -124,7 +161,9 @@ class Session:
             data = babble(text)
             try:
                 for i in range(0, len(data), 256 * 8):
-                    await self.ws.send(b"\x02" + data[i:i + 256 * 8])
+                    chunk = b"\x02" + data[i:i + 256 * 8]
+                    await self.ws.send(chunk)
+                    await tee(chunk)
                     await asyncio.sleep(0.05)  # nhanh hơn thời gian thực ~ 2,5 lần, như TTS thật
             except ConnectionClosed:
                 pass
@@ -166,6 +205,7 @@ class Session:
             self.spawn(self.result_later("result-9f1c", "Cuộc gọi đã kết nối với mẹ.", 2.5))
         elif after == "music":
             self.flags["music"] = True
+            self.spawn(self.result_later("result-3a7e", "Đã mở nhạc không lời thư giãn trên điện thoại.", 2.0))
         elif after == "stop_nav":
             await self.end_live()
             self.flags["music"] = False
@@ -177,6 +217,8 @@ class Session:
                          "audio": {"format": "ima_adpcm;rate=16000;channels=1;block=256", "sample_rate": RATE, "preroll_s": 0.2}})
         await self.speak(rid, text)
         await self.text({"t": "reply_end", "turn": rid})
+        if rid == "result-9f1c" and self.flags.get("call"):
+            await self.text({"t": "call_state", "call": "c-demo", "state": "active", "peer": self.flags["call"]})
 
     async def end_live(self):
         if self.live:
@@ -190,6 +232,7 @@ class Session:
         w, h = jpeg_size(jpeg)
         if not w:
             return
+        self.last_jpeg = jpeg
         self.frames += 1
         n = self.frames
         if self.live == "nav":
@@ -242,6 +285,9 @@ class Session:
         await self.speak("live", text)
         await self.end_live()
 
+    def glasses_frame(self, online):
+        return {"t": "glasses", "online": online, "device": self.device, "session": self.session_id}
+
     # --- vòng nhận ---
     async def run(self):
         first = await asyncio.wait_for(self.ws.recv(), 10)
@@ -249,12 +295,17 @@ class Session:
         if hello.get("t") != "hello":
             await self.ws.close(4400)
             return
-        if self.token and hello.get("token") != self.token:
+        if self.token and presented_token(self.ws, hello) != self.token:
             await self.ws.close(4401)
             return
         self.debug = bool(hello.get("debug"))
-        await self.text({"t": "hello_ok", "session": f"fake{int(time.time()) % 10000:04d}", "cue_version": 2,
-                         "ping_s": 25, **({"debug": True} if self.debug else {})})
+        self.device = str(hello.get("device") or "demo-client")
+        self.session_id = f"fake{int(time.time()) % 10000:04d}"
+        await self.text({"t": "hello_ok", "session": self.session_id, "cue_version": 2,
+                         "ping_s": 25, **({"debug": True} if self.debug else {})}, observe=False)
+        self.ready = True
+        SESSIONS.add(self)
+        await tee(json.dumps(self.glasses_frame(True)))
         await self.mode()
         t_release = time.monotonic()
         try:
@@ -263,6 +314,7 @@ class Session:
                     kind, body = msg[0], msg[1:]
                     if kind == 0x01:
                         self.image_bytes += len(body)
+                        await tee(msg)  # ảnh lượt: đúng ảnh kính gửi lúc bấm nút
                     elif kind == 0x03:
                         self.audio_bytes += len(body)
                     elif kind == 0x04:
@@ -271,14 +323,16 @@ class Session:
                 f = json.loads(msg)
                 t = f.get("t")
                 if t == "ping":
-                    await self.text({"t": "pong"})
+                    await self.text({"t": "pong"}, observe=False)
                 elif t == "turn_start":
                     self.turn, self.audio_bytes, self.image_bytes = f.get("turn"), 0, 0
+                    await tee(json.dumps({"t": "turn_start", "turn": self.turn}))
                     # Bấm = huỷ OCR live (nav sống tiếp), như server thật.
                     if self.live == "ocr":
                         await self.end_live()
                 elif t == "turn_end" and f.get("turn") == self.turn:
                     t_release = time.monotonic()
+                    await tee(json.dumps({"t": "turn_end", "turn": self.turn}))
                     print(f"[fake] turn {self.turn}: ảnh {self.image_bytes} B, audio {self.audio_bytes} B", flush=True)
                     self.spawn(self.run_turn(self.turn, t_release))
                 elif t == "cancel" and self.live == "ocr":
@@ -288,6 +342,39 @@ class Session:
         finally:
             for task in list(self.tasks):
                 task.cancel()
+            self.ready = False
+            SESSIONS.discard(self)
+            await tee(json.dumps(self.glasses_frame(False)))
+
+
+SESSIONS: set = set()
+
+
+async def observe(ws, token: str):
+    """Phiên chỉ xem: hello -> hello_ok{glasses} + trạng thái kính đang nối; sau đó chỉ nhận bản sao qua `tee`."""
+    first = await asyncio.wait_for(ws.recv(), 10)
+    hello = json.loads(first) if isinstance(first, str) else {}
+    if hello.get("t") != "hello":
+        await ws.close(4400)
+        return
+    if token and presented_token(ws, hello) != token:
+        await ws.close(4401)
+        return
+    live = [s for s in SESSIONS if s.ready]
+    await ws.send(json.dumps({"t": "hello_ok", "role": "observer", "watch": hello.get("device") or "*",
+                              "ping_s": 25, "glasses": bool(live)}))
+    for s in live:
+        await ws.send(json.dumps(s.glasses_frame(True)))
+        await ws.send(json.dumps({"t": "mode", **s.flags}))
+    OBSERVERS.add(ws)
+    try:
+        async for msg in ws:
+            if isinstance(msg, str) and '"ping"' in msg:
+                await ws.send(json.dumps({"t": "pong"}))
+    except ConnectionClosed:
+        pass
+    finally:
+        OBSERVERS.discard(ws)
 
 
 async def main():
@@ -298,13 +385,16 @@ async def main():
     args = p.parse_args()
 
     async def handler(ws):
-        if ws.request.path.split("?")[0] != "/v2/session":
+        path = ws.request.path.split("?")[0]
+        if path == "/v2/session":
+            await Session(ws, args.token).run()
+        elif path == "/v2/observe":
+            await observe(ws, args.token)
+        else:
             await ws.close(1008)
-            return
-        await Session(ws, args.token).run()
 
     async with serve(handler, args.host, args.port, max_size=2_100_000):
-        print(f"Server kính giả: ws://{args.host}:{args.port}/v2/session", flush=True)
+        print(f"Server kính giả: ws://{args.host}:{args.port}/v2/session (kính) và /v2/observe (trang xem)", flush=True)
         await asyncio.Future()
 
 

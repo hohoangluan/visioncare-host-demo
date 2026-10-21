@@ -271,6 +271,29 @@ LLM_MAX_TOKENS = int(get("LLM_MAX_TOKENS", "400"))
 LLM_IMAGE_MAX_SIDE = int(get("LLM_IMAGE_MAX_SIDE", "896"))
 # OCR cần giữ chi tiết chữ nhỏ nên ảnh chụp high-res gửi lớn hơn.
 LLM_OCR_IMAGE_MAX_SIDE = int(get("LLM_OCR_IMAGE_MAX_SIDE", "1600"))
+# Đọc tiền làn B: "choice" = Gemma chọn nhãn mệnh giá + xác suất, dưới MONEY_MIN_PROB thì từ chối
+# (handlers/read_money.read_choice); "prompt" = prompt tự do cũ. Ngưỡng chọn trên dev 2026-10-21:
+# sai <= 3 % mà đúng cao nhất; test: nói sai 11,2 % -> 3,3 %, trễ p90 234 -> 215 ms.
+MONEY_MODE = get("MONEY_MODE", "choice")
+# Đọc tiền v2 (2026-10-21, spec doc-tien-3-khung): đọc chặt 1 khung, không chắc thì nói hướng dẫn rồi đọc lại
+# 1 lần từ khung live. τ 0,995 -> 0,999: test nói sai 3,6 -> 2,1 % (đổi lại từ chối 39 -> 49 %, phần đó đọc lại bù).
+MONEY_MIN_PROB = float(get("MONEY_MIN_PROB", "0.999"))
+# 1 = có đọc lại; 0 = hành vi cũ (không chắc thì nói "chưa đọc rõ", không mở live).
+# MONEY_RETRY=0 CHỈ tắt đọc lại; muốn khôi phục hoàn toàn hành vi cũ phải đặt thêm MONEY_MIN_PROB=0.995.
+MONEY_RETRY = get("MONEY_RETRY", "1") == "1"
+MONEY_RETRY_PROB = float(get("MONEY_RETRY_PROB", "0.999"))
+# Lượt đọc lại: bỏ mọi khung trong SETTLE_S đầu (để người dùng chỉnh tay theo hướng dẫn), rồi lấy khung đầu tiên đủ nét;
+# hết TIMEOUT_S (tính từ lúc gửi `cam`) thì lấy khung nét nhất đã thấy.
+MONEY_RETRY_SETTLE_S = float(get("MONEY_RETRY_SETTLE_S", "1.0"))
+MONEY_RETRY_TIMEOUT_S = float(get("MONEY_RETRY_TIMEOUT_S", "3.0"))
+# Độ nét (Laplacian, read_money.blur_score: ảnh thu về cạnh dài 192 px) dưới ngưỡng này thì nói "Giữ yên tay." và
+# chờ khung nét khi đọc lại. Chọn trên dev: phân vị 25 % độ nét của 81 ảnh dev đọc đúng ở τ 0,999
+# (evaluations/bench/money_blur.py). Cần chỉnh lại trên ảnh thật của kính (xem MONEY_OCR_CAI_TIEN.md, "Đọc tiền v2").
+MONEY_BLUR_HINT = float(get("MONEY_BLUR_HINT", "341.4"))
+# Khi có >= 2 khung (kính chụp liên tiếp): ngưỡng cho khung "chắc" trong read_money.combine.
+MONEY_MULTI_MIN_PROB = float(get("MONEY_MULTI_MIN_PROB", "0.98"))
+# Làn B đọc chữ: chữ số nào có xác suất token dưới ngưỡng thì nói thêm câu cảnh báo "chưa chắc" (0 = tắt).
+OCR_DIGIT_HEDGE_PROB = float(get("OCR_DIGIT_HEDGE_PROB", "0.9"))
 
 # Clef (Cloudflare Workers AI) — phân loại intent cuối và trên partial.
 CLOUDFLARE_API_TOKEN = get("CLOUDFLARE_API_TOKEN", "")
@@ -383,6 +406,42 @@ HAZARD_REPEAT_S = float(get("HAZARD_REPEAT_S", "2"))
 HAZARD_LEVEL1_GAP_S = float(get("HAZARD_LEVEL1_GAP_S", "5"))
 # Mức thấp nhất được gửi cho kính. 2 = bỏ mức 1 (vật xa/ngoài lối đi) cho đỡ ồn; 1 = gửi cả mức 1.
 HAZARD_MIN_LEVEL = int(get("HAZARD_MIN_LEVEL", "2"))
+# Logic hazard: "area" = luật diện tích hộp (hành vi cũ, mặc định); "predict" = ước lượng khoảng cách +
+# dự đoán quỹ đạo, xếp mức theo thời gian tới hành lang (TTE). Chỉ bật bằng env.
+HAZARD_LOGIC = get("HAZARD_LOGIC", "area")
+# Camera danh nghĩa của kính (QVGA 320x240): góc nhìn ngang và độ cao so với mặt đất.
+HAZARD_CAM_HFOV_DEG = float(get("HAZARD_CAM_HFOV_DEG", "66.0"))
+HAZARD_CAM_HEIGHT_M = float(get("HAZARD_CAM_HEIGHT_M", "1.6"))
+# Hành lang nguy hiểm tính theo TÂM vật (khớp nhãn C1b): Z < DANGER_Z và |X| < LANE_HALF.
+HAZARD_DANGER_Z_M = float(get("HAZARD_DANGER_Z_M", "2.0"))
+HAZARD_LANE_HALF_M = float(get("HAZARD_LANE_HALF_M", "0.6"))
+# Thời gian dự kiến chạm hành lang (TTE): dưới L3 -> mức 3, dưới L2 -> mức 2; nhìn trước tối đa HORIZON.
+HAZARD_TTE_L3_S = float(get("HAZARD_TTE_L3_S", "1.5"))
+HAZARD_TTE_L2_S = float(get("HAZARD_TTE_L2_S", "3.0"))
+HAZARD_HORIZON_S = float(get("HAZARD_HORIZON_S", "3.0"))
+# Track mới xuất hiện gần hơn mức này (m) mà đã trong hành lang thì báo ngay (urgent). 0 = tắt.
+HAZARD_NEW_NEAR_M = float(get("HAZARD_NEW_NEAR_M", "3.0"))
+# Số khung giữ track khi mất detection (coast) trước khi xoá.
+HAZARD_COAST_FRAMES = int(get("HAZARD_COAST_FRAMES", "3"))
+# Hệ số nới hành lang theo độ bất định ngang của dự đoán (0 = không nới).
+HAZARD_SIGMA_K = float(get("HAZARD_SIGMA_K", "0.0"))
+# Chỉ tin phần vận tốc đã chắc: v_dùng = sign(v)·max(|v| − K·σ_v, 0) khi tính TTE (track mới σ_v lớn -> chưa coi là sắp
+# cắt hành lang; vật lao nhanh |v| >> σ_v vẫn báo sớm). 0 = dùng thẳng vận tốc ước lượng.
+HAZARD_V_CONF_K = float(get("HAZARD_V_CONF_K", "0.0"))
+# Track sống trong hệ ĐẦU (đã bù quay đầu) nhưng người dùng đi theo hướng THÂN: cộng dồn góc quay đầu (rò, hằng số thời gian
+# TAU giây để khi rẽ thật hệ thân bắt kịp) rồi xét hành lang ở hệ thân, X_thân = X − Z·θ. 0 = tắt (xét theo hướng đầu).
+HAZARD_YAW_TAU_S = float(get("HAZARD_YAW_TAU_S", "0.0"))
+# AntiAnnoy khi predict: mức 3 cần L3_VOTE/3 khung (urgent vượt phiếu nếu BYPASS), hạ mức phải giữ DOWN_HOLD khung.
+HAZARD_L3_VOTE = int(get("HAZARD_L3_VOTE", "2"))
+HAZARD_NEW_BYPASS_VOTE = get("HAZARD_NEW_BYPASS_VOTE", "1")
+# Nhiễu quá trình của Kalman (gia tốc trắng, m^2/s^3).
+HAZARD_KF_Q = float(get("HAZARD_KF_Q", "1.0"))
+HAZARD_DOWN_HOLD = int(get("HAZARD_DOWN_HOLD", "2"))
+# Đuôi nhả (chỉ predict): hết dấu hiệu nguy hiểm thì kêu thêm chừng này giây rồi dừng hẳn. 0 = tắt.
+HAZARD_RELEASE_S = float(get("HAZARD_RELEASE_S", "0.5"))
+# Bảng lớp của detector: trống = COCO hard-code trong live/hazard.py; có giá trị = file JSON {id: [kind, nhóm]}
+# (định dạng evaluations/train/classes_vh.json) cho model fine-tune (ft_11s_last).
+HAZARD_CLASSES_JSON = get("HAZARD_CLASSES_JSON", "")
 # Bật GET /v2/debug/stats (số request Gemma đang bay/đỉnh/tổng) cho tools/bench_load.py. Mặc định tắt:
 # endpoint không tồn tại (404) khi cờ này không phải "1".
 V2_DEBUG_STATS = get("V2_DEBUG_STATS", "") == "1"

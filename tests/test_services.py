@@ -162,6 +162,13 @@ def test_emergency_call_speaks_whether_the_sms_went_out(monkeypatch):
     assert "đã gửi tin nhắn vị trí" in out
 
 
+def test_emergency_never_carries_a_number_from_speech(monkeypatch):
+    """Cấp cứu chỉ gọi người thân đã cài: số 115/114/113 hay số bất kỳ trong câu nói không bao giờ đi xuống app."""
+    calls = _stub_flow(monkeypatch, {"contact": "***768", "sms_sent": True})
+    "".join(phone.handle_emergency(b"", "", {"emergency_number": "115"}))
+    assert "number" not in calls[0][1] and "emergency_number" not in calls[0][1]
+
+
 _QUOTE = {"quote_id": "quote-9", "product_type": "GrabCar", "eta_minutes": 6}
 
 

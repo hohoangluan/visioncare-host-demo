@@ -1,0 +1,23 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "overused-font",
+        "value": "montserrat",
+        "createdAt": "2026-10-21T03:50:59.913Z",
+        "reason": "Montserrat là font của bộ nhận diện SeeVia (ui/logo, ghi trong memory seevia-brand-identity-ui-logo), tự host trong assets/fonts; không phải xác nhận riêng của user trong phiên này"
+      },
+      {
+        "rule": "pulsing-dot",
+        "value": "*",
+        "files": [
+          "/workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system/visioncare-host-demo/demo-web/client.html"
+        ],
+        "createdAt": "2026-10-21T03:50:59.930Z",
+        "reason": "Hai chấm nhấp nháy là trạng thái thật đang đổi: dot[data-state=wait] khi đang kết nối và rec-dot khi đang ghi âm (chỉ bật lúc giữ nút); styles.css đã tắt animation khi prefers-reduced-motion; không phải xác nhận riêng của user"
+      }
+    ]
+  }
+}

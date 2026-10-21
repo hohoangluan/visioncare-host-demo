@@ -172,6 +172,10 @@ def test_final_decodes_again_after_new_audio(fake_asr):
     ("Gọi cho mẹ", ("contact_call", "read")),
     ("Cứu tôi với", ("emergency_call", "read")),
     ("Tờ tiền này bao nhiêu", ("money", "read")),
+    ("Cái áo này màu gì", ("ask", "read")),
+    ("Hạn sử dụng là ngày nào", ("ask", "read")),
+    ("Trên nhãn có ghi gì", ("ask", "read")),
+    ("Đọc giúp tôi hạn sử dụng", ("ocr", "read")),
     ("Kể chuyện cười đi", None),
 ])
 def test_keyword_rules(text, expected):
@@ -214,6 +218,18 @@ def test_decide_falls_back_to_keyword_then_chat(monkeypatch):
     assert (d.intent, d.source, d.lane) == ("ocr", "keyword", "B")
     d = asyncio.run(EarlyIntent().decide("hôm nay thế nào"))
     assert (d.intent, d.source, d.lane) == ("chat", "fallback-chat", "A")
+
+
+def test_decide_explicit_read_command_beats_model_ask(monkeypatch):
+    """Model gán `ask` cho lệnh "đọc nguyên văn..." -> vẫn là ocr raw (đọc cả văn bản)."""
+    async def fake(text, device=None):
+        return clef.ClefResult("ask", 0.9)
+
+    _clef_available(monkeypatch, fake)
+    d = asyncio.run(EarlyIntent().decide("Đọc nguyên văn bức thư trên bàn"))
+    assert (d.intent, d.ocr_mode, d.lane) == ("ocr", "raw", "B")
+    d = asyncio.run(EarlyIntent().decide("Cái hộp này vị gì thế"))
+    assert (d.intent, d.lane) == ("ask", "A")
 
 
 def test_decide_hedges_a_slow_partial_clef(monkeypatch):
@@ -310,6 +326,18 @@ def test_first_sentence_cut_at_max_words_and_strips_markdown():
 
 def test_short_answer_still_spoken():
     assert _collect(general.short_first_sentence(_chunks("Dạ"))) == ["Dạ\n"]
+
+
+def test_ask_intent_uses_question_prompt_with_image():
+    """`ask` (hỏi một điều về ảnh) đi làn A, có ảnh, dùng prompt trả lời câu hỏi chứ không phải mô tả không gian."""
+    from handlers import ask_image, describe_space
+    assert "ask" in general.VISION_INTENTS and intent_early.LANE["ask"] == "A"
+    msgs = general.messages("ask", "Cái áo này màu gì", b"jpeg")
+    content = msgs[1]["content"]
+    text = content if isinstance(content, str) else " ".join(p.get("text", "") for p in content if isinstance(p, dict))
+    assert ask_image._PROMPT in text and describe_space._PROMPT not in text
+    assert "NGƯỜI MÙ" in ask_image._PROMPT
+    assert general.prefix_messages("ask", b"jpeg") == general.prefix_messages("space", b"jpeg")  # prewarm dùng chung
 
 
 def test_speculation_replays_everything():
@@ -441,6 +469,12 @@ def test_rule_params_need_no_llm():
     assert asyncio.run(phone.extract("ride_confirm", "xác nhận đặt xe")) == {"confirm": True}
     assert asyncio.run(phone.extract("music_volume", "chỉnh âm lượng 70")) == {"volume": 70}
     assert asyncio.run(phone.extract("music_volume", "tăng âm lượng")) == {"direction": "up"}
+
+
+def test_emergency_extracts_no_number_from_speech():
+    """Cấp cứu chỉ gọi người thân đã cài: 115/114/113 hay số bất kỳ trong câu nói không thành tham số."""
+    for said in ("gọi 115 giúp tôi", "cấp cứu số 114", "khẩn cấp 0912345678"):
+        assert asyncio.run(phone.extract("emergency_call", said)) == {}
 
 
 def test_fallback_slot_strips_politeness():

@@ -11,8 +11,10 @@ Giao thức (JSON text; binary có byte đầu là loại):
     server -> kính  hello_ok | reply | 0x02 khối audio | reply_end | cam/capture/cue/hazard/end
                     (live, giữ nguyên `live/protocol.py`) | call_state | pong | error
 
-Khung debug (chỉ trang demo, `hello.debug=true`; kính thật không gửi nên không đổi gì): trace | say | det | ocr
+Khung debug (`hello.debug=true`, dùng cho công cụ kiểm; kính thật không gửi nên không đổi gì): trace | say | det | ocr
 | mode, JSON text, gửi không chờ khoá audio và nuốt mọi lỗi gửi (xem `docs/FIRMWARE_ENDPOINTS.md`, mục Debug).
+Trang demo của ban giám khảo KHÔNG đóng vai kính: nó xem qua `WS /v2/observe` (`live/observers.py`), nhận một bản sao
+mọi thứ kính gửi/nhận cùng khung debug mà kính không phải khai `debug`.
 
 Ngữ nghĩa huỷ (an toàn làn D): `turn_start` mới, `cancel`, đóng socket và phiên mới
 của cùng kính đều: huỷ task `turn.run` + stream audio, huỷ live, rồi `begin_turn`
@@ -36,9 +38,10 @@ from starlette.websockets import WebSocket, WebSocketDisconnect
 import config
 from live import call_bridge, messages, protocol
 from live.call_bridge import calls
+from live.observers import ANY_DEVICE, observers
 from live.session import sessions
 from live.ws_adapter import LiveSocket
-from pipeline import adpcm, cues, device_ctx, guard, metrics, pending_action
+from pipeline import adpcm, cues, device_ctx, guard, metrics, pending_action, speech
 from pipeline import turn as turn_v2
 from pipeline.image_buffer import image_buffer
 from pipeline.reply import Reply
@@ -59,6 +62,12 @@ _DEBUG_QUEUE_MAX = 64
 _DEBUG_LATEST = ("det", "ocr")  # khung tốc độ cao: chậm thì bỏ khung cũ, giữ mới nhất
 
 ReplyAudio = Callable[..., Awaitable[tuple[dict, object]]]
+
+# Báo đổi chế độ cho người chỉ nghe (cực ngắn; dựng sẵn qua `STATIC_SPEECH`, không có cue vì cue nằm trong flash kính).
+# Kính chỉ có MỘT phiên live: OCR live thay nav live thì cảnh báo vật cản tắt, phải nói ra; dựng lại thì nói lại.
+NAV_PAUSED = "Tạm tắt cảnh báo."
+NAV_RESUMED = "Bật lại cảnh báo."
+STATIC_SPEECH: tuple[str, ...] = (NAV_PAUSED, NAV_RESUMED)
 
 # device -> phiên đang mở (phiên mới thay phiên cũ)
 _registry: dict[str, "DeviceSession"] = {}
@@ -116,6 +125,7 @@ class DeviceSession:
         self._unread_task: asyncio.Task | None = None
         self._nav_suspended = False  # OCR live đã thay nav live: dựng lại nav khi OCR xong
         self._resume_task: asyncio.Task | None = None
+        self._status_tasks: set[asyncio.Task] = set()  # lời báo đổi chế độ (NAV_PAUSED/NAV_RESUMED), nói ở task riêng
         self.debug = False  # hello.debug: trang demo muốn nhận khung trace/say/det/ocr/mode
         # Hàng đợi khung debug CÓ CHẶN (dùng chung _send_lock với hazard nên không được dồn): say/mode xếp hàng
         # tối đa _DEBUG_QUEUE_MAX khung, det/ocr chỉ giữ khung MỚI NHẤT mỗi loại; một task bơm gửi từng khung một.
@@ -125,21 +135,41 @@ class DeviceSession:
         self._debug_tasks: set[asyncio.Task] = set()  # trace (1 khung/lượt, gửi riêng để đi trước reply)
 
     # ---------- gửi ----------
-    async def send_json(self, obj: dict) -> None:
-        await self.send_text(json.dumps(obj, ensure_ascii=False))
+    async def send_json(self, obj: dict, tee: bool = True) -> None:
+        await self.send_text(json.dumps(obj, ensure_ascii=False), tee)
 
-    async def send_text(self, text: str) -> None:
+    async def send_text(self, text: str, tee: bool = True) -> None:
         async with self._send_lock:
             await self.ws.send_text(text)
+        if tee:  # người xem (trang demo) thấy đúng khung kính vừa nhận
+            observers.text(self.device, text)
 
     async def send_bytes(self, data: bytes) -> None:
         async with self._send_lock:
             await self.ws.send_bytes(data)
+        observers.binary(self.device, data)
 
     # ---------- khung debug (demo) ----------
+    def _observed(self) -> bool:
+        return observers.any(self.device)
+
+    def _observe_debug(self, obj: dict, jpeg: bytes | None = None) -> None:
+        """Bản sao khung debug cho người xem. `det`/`ocr` đi kèm đúng khung JPEG server vừa xử lý (0x04, ngay trước JSON)."""
+        key = obj["t"] if obj.get("t") in _DEBUG_LATEST else None
+        frames: list[bytes | str] = [json.dumps(obj, ensure_ascii=False)]
+        if jpeg is not None:
+            frames.insert(0, bytes([T_LIVE_FRAME]) + jpeg)
+        observers.publish(self.device, frames, key)
+
     def emit_debug(self, obj: dict) -> None:
-        """Gửi một khung debug mà KHÔNG chờ: gọi trên event loop. Tắt debug / lỗi gửi thì bỏ qua."""
-        if not self.debug or self._shut:
+        """Gửi một khung debug mà KHÔNG chờ: gọi trên event loop. Không ai cần (kính không khai debug, không có
+        người xem) / lỗi gửi thì bỏ qua. `obj["_jpeg"]` (khung server vừa xử lý) chỉ để người xem, không bao giờ tới kính."""
+        jpeg = obj.pop(protocol.DEBUG_JPEG, None)
+        if self._shut:
+            return
+        if self._observed():
+            self._observe_debug(obj, jpeg)
+        if not self.debug:
             return
         if obj.get("t") in _DEBUG_LATEST:
             self._debug_latest[obj["t"]] = obj
@@ -159,7 +189,7 @@ class DeviceSession:
 
     async def _send_debug(self, obj: dict) -> None:
         try:
-            await self.send_json(obj)
+            await self.send_json(obj, tee=False)  # người xem đã nhận bản sao ở `_observe_debug`
         except Exception:  # noqa: BLE001 - khung debug không bao giờ được cản kính
             pass
 
@@ -179,7 +209,7 @@ class DeviceSession:
                 "call": call.state if call is not None else None}  # ringing_out|ringing_in|active|None
 
     def emit_mode(self) -> None:
-        if not self.debug or self._shut:
+        if not (self.debug or self._observed()) or self._shut:
             return
         try:
             self.emit_debug(self._mode_frame())
@@ -206,10 +236,24 @@ class DeviceSession:
             return
         # Không chờ gửi xong: reply (đường độ trễ số 1) không được chậm vì trang demo. Task xếp vào hàng đợi khoá
         # gửi TRƯỚC reply (nhường một vòng loop để nó kịp xin khoá) nên vẫn đi trước.
-        task = self._evloop.create_task(self._send_debug(frame))
-        self._debug_tasks.add(task)
-        task.add_done_callback(self._debug_tasks.discard)
-        await asyncio.sleep(0)
+        if self._observed():
+            self._observe_debug(frame)  # TRƯỚC reply: reply được tee sau khi gửi xong cho kính
+        if self.debug:
+            task = self._evloop.create_task(self._send_debug(frame))
+            self._debug_tasks.add(task)
+            task.add_done_callback(self._debug_tasks.discard)
+            await asyncio.sleep(0)
+
+    def _glasses_frame(self, online: bool) -> dict:
+        return {"t": "glasses", "online": online, "device": self.device, "session": self.session_id}
+
+    def announce_to_observers(self, obs) -> None:
+        """Người xem vào giữa chừng: cho biết kính đang nối + chế độ hiện tại (như vừa `hello_ok`)."""
+        obs.offer((json.dumps(self._glasses_frame(True)),))
+        try:
+            obs.offer((json.dumps(self._mode_frame()),), key="mode")
+        except Exception:  # noqa: BLE001
+            logger.exception("v2 session %s: dựng khung mode cho người xem lỗi", self.session_id)
 
     async def error(self, code: str) -> None:
         try:
@@ -227,13 +271,13 @@ class DeviceSession:
             await old.replace()
         device_ctx.current.set(self.device)  # task con thừa kế
         device_ctx.per_device.set(self.per_device)
-        if self.debug:
-            device_ctx.say.set(self._say_hook)  # thread TTS (copy context) báo từng câu vào TTS
+        device_ctx.say.set(self._say_hook)  # thread TTS (copy context) báo từng câu vào TTS; không ai nghe thì bỏ
         try:
             ok = {"t": "hello_ok", "session": self.session_id, "cue_version": cues.CUE_VERSION, "ping_s": PING_S}
             if self.debug:
                 ok["debug"] = True
-            await self.send_json(ok)
+            await self.send_json(ok, tee=False)
+            observers.text(self.device, self._glasses_frame(True))
             self.emit_mode()
             self._fetch_unread()
             pending = calls.by_device(self.device)
@@ -315,10 +359,34 @@ class DeviceSession:
                 call.detach_glasses()  # chuỗi khẩn cấp còn chuông: KHÔNG dừng (Ruling C4); phiên mới gắn lại ở `run`
             else:  # cúp, báo AB, đóng đầu app
                 await call.hangup("glasses_disconnect", by="glasses")
-        for task in [*self._debug_tasks, self._debug_pump, self._unread_task]:
+        observers.text(self.device, self._glasses_frame(False))
+        for task in [*self._debug_tasks, *self._status_tasks, self._debug_pump, self._unread_task]:
             if task is not None:
                 task.cancel()
         await self._cancel_work(reason)
+
+    # ---------- báo đổi chế độ ----------
+    def _announce(self, text: str) -> None:
+        """Nói một câu báo ngắn qua kênh audio của phiên, ở task riêng: đường chính không chờ nó.
+
+        Giữ `_audio_lock` trọn câu như mọi câu khác (FIFO) nên không xen vào audio đang nói; lỗi gửi chỉ ghi log.
+        """
+        task = asyncio.get_running_loop().create_task(self._say_status(text))
+        self._status_tasks.add(task)
+        task.add_done_callback(self._status_tasks.discard)
+
+    async def _say_status(self, text: str) -> None:
+        try:
+            async with self._audio_lock:
+                async with contextlib.aclosing(speech.adpcm_stream([text])) as chunks:
+                    async for chunk in chunks:
+                        await self.send_bytes(protocol.audio(chunk))
+        except Exception:  # noqa: BLE001 — lời báo hỏng không được làm hỏng phiên
+            logger.warning("v2 session %s: không nói được lời báo %r", self.session_id, text, exc_info=True)
+
+    def drop_suspended_nav(self) -> None:
+        """Người dùng nói "tắt cảnh báo" lúc nav đang bị OCR/cuộc gọi tạm dừng: đừng tự bật lại khi OCR xong."""
+        self._nav_suspended = False
 
     # ---------- huỷ ----------
     async def _cancel_work(self, reason: str, keep_nav: bool = False, keep_results: bool = False) -> None:
@@ -436,7 +504,7 @@ class DeviceSession:
             await self.error("bad_frame")
             return
         if kind == "ping":
-            await self.send_json({"t": "pong"})
+            await self.send_json({"t": "pong"}, tee=False)
         elif kind == "turn_start":
             await self._turn_start(frame)
         elif kind == "turn_end":
@@ -444,6 +512,7 @@ class DeviceSession:
             if turn is not None and str(frame.get("turn", turn.id)) == turn.id:
                 turn.glasses["t_release_ms"] = frame.get("t_release_ms")
                 turn.audio_q.put_nowait(None)
+                observers.text(self.device, {"t": "turn_end", "turn": turn.id})
         elif kind == "cancel":
             if not self._shut:  # socket cũ đã bị thay không được huỷ lệnh chờ của phiên mới
                 await self._cancel_work("kính huỷ", keep_nav=True)
@@ -484,6 +553,7 @@ class DeviceSession:
                 await self.error("too_large")
             elif payload:
                 image_buffer.put(self.device, turn.id, payload)
+                observers.binary(self.device, data)  # 0x01 + JPEG: đúng ảnh kính gửi lúc bấm nút
         elif kind == T_TURN_AUDIO:
             if turn is None:
                 return
@@ -516,6 +586,7 @@ class DeviceSession:
         turn = _Turn(str(frame.get("turn", "")))
         turn.glasses["t_press_ms"] = frame.get("t_press_ms")
         self._turn = turn
+        observers.text(self.device, {"t": "turn_start", "turn": turn.id})
         gen = pending_action.generation(self.device)
         turn.task = asyncio.create_task(self._run_turn(turn, state, gen))
 
@@ -528,7 +599,7 @@ class DeviceSession:
                     transport="ws", glasses=turn.glasses,
                 )
                 reply, released = result.reply, result.released_at
-                if self.debug:
+                if self.debug or self._observed():
                     await self._send_trace(turn, result)
             except Exception:  # noqa: BLE001 - kính luôn phải nghe được gì đó
                 logger.exception("v2 session turn %s thất bại", turn.id)
@@ -646,7 +717,7 @@ class DeviceSession:
         device_ctx.current.set(self.device)
         device_ctx.per_device.set(self.per_device)
         # Task này sinh từ thread Timer/làn D (context trống hoặc của phiên cũ): đặt lại móc `say` của phiên NÀY.
-        device_ctx.say.set(self._say_hook if self.debug else None)
+        device_ctx.say.set(self._say_hook)
         while not self._in_call():
             msg = None
             if self._results:
@@ -693,13 +764,14 @@ class DeviceSession:
             # OCR live thay nav live (kính chỉ có một phiên live): nav phải được dựng lại khi OCR xong,
             # nếu không cảnh báo vật cản tắt âm thầm giữa đường trong khi người dùng tin là còn bật.
             self._nav_suspended = True
+            self._announce(NAV_PAUSED)  # tạo task TRƯỚC `_launch_live`: tới khoá audio trước câu đọc chữ
         self._launch_live(live)
 
     def _launch_live(self, live) -> None:
         from lanes import nav_live, ocr_live
 
         sock = LiveSocket(self.send_text, self.send_bytes, speak_cues=self.cue_version < cues.CUE_VERSION,
-                          audio_lock=self._audio_lock, debug=self.emit_debug if self.debug else None)
+                          audio_lock=self._audio_lock, debug=self.emit_debug)
         runner = ocr_live.run if live.mode == "ocr" else nav_live.run
         self._live_session, self._live_sock = live, sock
         # Chạy ở task riêng để vòng nhận (và turn_start/cancel) không bị chặn; task
@@ -727,6 +799,7 @@ class DeviceSession:
         if live is None:
             return
         logger.info("v2 session %s: OCR live xong, dựng lại nav live (cảnh báo vật cản)", self.session_id)
+        self._announce(NAV_RESUMED)
         self._launch_live(live)
 
 
@@ -789,6 +862,11 @@ def push_result(device: str, text: str, request_id: str = "") -> bool:
         return False
     session._evloop.call_soon_threadsafe(session._enqueue_result, request_id or secrets.token_hex(4), text.strip())
     return True
+
+
+def sessions_watched(watch: str) -> "list[DeviceSession]":
+    """Phiên kính đang mở mà người xem khoá `watch` (id kính hoặc `*`) nhìn thấy."""
+    return [s for d, s in _registry.items() if not s._shut and (watch == ANY_DEVICE or watch == d)]
 
 
 def session_for(device: str) -> "DeviceSession | None":

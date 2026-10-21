@@ -49,7 +49,9 @@ Dành cho người viết firmware ESP32-S3. Mọi khung, mã và con số đọ
 - Cách gửi: trường `token` trong `hello`, hoặc header `Authorization: Bearer <token>` (cũng nhận `X-Device-Token: <token>`)
   lúc bắt tay. Server chỉ dùng header khi `token` trong `hello` rỗng. So bằng `hmac.compare_digest`.
 - Server chưa cấu hình token: HTTP **503**, WS đóng **4401**. Thiếu/sai token: HTTP **401**, WS đóng **4401**.
-- Hiện một token dùng chung cho mọi kính và `device` do kính tự khai; token theo từng kính nằm ở plan 2.
+- Có hai loại token. **Token dùng chung**: `device` do kính tự khai, chỉ đủ cho lượt lệnh/live. **Token riêng từng kính**: ràng buộc
+  với `device_id`, bắt buộc để gọi điện/nhắn tin/khẩn cấp (mục 16); cấp bằng `python tools/device_token.py add <device_id>` (in đúng một
+  lần, server chỉ giữ sha256), nạp vào NVS của kính đó.
 
 ## 3. Khung kính -> server
 
@@ -165,6 +167,16 @@ server reply(live:"ocr", cues:["ocr_start"]) ; reply_end ; {"t":"cam","size":"vg
 kính   0x04 <JPEG>...   server {"t":"cue","id":"look_left"} ... {"t":"capture","size":"uxga"}   kính 0x04 <UXGA>
 server 0x02... (đọc nội dung) ; {"t":"end"}
 
+-- đọc tiền (đọc chắc, ~49 %): y như chat, không live --
+kính   {"t":"turn_start",...} ; 0x01 <JPEG UXGA buffer> ; 0x03 <ADPCM>... ; {"t":"turn_end",...}
+server {"t":"reply","turn":"t50","cues":[],"live":null,"audio":{...}} ; 0x02... ("50 nghìn đồng.") ; {"t":"reply_end","turn":"t50"}
+
+-- đọc tiền — đọc lại (không chắc, ~50 %): một câu hướng dẫn rồi đọc lại đúng MỘT lần --
+server reply(live:"ocr", cues:[]) ; 0x02... ("Lùi ra xa một chút, để cả tờ tiền nằm giữa." | "Giữ yên tay." | "Đưa tờ tiền lại gần hơn một chút.") ; reply_end ; {"t":"cam","size":"vga","fps":5,"quality":12}
+kính   0x04 <VGA>...   (server bỏ khung trong MONEY_RETRY_SETTLE_S = 1,0 s đầu; lấy khung đầu tiên sau đó đủ nét, hết 3,0 s thì khung nét nhất; không có khung nào thì nói "vẫn chưa đọc chắc")
+server 0x02... ("50 nghìn đồng." | "Tôi vẫn chưa đọc chắc được tờ này.") ; {"t":"end"}
+(lượt mới/`turn_start`/socket đóng: huỷ như OCR live. Đang chỉ đường: live này tạm thay nav, xong server dựng lại nav. Không có WS (`/process`): chỉ nói câu hướng dẫn, không live.)
+
 -- nav --
 server reply(live:"nav", cues:["nav_alert_on"]) ; reply_end ; {"t":"cam","size":"qvga","fps":8,"quality":15}
 kính   0x04 <JPEG>...   server {"t":"hazard","level":2,"dir":"left","kind":"car"}
@@ -174,7 +186,7 @@ kính   (bấm nút hỏi giờ: turn_start mới, nav vẫn chạy, hazard vẫ
 ## 7. Cue clips và `played`
 
 - Clip nằm ở `assets/cues/`: một file `<id>.wav` mỗi mã cue (WAV IMA ADPCM 16 kHz mono, khối 256 byte) cùng `manifest.json`
-  `{"cue_version": N, "clips": {id: {"file","bytes","seconds","text","sha256"}}}`. Hiện `cue_version` = **2**, 32 clip:
+  `{"cue_version": N, "clips": {id: {"file","bytes","seconds","text","sha256"}}}`. Hiện `cue_version` = **2**, 31 clip:
   `received`, `shutter`, `hazard_1..3` (âm, không lời); `system_busy`, `no_speech`, `no_image`; `ask_destination`, `ask_contact_name`,
   `ask_song`, `ask_ride_destination`, `phone_pending`, `emergency_started`; `ocr_start`, `look_left/right/up/down`, `look_around`,
   `move_closer`, `move_away`, `hold_still`, `ocr_no_text`, `ocr_nothing_to_reread`; `dir_left/center/right`, `stop_now`,
@@ -276,9 +288,32 @@ Nhấn nút ở bất kỳ trạng thái nào: dừng phát, gửi `turn_start` 
 (có lời = đổi âm lượng, bấm không lời = dừng), `nav` (dẫn đường: lệnh `navigation_start` + `maps_url`, không live; bấm nút = `navigation_stop`), `alert` (hazard, chat giữa chừng không tắt cảnh báo), `emergency`,
 `call_cancel` (điện thoại không nhận lệnh nào). Nhả nút -> tiếng đầu 502–560 ms; lệnh -> kết quả được đọc 483–992 ms. Bảng đầy đủ: `docs/E2E_FULL_FLOW.md`.
 
-## 15. Debug (chỉ demo)
+## 15. Debug và phiên chỉ xem (chỉ demo)
 
-Dành cho trang demo của giám khảo, **kính thật không dùng và không cần xử lý**. Khai `"debug": true` trong `hello` (đúng kiểu boolean `true`)
+Dành cho trang demo của giám khảo, **kính thật không dùng và không cần xử lý**.
+
+### 15.1. `WS /v2/observe`: trang giám sát chỉ xem
+
+Trang `index.html` KHÔNG đóng vai kính (không camera, micro, không gửi lượt). Nó nối `WS /v2/observe` để nhìn kính gửi gì và server xử lý ra sao.
+Phiên xem **không thay phiên của kính** (khác `/v2/session`, không `4000`), không gửi được gì vào lượt/live của kính, và kính không biết có người xem.
+Khung đầu tiên: `{"t":"hello","token":"...","device"?:"..."}` trong 10 s (hoặc token qua header như mục 2; sai/thiếu token đóng `4401`, khung đầu không phải
+hello đóng `4400`). Token riêng chỉ xem được đúng kính của nó (khai `device` khác thì `4401`); token chung khai `device` thì xem kính đó, không khai thì xem mọi kính.
+`ping` mỗi 25 s như kính.
+
+| Hướng | Khung | Ghi chú |
+|---|---|---|
+| server → trang | `{"t":"hello_ok","role":"observer","watch":"<kính hoặc *>","ping_s":25,"glasses":bool}` | `glasses` = có kính đang nối |
+| server → trang | `{"t":"glasses","online":bool,"device","session"}` | kính nối/ngắt; người xem vào giữa chừng nhận ngay một khung `online:true` + `mode` |
+| từ kính | `{"t":"turn_start","turn"}`, `{"t":"turn_end","turn"}`, binary `0x01` + JPEG | đúng ảnh kính gửi lúc bấm nút (không có audio `0x03` của kính) |
+| từ server tới kính | `reply`, `reply_end`, `cam`, `capture`, `cue`, `hazard`, `end`, `call_state`; binary `0x02` + ADPCM | bản sao nguyên văn (không có `pong`/`error`) |
+| debug | `trace`, `say`, `mode` | như 15.2, nhưng kính **không phải khai `debug`**; `trace` đi trước `reply` |
+| debug + JPEG | binary `0x04` + JPEG **ngay trước** JSON `det`/`ocr` của chính nó | JPEG là khung server vừa xử lý, nên box khớp hình dù server bỏ khung khi bận |
+
+Hàng đợi mỗi người xem có chặn (400 gói): người xem chậm thì bỏ gói cũ nhất, `det`/`ocr` chỉ giữ gói mới nhất; không bao giờ làm chậm kính.
+
+### 15.2. `hello.debug` trên `/v2/session` (công cụ kiểm)
+
+Khai `"debug": true` trong `hello` (đúng kiểu boolean `true`)
 thì `hello_ok` có thêm `"debug": true` và server gửi thêm các khung JSON text dưới đây. Không khai thì không có khung nào trong mục này,
 mọi hành vi khác giữ nguyên. Khung debug **không chờ khoá audio** (xen được giữa hai khối `0x02`), không chặn đường hazard và lỗi gửi bị bỏ qua. Hàng đợi khung debug có chặn: `det`/`ocr` chỉ giữ khung mới nhất khi đường truyền chậm (khung cũ bị bỏ), `say`/`mode` tối đa 64 khung chờ; khung JPEG hỏng không sinh `det`.
 
@@ -318,7 +353,11 @@ app → kính mặc định 60 ms (`CALL_JITTER_MS`).
   chế độ tránh vật cản (live nav) và bật lại khi cúp; kính ngừng stream `0x04` khi `active` thì tốt hơn (server không gộp hazard vào cuộc gọi).
 - `ended` (kèm `reason`: `glasses_hangup|app_hangup|rejected|missed|timeout|emergency_exhausted|peer_disconnect|media_timeout|revoked|busy|...`): dừng mic `0x05`, trở về IDLE. Có lời đọc kèm
   sau đó ("Mẹ chưa nghe máy. Bạn muốn nhắn tin không?") qua `reply result-*` như mục 4.1; lượt kế "Có." = nhắn tin.
-- Mất phiên WS giữa cuộc gọi: server cúp và báo app server; kính mở lại phiên thì không có cuộc gọi nào còn.
+- Mất phiên WS giữa cuộc gọi thường (`ringing_in`, `active`, hoặc `ringing_out` không phải khẩn cấp): server cúp và báo app server; kính mở lại phiên thì không có cuộc gọi nào còn.
+- **Ngoại lệ khẩn cấp**: nếu socket rớt khi chuỗi khẩn cấp còn đang `ringing_out`, server **không** cúp, chuỗi vẫn gọi tiếp người thân kế (người dùng có thể đang cần giúp).
+  Kính mở lại phiên thì ngay sau `hello_ok` nhận lại `call_state` `ringing_out` (kèm `call` id hiện tại) dù chưa bấm gì: firmware phải vào thẳng trạng thái
+  gọi đi từ khung này, không giả định IDLE. Bấm nút lúc đó = `call_hangup` dừng cả chuỗi. Chỉ lý do `glasses_hangup` và `timeout` mới dừng chuỗi; chuỗi
+  đã `active` mà rớt socket thì cúp như cuộc thường.
 - Cue riêng cho chuông/kết nối/kết thúc CHƯA có clip (`CUE_VERSION` không đổi): kính tự phát âm báo theo `call_state` nếu muốn; giọng đọc đã đủ cho người dùng.
 - Khẩn cấp ("cấp cứu, gọi người thân giúp tôi"): đọc "Đang gọi người thân khẩn cấp, bấm nút để huỷ.", sau cửa sổ huỷ là `ringing_out` kéo dài tối đa 3 vòng x số người
   (mỗi người ≤ `CALL_RING_TIMEOUT_S`); người nghe thì `active`. Hết vòng: `ended` với `reason:"emergency_exhausted"` và câu "Chưa liên lạc được người thân nào.".
@@ -327,7 +366,8 @@ app → kính mặc định 60 ms (`CALL_JITTER_MS`).
 
 Không có khung riêng: lời nhắn đi bằng lượt lệnh bình thường ("nhắn tin cho mẹ là con về muộn"; "đọc tin nhắn"). Tin tới từ người thân được server đọc
 "{tên} nhắn: {nội dung}" bằng một `reply result-*` (mục 4.1) khi kính **rảnh** (không trong lượt, không OCR live, không cuộc gọi); đang bận thì xếp hàng và đọc sau,
-không chen ngang. Đọc xong server báo app server là đã đọc.
+không chen ngang. Vừa vào phiên (token riêng), server tự lấy tin chưa đọc ở app server và xếp hàng như tin tới, nên kính có thể nhận `reply result-*` ngay sau
+kết nối dù chưa bấm nút. Đọc xong server báo app server là đã đọc.
 
 ### 16.4. Đã kiểm
 

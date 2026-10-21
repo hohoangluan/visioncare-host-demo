@@ -108,7 +108,9 @@ class Cache:
     def __init__(self, task: str, cfg: str, name: str = "cache.jsonl"):
         self.dir = os.path.join(common.RESULTS, task)
         os.makedirs(self.dir, exist_ok=True)
-        self.path = os.path.join(self.dir, name)
+        # BENCH_CACHE_TAG: lượt xác nhận cần gọi MỚI toàn bộ (khoá cache không băm đường code) -> file cache riêng, cache cũ giữ nguyên.
+        tag = os.environ.get("BENCH_CACHE_TAG")
+        self.path = os.path.join(self.dir, f"{tag}_{name}" if tag else name)
         self.cfg = cfg
         self.data: dict[str, dict] = {}
         if os.path.exists(self.path):
@@ -205,6 +207,19 @@ def install_ask_hook() -> None:
 
     ocr_live._prompt = _prompt
     ocr_live._bench_hooked = True
+
+
+def set_ocr_tiles(n: int, cfg_parts: dict) -> None:
+    """Bật OCR_TILES của VH (nhánh ocr-tien, 2026-10-21) cho cả tiến trình bench; ghi vào cfg để cache tách riêng.
+    n = 0 thì ép tắt (VH có cờ) — cfg giữ nguyên như trước để dùng lại cache baseline."""
+    import config
+    if hasattr(config, "OCR_TILES"):
+        config.OCR_TILES = n
+    elif n:
+        raise SystemExit("VH này không có OCR_TILES — đặt SEEVIA_VH_DIR tới worktree vh-ocr")
+    if n:
+        from lanes import ocr_live
+        cfg_parts.update(ocr_tiles=n, tiles_note=ocr_live._TILES_NOTE)
 
 
 def ask_spoken(jpeg: bytes, question: str):

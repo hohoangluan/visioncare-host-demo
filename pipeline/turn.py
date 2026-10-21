@@ -151,6 +151,7 @@ async def run(
     ctx = TurnContext(device, turn_id, prewarmer, loop)
     # `/process` (firmware cũ): toàn bộ lượt trong một request HTTP, không mở live.
     ctx.single_shot = single_shot
+    ctx.device_state = device_state or {}
     prewarmer.live_ok = not single_shot
     ctx.gen = pending_action.generation(device) if gen is None else gen
     ef = _EarlyFinal() if segmenter is not None and config.VAD_EARLY_FINAL else None

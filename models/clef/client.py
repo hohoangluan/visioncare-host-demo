@@ -42,6 +42,9 @@ LABELS: dict[str, str] = {
     "music_play": "phát nhạc, mở bài hát, nghe nhạc",
     "music_stop": "tắt nhạc, dừng nhạc",
     "music_volume": "tăng/giảm/chỉnh âm lượng",
+    "ask": "hỏi MỘT điều cụ thể về vật đang cầm hoặc thứ camera đang thấy: cái này là gì, màu gì, vị gì, "
+           "hãng nào, hạn dùng ngày nào, trên đó ghi gì, màn hình đang báo gì "
+           "(hỏi một vật NẰM Ở ĐÂU, hướng nào là find)",
 }
 
 _OCR_MODES = {

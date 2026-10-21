@@ -74,17 +74,11 @@ def handle_contact(image: bytes, command_text: str, params: dict | None = None) 
 
 
 def handle_emergency(image: bytes, command_text: str, params: dict | None = None) -> Iterator[str]:
-    params = params or {}
-    number = params.get("emergency_number")
-
-    payload = {}
-    if number:
-        payload["number"] = number
-
+    # Không có số nào đi kèm: app gọi liên hệ khẩn cấp đã cài, không bao giờ quay số do câu nói đưa vào (không 115).
     yield from run_action(
         "emergency_call",
         "api/v1/service/emergency/call",
-        payload,
+        {},
         ack=_EMERGENCY_ACK,
         failure=_EMERGENCY_FAILURE,
         progress=_EMERGENCY_PROGRESS,

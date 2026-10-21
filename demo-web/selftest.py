@@ -1,8 +1,9 @@
-"""Tự kiểm proxy WebSocket của serve.py và hợp đồng khung debug, không cần trình duyệt.
+"""Tự kiểm proxy WebSocket của serve.py và hợp đồng khung debug/xem, không cần trình duyệt.
 
-Dựng `fake_server.py` + `serve.py` ở cổng tạm, nối như trang demo (`/api/v2/session`,
-hello có `debug:true`) rồi chạy hết vòng kịch bản; kiểm từng loại khung tới đúng
-dạng và audio 0x02 giải mã được. Thoát 0 nếu đạt.
+Dựng `fake_server.py` + `serve.py` ở cổng tạm. Một client Python đóng vai kính (`/api/v2/session`, hello có
+`debug:true`) chạy hết vòng kịch bản; kiểm từng loại khung tới đúng dạng và audio 0x02 giải mã được. Song song một
+client khác đóng vai trang giám sát (`/api/v2/observe`): kiểm nó thấy kính nối/ngắt, ảnh lượt đúng từng byte,
+trace/say/audio, và khung JPEG ngay trước mỗi `det`/`ocr`. Thoát 0 nếu đạt.
 
     ~/.venvs/seevia/bin/python demo-web/selftest.py
 """
@@ -62,6 +63,40 @@ async def turn(ws, tid, secs=1.5, live=None):
     return got
 
 
+async def watch(url, got, ready):
+    """Trang giám sát giả: ghi lại theo thứ tự mọi khung nhận được ("bin", bytes) / ("json", dict)."""
+    async with connect(url, max_size=2_100_000) as ws:
+        await ws.send(json.dumps({"t": "hello", "token": ""}))
+        ready.set()
+        try:
+            async for msg in ws:
+                got.append(("bin", msg) if isinstance(msg, bytes) else ("json", json.loads(msg)))
+        except Exception:  # noqa: BLE001 - đóng khi selftest xong
+            pass
+
+
+def check_observer(got):
+    kinds = [k if k == "bin" else v["t"] for k, v in got]
+    ok = next(v for k, v in got if k == "json" and v["t"] == "hello_ok")
+    assert ok["role"] == "observer" and ok["glasses"] is False, ok
+    on = next(v for k, v in got if k == "json" and v["t"] == "glasses" and v["online"])
+    assert on["device"] == "demo-web", on
+    assert kinds.index("glasses") < kinds.index("turn_start")
+    # ảnh lượt: đúng byte kính gửi
+    assert ("bin", b"\x01" + jpeg(320, 240)) in got, "người xem không nhận đúng ảnh lượt 0x01"
+    t1 = [i for i, (k, v) in enumerate(got) if k == "json" and v.get("turn") == "t1"]
+    seq = [got[i][1]["t"] for i in t1]
+    assert seq.index("turn_start") < seq.index("turn_end") < seq.index("trace") < seq.index("reply") < seq.index("reply_end"), seq
+    assert any(k == "bin" and v[0] == 0x02 for k, v in got), "người xem không nhận audio 0x02"
+    # det/ocr: khung JPEG server vừa xử lý đi NGAY trước JSON của nó
+    for t, size in (("det", (320, 240)), ("ocr", (640, 480))):
+        idx = [i for i, (k, v) in enumerate(got) if k == "json" and v["t"] == t]
+        assert idx, f"người xem không nhận {t}"
+        want = ("bin", b"\x04" + jpeg(*size))
+        assert any(got[i - 1] == want for i in idx if i), f"{t} không đi sau đúng khung JPEG đã tính"
+    assert kinds.count("glasses") >= 2 and got[-1][1].get("online") is False, "thiếu khung kính ngắt"
+
+
 async def main():
     py = sys.executable
     procs = [
@@ -71,6 +106,10 @@ async def main():
     ]
     try:
         await asyncio.sleep(1.5)
+        seen, ready = [], asyncio.Event()
+        watcher = asyncio.create_task(watch(f"ws://127.0.0.1:{WEB_PORT}/api/v2/observe", seen, ready))
+        await asyncio.wait_for(ready.wait(), 5)
+        await asyncio.sleep(0.3)
         async with connect(f"ws://127.0.0.1:{WEB_PORT}/api/v2/session", max_size=2_100_000) as ws:
             await ws.send(json.dumps({"t": "hello", "device": "demo-web", "token": "", "debug": True,
                                       "cue_version": 0, "accept": "ima_adpcm"}))
@@ -114,7 +153,10 @@ async def main():
             assert g["trace"][0]["pending"] is None
             assert g["mode"][-1]["call"] == "Mẹ"
             assert any(s["turn"].startswith("result-") for s in g["say"]), "thiếu say result-*"
-        print("selftest: ĐẠT (proxy WS + trace/say/det/ocr/mode + ADPCM)")
+        await asyncio.sleep(0.5)  # kính đã ngắt: người xem nhận khung glasses offline
+        watcher.cancel()
+        check_observer(seen)
+        print("selftest: ĐẠT (proxy WS + trace/say/det/ocr/mode + ADPCM + trang xem /v2/observe)")
     finally:
         for p in procs:
             p.terminate()

@@ -52,13 +52,15 @@ def _speech_modules() -> tuple:
     client HTTP).
     """
     from handlers import action_flow, music, navigation, phone, result_speech, ride
-    from live import call_bridge
+    from lanes import ocr_live
+    from live import call_bridge, device_session
     from pipeline import cues, final_router
 
     return (
         action_flow, result_speech,
         music, navigation, phone, ride,
         final_router, image_quality, cues, call_bridge,
+        ocr_live, device_session,  # lời báo vào/ra chế độ (thoát đọc chữ/tiền, tạm tắt/bật lại cảnh báo)
     )
 
 

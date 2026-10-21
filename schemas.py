@@ -3,6 +3,7 @@ class Intent:
     FIND = "find"
     MONEY = "money"
     SPACE = "space"
+    ASK = "ask"  # hỏi một điều cụ thể về thứ camera đang thấy
     HAZARD = "hazard"
     CHAT = "chat"  # không khớp luật nào -> trò chuyện tự do với Gemini
     UNKNOWN = "unknown"  # không nghe ra chữ nào -> hỏi lại thay vì đoán

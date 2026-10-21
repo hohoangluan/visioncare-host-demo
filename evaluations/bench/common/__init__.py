@@ -24,6 +24,8 @@ REPORTS = os.path.join(EVAL_DIR, "reports")
 # evaluations/ nằm TRONG repo VH (bản commit) hoặc cạnh VH (SeeVia_system/evaluations, bản đang chạy pipeline)
 _PARENT = os.path.dirname(EVAL_DIR)
 VH_DIR = _PARENT if os.path.exists(os.path.join(_PARENT, "config.py")) else os.path.join(_PARENT, "visioncare-host-demo")
+# Đo một nhánh VH khác (worktree) mà không đổi bản đang chạy: SEEVIA_VH_DIR=/đường/dẫn/worktree
+VH_DIR = os.environ.get("SEEVIA_VH_DIR") or VH_DIR
 
 _GPU_AT_START: list[dict] = []
 

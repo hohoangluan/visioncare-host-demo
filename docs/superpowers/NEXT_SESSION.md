@@ -39,3 +39,9 @@ Ledger + report: `VH/.superpowers/sdd/2026-10-19-glasses-calls-messages/` (git-i
 - Hỏi trước khi gỡ/cài gói trong `~/.venvs/seevia`; GPU: chọn GPU trống, không lùi CPU. Không `source` file `.env`.
 - Hai file Firebase (`AB/mobile/app/google-services.json`, `~/.config/seevia/firebase-adminsdk.json`) bảo mật: không commit/copy/in.
 - UI SeeVia qua skill `ui-ux-pro-max`; nhận diện navy #041466 (memory `seevia-brand-identity-ui-logo`).
+
+## Cập nhật 2026-10-21: chạy full end-to-end
+
+Danh sách hạn chế còn lại (STT sai ~10% từ do model, "Đúng" không câu hỏi chạy nhầm lệnh, gọi/nhắn bị chặn vì thiếu token riêng + tài khoản
+AB, pha khẩn cấp chưa chạy, đặt xe/dẫn đường chưa ra kết quả cuối, trang demo không mở được từ máy người dùng):
+`SeeVia_system/docs/2026-10-21-han-che-chay-full-e2e.md`. Script chạy lại: `demo-web/e2e/full_tour.py`, `stt_ab.py`, `stt_err.py`.

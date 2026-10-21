@@ -1,14 +1,24 @@
 #!/usr/bin/env bash
 # Bật server kính (cổng 18888, sau Cloudflare tunnel: wss://api.visioncare-host.uk/v2/session).
 #   ./run.sh          bật nền, chờ sẵn sàng      ./run.sh stop   tắt      ./run.sh log   xem log
+# Bật kèm trang demo https://<IP>:18443 (WEB=0 để bỏ, WEB_PORT=... để đổi cổng); stop tắt cả hai.
+# Nối app server (AB): VISIONCARE_HOST_URL=http://127.0.0.1:18001 ./run.sh (thắng dòng trong .env).
 # Đổi GPU/cổng: GPU=3 PORT=18888 ./run.sh. Token, khoá đọc từ .env (app tự nạp, không source ở đây).
 set -euo pipefail
 cd "$(dirname "$0")"
 PORT=${PORT:-18888}
 LOG=storage/server.log
+# Trang demo (demo-web/serve.py, https tự ký cho camera/micro). WEB=0 để không bật.
+WEB=${WEB:-1}
+WEB_PORT=${WEB_PORT:-18443}
+WEB_LOG=storage/demo-web.log
+WEB_LOCAL_PORT=${WEB_LOCAL_PORT:-18080}
 
 case "${1:-start}" in
-  stop) fuser -k "$PORT/tcp" >/dev/null 2>&1 && echo "Đã tắt cổng $PORT" || echo "Không có gì chạy ở cổng $PORT"; exit 0 ;;
+  stop)
+    fuser -k "$WEB_LOCAL_PORT/tcp" >/dev/null 2>&1 || true
+    fuser -k "$WEB_PORT/tcp" >/dev/null 2>&1 && echo "Đã tắt trang demo (cổng $WEB_PORT, $WEB_LOCAL_PORT)" || true
+    fuser -k "$PORT/tcp" >/dev/null 2>&1 && echo "Đã tắt cổng $PORT" || echo "Không có gì chạy ở cổng $PORT"; exit 0 ;;
   log)  exec tail -f "$LOG" ;;
   start) ;;
   *) echo "Dùng: ./run.sh [start|stop|log]"; exit 1 ;;
@@ -38,3 +48,20 @@ done
 grep -q "Application startup complete" "$LOG" || { echo "Quá 5 phút chưa sẵn sàng, xem $LOG"; exit 1; }
 echo "Sẵn sàng: http://127.0.0.1:$PORT  |  kính: wss://api.visioncare-host.uk/v2/session"
 echo "Server lộ ra ngoài qua tunnel — test xong nhớ ./run.sh stop"
+
+if [ "$WEB" = 1 ]; then
+  fuser -k "$WEB_PORT/tcp" >/dev/null 2>&1 || true   # bật lại để luôn trỏ đúng server vừa bật
+  nohup ~/.venvs/seevia/bin/python demo-web/serve.py --lan --port "$WEB_PORT" \
+    --upstream "http://127.0.0.1:$PORT" > "$WEB_LOG" 2>&1 &
+  # Bản http chỉ nghe localhost cho VS Code forward cổng (localhost vẫn cho camera/micro, khỏi cảnh báo chứng chỉ).
+  fuser -k "$WEB_LOCAL_PORT/tcp" >/dev/null 2>&1 || true
+  nohup ~/.venvs/seevia/bin/python demo-web/serve.py --port "$WEB_LOCAL_PORT" \
+    --upstream "http://127.0.0.1:$PORT" > "$WEB_LOG.local" 2>&1 &
+  echo "Trang demo qua VS Code forward: http://localhost:$WEB_LOCAL_PORT"
+  for _ in $(seq 1 20); do fuser "$WEB_PORT/tcp" >/dev/null 2>&1 && break; sleep 0.5; done
+  if fuser "$WEB_PORT/tcp" >/dev/null 2>&1; then
+    echo "Trang demo: https://$(hostname -I | cut -d' ' -f1):$WEB_PORT  (token + mã kính đọc sẵn từ .env, không cần nhập; log: $WEB_LOG)"
+  else
+    echo "Trang demo không lên, xem $WEB_LOG"
+  fi
+fi

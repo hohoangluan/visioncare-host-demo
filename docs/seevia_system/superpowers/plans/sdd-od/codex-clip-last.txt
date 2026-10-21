@@ -1,0 +1,3 @@
+Đã sửa ba file được phép và ghi kết quả vào [codex-clip-report.md](/workingspace_aiclub/WorkingSpace/Personal/vannk/SeeVia_system/docs/superpowers/plans/sdd-od/codex-clip-report.md). Không commit.
+
+`tests/test_hazard_predict.py`: **39 passed**. Lệnh toàn repo dừng khi thu thập test: máy không giao tiếp được với NVIDIA driver và `nvidia-smi` làm setup trong `evaluations/bench/test_hazard.py` lỗi. Lần thử chạy suite với stub GPU không hoàn tất, nên chưa thể xác nhận toàn bộ suite pass.

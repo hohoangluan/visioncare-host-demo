@@ -11,12 +11,12 @@ import time
 from collections.abc import AsyncIterator
 
 import config
-from handlers import chat, describe_hazard, describe_space, find_object, read_money
+from handlers import ask_image, chat, describe_hazard, describe_space, find_object, read_money
 from models import llm
 
 logger = logging.getLogger("blind_assist")
 
-VISION_INTENTS = frozenset({"space", "hazard", "find", "money"})
+VISION_INTENTS = frozenset({"space", "ask", "hazard", "find", "money"})
 
 _VISION_SYSTEM = (
     "Bạn hỗ trợ người khiếm thị qua camera gắn trên kính. Câu trả lời sẽ được "
@@ -33,6 +33,8 @@ _SEARCH_BLOCK = (
 def _vision_task(intent: str, text: str) -> str:
     if intent == "space":
         return describe_space._PROMPT
+    if intent == "ask":
+        return ask_image._PROMPT
     if intent == "hazard":
         return describe_hazard._PROMPT
     if intent == "money":

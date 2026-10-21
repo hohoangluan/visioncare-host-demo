@@ -1,19 +1,18 @@
-// Trang demo cho ban giám khảo: nối `WS /v2/session` như kính thật (hello có
-// `debug:true`) và vẽ lại những gì server thấy / nghĩ / làm.
+// Trang demo cho ban giám khảo: CHỈ HIỂN THỊ. Không bật camera/micro, không gửi lượt nào.
+// Nó nối `WS /v2/observe` của server kính và vẽ lại những gì kính gửi lên và server làm.
 //
-//   kính  -> server  hello | turn_start | 0x01 ảnh lượt | 0x03 WAV PCM16 stream | turn_end | 0x04 khung live | ping
-//   server -> kính   hello_ok | reply | 0x02 ADPCM | reply_end | cam/capture/hazard/end | pong
-//   khung debug      trace | say | det | ocr | mode   (hợp đồng ở docs/FIRMWARE_ENDPOINTS.md, mục "Debug")
+//   server -> trang  hello_ok | glasses | turn_start | turn_end | 0x01 ảnh lúc bấm nút
+//                    trace | say | mode | reply | reply_end | 0x02 ADPCM tiếng trả lời
+//                    cam | capture | end | hazard         (lệnh server gửi kính)
+//                    0x04 JPEG + det | ocr                 (khung server vừa xử lý + box của chính nó)
+//   trang -> server  hello | ping
 //
-// Phần lớn trang là hiển thị; logic nặng chỉ có ba chỗ: thu âm đẩy dần lên WS,
-// phát ADPCM liên tục bằng WebAudio, và gửi khung live theo lệnh `cam`/`capture`.
+// Hợp đồng ở docs/FIRMWARE_ENDPOINTS.md (mục "Xem"). Khung `det`/`ocr` luôn đi ngay sau JPEG nó được tính trên,
+// nên box vẽ đúng lên đúng khung dù server xử lý chậm hơn kính gửi.
 
-import { TARGET_RATE, StreamDownsampler, streamingWavHeader, rms } from "./wav.js";
 import { decodeBlocks, BLOCK_ALIGN, SAMPLE_RATE } from "./adpcm.js";
-import { SAMPLES } from "./mock.js";
 
 const $ = (id) => document.getElementById(id);
-const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /** Dựng phần tử nhanh. Mọi chữ từ server đi qua `append`/textContent, không innerHTML. */
 function h(tag, cls, ...kids) {
@@ -27,11 +26,9 @@ function h(tag, cls, ...kids) {
 // Cấu hình
 // ---------------------------------------------------------------------------
 
-const DEFAULTS = { mode: "live", base: "/api", facing: "environment", token: "" };
-const MAX_HOLD_MS = 25000; // server cắt ở 30 s; dừng sớm hơn để lượt vẫn hợp lệ
+const DEFAULTS = { base: "/api", token: "", device: "", sound: true };
 const PING_MS = 20000;
-const FRAME_MAX_BYTES = 290 * 1024; // trần server 300 KB (LIVE_MAX_FRAME_BYTES)
-const IMAGE_MAX_W = 1280;
+const STALE_MS = 3000; // quá chừng này không có khung mới thì coi là kính đã ngừng gửi
 
 function loadSettings() {
   try {
@@ -48,7 +45,8 @@ function saveSettings() {
   }
 }
 const settings = loadSettings();
-const isMock = () => settings.mode === "mock";
+// Mã kính hiện tại do serve.py đọc từ .env (không bí mật). Token thì proxy tự gắn, trang không bao giờ thấy.
+let serverDevice = "";
 
 const fmtNum = (x, d = 1) => Number(x).toLocaleString("vi-VN", { minimumFractionDigits: d, maximumFractionDigits: d });
 const fmtMs = (ms) => (ms < 1000 ? `${Math.round(ms)} ms` : `${fmtNum(ms / 1000)} s`);
@@ -61,116 +59,14 @@ function setNote(text) {
 }
 
 // ---------------------------------------------------------------------------
-// Camera, micro, khung hình
+// Phát âm thanh server trả về kính: ADPCM 0x02 -> WebAudio, nối liên tục không khe hở
 // ---------------------------------------------------------------------------
 
-const media = { stream: null, ctx: null, node: null, mic: null, micStream: null, graphReady: false, rate: 48000 };
-
-// Worklet dựng từ Blob để khỏi cần thêm file; mỗi khối 128 mẫu chuyển nguyên buffer sang luồng chính.
-const WORKLET = `
-class Capture extends AudioWorkletProcessor {
-  process(inputs) {
-    const ch = inputs[0][0];
-    if (ch) { const copy = ch.slice(0); this.port.postMessage(copy, [copy.buffer]); }
-    return true;
-  }
-}
-registerProcessor("capture", Capture);`;
-
+const media = { ctx: null };
 function audioCtx() {
   media.ctx ??= new (window.AudioContext || window.webkitAudioContext)();
   return media.ctx;
 }
-
-async function initMedia() {
-  const gate = $("media-gate");
-  if (!navigator.mediaDevices?.getUserMedia) {
-    $("media-gate-msg").textContent =
-      "Trình duyệt chặn camera/micro vì trang không chạy trên https. Chạy serve.py với --lan trên máy đặt server rồi mở địa chỉ https nó in ra.";
-    gate.hidden = false;
-    return false;
-  }
-  media.stream?.getTracks().forEach((t) => t.stop());
-  const audio = { channelCount: 1, echoCancellation: true, noiseSuppression: true };
-  try {
-    try {
-      // 4:3 như camera kính; xin lớn để lệnh `capture` có ảnh ≥ 1000 px rộng.
-      media.stream = await navigator.mediaDevices.getUserMedia({
-        audio,
-        video: { facingMode: { ideal: settings.facing }, width: { ideal: 1600 }, height: { ideal: 1200 } },
-      });
-    } catch (err) {
-      if (err.name === "NotAllowedError") throw err;
-      media.stream = await navigator.mediaDevices.getUserMedia({ audio }); // máy không có camera vẫn nói được
-    }
-  } catch (err) {
-    $("media-gate-msg").textContent =
-      err.name === "NotAllowedError"
-        ? "Bạn đã từ chối quyền camera/micro. Cấp quyền trong thanh địa chỉ rồi bấm lại."
-        : "Không tìm thấy micro. Cắm micro rồi bấm lại.";
-    gate.hidden = false;
-    return false;
-  }
-  gate.hidden = true;
-  const v = $("video");
-  v.srcObject = media.stream;
-  v.play().catch(() => {});
-  buildAudioGraph().catch(() => {});
-  return true;
-}
-$("video").addEventListener("loadeddata", () => ($("stage").dataset.video = "1"));
-
-async function buildAudioGraph() {
-  const ctx = audioCtx();
-  if (!media.node) {
-    const url = URL.createObjectURL(new Blob([WORKLET], { type: "application/javascript" }));
-    await ctx.audioWorklet.addModule(url);
-    URL.revokeObjectURL(url);
-    media.node = new AudioWorkletNode(ctx, "capture");
-    media.node.port.onmessage = (e) => rec.active && rec.onSamples(e.data);
-    const mute = ctx.createGain();
-    mute.gain.value = 0; // worklet chỉ chạy khi nối vào đồ thị; gain 0 để khỏi nghe lại tiếng mình
-    media.node.connect(mute).connect(ctx.destination);
-    media.rate = ctx.sampleRate;
-  }
-  // Đổi camera dựng lại luồng getUserMedia nên nguồn mic cũ đã chết: nối lại.
-  if (media.micStream !== media.stream) {
-    media.mic?.disconnect();
-    media.mic = ctx.createMediaStreamSource(new MediaStream(media.stream.getAudioTracks()));
-    media.mic.connect(media.node);
-    media.micStream = media.stream;
-  }
-  media.graphReady = true;
-}
-
-/**
- * Cắt giữa video theo tỉ lệ 4:3 (khung kính) rồi vẽ ra canvas `w`x`h`, trả JPEG.
- * Màn hình POV cũng cắt đúng 4:3 nên box server trả (chuẩn hoá theo ảnh đã gửi) khớp hình.
- */
-function grabJpeg(w, quality, maxBytes = Infinity) {
-  const el = $("video");
-  const vw = el.videoWidth, vh = el.videoHeight;
-  if (!vw || !vh) return Promise.resolve(null);
-  let sw = vw, sh = vh, sx = 0, sy = 0;
-  if (vw / vh > 4 / 3) { sw = Math.round(vh * 4 / 3); sx = Math.round((vw - sw) / 2); }
-  else { sh = Math.round(vw * 3 / 4); sy = Math.round((vh - sh) / 2); }
-  const outW = Math.min(w, sw), outH = Math.round(outW * 3 / 4);
-  const c = document.createElement("canvas"); // mỗi lần một canvas: mã hoá lại bên dưới là bất đồng bộ
-  c.width = outW;
-  c.height = outH;
-  c.getContext("2d").drawImage(el, sx, sy, sw, sh, 0, 0, outW, outH);
-  const encode = (q) => new Promise((resolve) => c.toBlob(resolve, "image/jpeg", q));
-  return (async () => {
-    let q = quality, blob = await encode(q);
-    // Ảnh lớn có thể vượt trần khung: giảm chất lượng dần cho tới khi vừa.
-    while (blob && blob.size > maxBytes && q > 0.3) blob = await encode((q -= 0.12));
-    return blob ? { blob, w: outW, h: outH } : null;
-  })();
-}
-
-// ---------------------------------------------------------------------------
-// Phát âm thanh server trả về: ADPCM 0x02 -> WebAudio, nối liên tục không khe hở
-// ---------------------------------------------------------------------------
 
 const speaker = (() => {
   let next = 0; // thời điểm (đồng hồ ctx) mà khối kế tiếp được bắt đầu
@@ -178,8 +74,8 @@ const speaker = (() => {
   const live = new Set();
   const PREROLL = 0.2; // như firmware: dựng đệm 0,2 s trước khi phát khối đầu
   return {
-    get busy() { return media.ctx ? next > media.ctx.currentTime : false; },
     push(bytes) {
+      if (!settings.sound) return;
       const ctx = audioCtx();
       if (ctx.state === "suspended") ctx.resume().catch(() => {});
       let data = bytes;
@@ -200,7 +96,7 @@ const speaker = (() => {
       live.add(src);
       src.onended = () => live.delete(src);
     },
-    /** Bấm nút = dừng mọi thứ đang phát. */
+    /** Kính bấm nút = dừng mọi thứ đang phát. */
     stop() {
       for (const s of live) { try { s.stop(); } catch { /* đã dừng */ } }
       live.clear();
@@ -209,6 +105,7 @@ const speaker = (() => {
     },
     /** Bíp cảnh báo thay cho clip cục bộ trên kính: số tiếng bíp = mức, nghiêng theo hướng. */
     beep(level, dir) {
+      if (!settings.sound) return;
       const ctx = audioCtx();
       if (ctx.state === "suspended") return;
       const pan = ctx.createStereoPanner?.();
@@ -229,11 +126,18 @@ const speaker = (() => {
   };
 })();
 
+function renderSound() {
+  const on = settings.sound;
+  $("btn-sound").setAttribute("aria-pressed", String(on));
+  $("sound-text").textContent = on ? "Âm thanh kính: bật" : "Âm thanh kính: tắt";
+  $("sound-icon").setAttribute("href", on ? "#i-volume" : "#i-volume-off");
+}
+
 // ---------------------------------------------------------------------------
 // Dòng thời gian "server xử lý lượt hiện tại"
 // ---------------------------------------------------------------------------
 
-const STEP_HINT = { listen: "Giữ nút để nói", stt: "Chờ giọng nói", intent: "", action: "", reply: "" };
+const STEP_HINT = { listen: "Chờ kính bấm nút", stt: "Chờ giọng nói", intent: "", action: "", reply: "" };
 
 const timeline = {
   el: (n) => document.querySelector(`.step[data-step="${n}"]`),
@@ -282,37 +186,257 @@ function showTrace(f) {
 }
 
 // ---------------------------------------------------------------------------
-// Lịch sử hội thoại
+// Lệnh gửi điện thoại (làn D): mô hình dùng chung cho thẻ lượt và ô "Điện thoại"
+// ---------------------------------------------------------------------------
+
+const SVGNS = "http://www.w3.org/2000/svg";
+function icon(id, cls = "i") {
+  const s = document.createElementNS(SVGNS, "svg");
+  s.setAttribute("class", cls);
+  s.setAttribute("aria-hidden", "true");
+  const u = document.createElementNS(SVGNS, "use");
+  u.setAttribute("href", `#${id}`);
+  s.append(u);
+  return s;
+}
+
+const CMD_STATE = {
+  wait: ["i-help", "Chờ bạn trả lời"],
+  sent: ["i-send", "Đã gửi lệnh"],
+  doing: ["i-loader", "Đang làm"],
+  done: ["i-check", "Xong"],
+  error: ["i-warn", "Lỗi"],
+  late: ["i-clock", "Chưa có kết quả"],
+  cancelled: ["i-x", "Đã bỏ"],
+};
+function stateChip(state) {
+  const [ic, text] = CMD_STATE[state] || CMD_STATE.sent;
+  const c = h("span", "chip", icon(ic), text);
+  c.dataset.state = state;
+  return c;
+}
+
+// intent làn D -> [tên hiển thị, icon, hàm lấy tham số chính]
+const PHONE_INTENTS = {
+  nav_start: ["Chỉ đường", "i-route", (p) => p.destination],
+  nav_stop: ["Dừng chỉ đường", "i-route"],
+  contact_call: ["Gọi điện", "i-phone", (p) => p.contact_name],
+  call: ["Gọi điện", "i-phone", (p) => p.contact_name || p.contact],
+  emergency_call: ["Gọi khẩn cấp", "i-siren"],
+  message_send: ["Nhắn tin", "i-msg", (p) => [p.contact_name, p.text].filter(Boolean).join(": ")],
+  message_read: ["Đọc tin nhắn", "i-msg"],
+  ride_quote: ["Tìm xe", "i-car", (p) => p.destination],
+  ride_confirm: ["Xác nhận chuyến xe", "i-car"],
+  music_play: ["Phát nhạc", "i-music", (p) => p.song || p.query],
+  music_stop: ["Dừng nhạc", "i-music"],
+  music_volume: ["Chỉnh âm lượng", "i-music", (p) => p.level ?? p.volume ?? p.direction],
+};
+const GENERIC_ANSWER = new Set(["confirm", "yes", "no", "cancel", "deny", "reject"]);
+const NEGATIVE_ANSWER = new Set(["no", "cancel", "deny", "reject"]);
+const ERROR_RE = /lỗi|thất bại|không thể|không thực hiện|không tìm thấy|không kết nối|không liên lạc|hết thời gian|hết giờ|từ chối|chưa gọi được|chưa gửi được/i;
+const LATE_MS = 25000;
+
+function mainArg(intent, params) {
+  const spec = PHONE_INTENTS[intent];
+  const v = spec?.[2]?.(params);
+  if (v != null && v !== "") return String(v);
+  for (const k of ["contact_name", "contact", "destination", "song", "query", "text", "name"]) if (params[k]) return String(params[k]);
+  const first = Object.values(params)[0];
+  return first == null || typeof first === "object" ? "" : String(first);
+}
+
+const tasks = (() => {
+  const list = []; // mới nhất ở cuối
+  const open = (t) => t.state === "sent" || t.state === "doing";
+  const emit = (t) => { for (const id of t.turns) history.cmd(id, t); renderPhone(); };
+  return {
+    list,
+    /** Khung `trace` của lượt: chỉ làn D là lệnh điện thoại. */
+    trace(f) {
+      if (f.lane !== "D" || !f.intent) return;
+      const params = f.params && typeof f.params === "object" ? f.params : {};
+      const waiting = list.findLast?.((t) => t.state === "wait") ?? [...list].reverse().find((t) => t.state === "wait");
+      let t = null;
+      if (waiting && (GENERIC_ANSWER.has(f.intent) || waiting.intent === f.intent)) {
+        t = waiting; // trả lời câu hỏi treo: cùng một lệnh
+        t.turns.push(f.turn);
+        if (NEGATIVE_ANSWER.has(f.intent)) { t.state = "cancelled"; clearTimeout(t.timer); return emit(t); }
+        t.args = mainArg(t.intent, { ...t.params, ...params }) || t.args;
+        t.params = { ...t.params, ...params };
+        t.turn = f.turn;
+      } else {
+        if (waiting) { waiting.state = "cancelled"; emit(waiting); }
+        const spec = PHONE_INTENTS[f.intent];
+        t = { id: f.turn, turn: f.turn, turns: [f.turn], intent: f.intent, name: spec?.[0] || f.intent, icon: spec?.[1] || "i-smartphone", params, args: mainArg(f.intent, params), result: "", at: Date.now(), state: "sent" };
+        list.push(t);
+        while (list.length > 8) list.shift();
+      }
+      t.state = f.pending ? "wait" : "sent";
+      t.sentAt = performance.now();
+      clearTimeout(t.timer);
+      if (t.state === "sent") t.timer = setTimeout(() => { if (open(t)) { t.state = "late"; emit(t); } }, LATE_MS);
+      emit(t);
+    },
+    /** `reply_end` của lượt đã gửi lệnh: server đã đọc xong câu mở đầu, điện thoại đang làm. */
+    replyEnd(turn) {
+      for (const t of list) if (t.turns.at(-1) === turn && t.state === "sent") { t.state = "doing"; emit(t); }
+    },
+    /** Câu `result-*`: kết quả của lệnh mở lâu nhất. */
+    result(text) {
+      const t = list.find(open) ?? list.find((x) => x.state === "late");
+      if (!t) return;
+      clearTimeout(t.timer);
+      t.result = t.result ? `${t.result} ${text}` : text;
+      t.state = ERROR_RE.test(text) ? "error" : "done";
+      emit(t);
+    },
+    callState(f) {
+      const t = [...list].reverse().find((x) => x.intent === "contact_call" || x.intent === "call" || x.intent === "emergency_call");
+      if (!t) return;
+      const peer = f.peer ? ` · ${f.peer}` : "";
+      if (f.state === "ended") {
+        clearTimeout(t.timer);
+        const failed = f.reason && /fail|reject|busy|timeout|error|declin/i.test(f.reason);
+        t.state = failed ? "error" : "done";
+        t.result = failed ? `Cuộc gọi không thành (${f.reason})` : t.result || "Cuộc gọi đã kết thúc";
+        t.live = failed ? "" : "Cuộc gọi đã kết thúc";
+      } else if (f.state) {
+        clearTimeout(t.timer);
+        t.state = f.state === "active" ? "done" : "doing";
+        t.live = f.state === "active" ? `Đang trong cuộc gọi${peer}` : `Đang đổ chuông${peer}`;
+      }
+      emit(t);
+    },
+  };
+})();
+
+// ---------------------------------------------------------------------------
+// Ảnh thu nhỏ của đúng khung hình (cảnh báo vật cản / chữ vừa đọc / ảnh lượt)
+// ---------------------------------------------------------------------------
+
+const THUMB_W = 240, THUMB_H = 180;
+/** JPEG nhỏ của khung `bmp`; `paint(ctx, rect)` vẽ thêm box trong hệ toạ độ của thumb. */
+function makeThumb(bmp, paint) {
+  if (!bmp) return "";
+  try {
+    const c = document.createElement("canvas");
+    c.width = THUMB_W;
+    c.height = THUMB_H;
+    const x = c.getContext("2d");
+    x.fillStyle = STAGE_BG;
+    x.fillRect(0, 0, THUMB_W, THUMB_H);
+    const R = fitRect(THUMB_W, THUMB_H, bmp.width, bmp.height);
+    x.drawImage(bmp, R.x, R.y, R.w, R.h);
+    x.lineJoin = "round";
+    paint?.(x, R);
+    return c.toDataURL("image/jpeg", 0.72);
+  } catch {
+    return "";
+  }
+}
+function paintDet(boxes) {
+  return (x, R) => {
+    const strong = boxes.filter((b) => (b.level || 0) >= 2);
+    for (const b of strong.length ? strong : boxes) {
+      const [x0, y0, x1, y1] = b.box.map((v, i) => (i % 2 ? R.y + v * R.h : R.x + v * R.w));
+      const st = lvStyle(b.level || 0);
+      x.strokeStyle = "rgba(2,10,59,.7)"; x.lineWidth = 5; x.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      x.strokeStyle = st.color; x.lineWidth = 2.5; x.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    }
+  };
+}
+function paintOcr(o) {
+  return (x, R) => {
+    for (const [a, b, c, d] of o.boxes) {
+      const x0 = R.x + (a / o.w) * R.w, x1 = R.x + (c / o.w) * R.w, y0 = R.y + (b / o.h) * R.h, y1 = R.y + (d / o.h) * R.h;
+      x.strokeStyle = "rgba(2,10,59,.7)"; x.lineWidth = 4; x.strokeRect(x0, y0, x1 - x0, y1 - y0);
+      x.strokeStyle = OCR_INK; x.lineWidth = 2; x.strokeRect(x0, y0, x1 - x0, y1 - y0);
+    }
+  };
+}
+// Bằng chứng gần nhất: thumbnail khung vừa cảnh báo / vừa chụp để đọc chữ.
+const evidence = { hazard: null, ocr: null };
+const EVIDENCE_TTL = 12000;
+function freshEvidence() {
+  const now = performance.now();
+  return [evidence.hazard, evidence.ocr].filter((e) => e && now - e.at < EVIDENCE_TTL).sort((a, b) => b.at - a.at)[0] || null;
+}
+
+// ---------------------------------------------------------------------------
+// Dòng hội thoại: mỗi lượt là một thẻ (người dùng nói, ý định, kính trả lời, độ trễ, lệnh điện thoại)
 // ---------------------------------------------------------------------------
 
 const history = (() => {
   const root = $("history");
-  const groups = new Map(); // id -> {el, user, sv, pending, ended}
-  let pendingGroup = null; // lượt đang chờ câu trả lời ở lượt sau
+  const jump = $("jump");
+  const groups = new Map(); // id -> nhóm của lượt (hoặc kết quả)
+  let pendingGroup = null; // lượt đang chờ trả lời ở lượt sau
   let liveGroup = null;
+  let seq = 0;
 
-  // Bám đáy khi người xem chưa cuộn lên. Ô lịch sử co lại khi thẻ timeline phía trên cao thêm
-  // (trace tới sau lượt đầu), mà scrollTop không đổi nên phải bám lại theo kích thước.
-  // Sự kiện scroll tới trễ một nhịp, lúc đó nội dung có thể đã dài thêm: chỉ cuộn LÊN mới bỏ bám.
+  // Bám đáy khi người xem chưa cuộn lên; cuộn lên đọc lượt cũ thì không giật về, hiện nút "Lượt mới nhất".
+  // Sự kiện scroll tới trễ một nhịp: chỉ cuộn LÊN mới bỏ bám.
   let pinned = true;
+  let unseen = false;
   let prevTop = 0;
+  const syncJump = () => { jump.hidden = pinned || !unseen; };
   root.addEventListener("scroll", () => {
     const atBottom = root.scrollHeight - root.scrollTop - root.clientHeight < 40;
     if (root.scrollTop < prevTop) pinned = atBottom;
     else if (atBottom) pinned = true;
+    if (pinned) unseen = false;
     prevTop = root.scrollTop;
+    syncJump();
   });
   new ResizeObserver(() => { if (pinned) root.scrollTop = root.scrollHeight; }).observe(root);
+  jump.addEventListener("click", () => { pinned = true; unseen = false; root.scrollTop = root.scrollHeight; syncJump(); root.focus({ preventScroll: true }); });
   const stick = (fn) => {
     fn();
     if (pinned) root.scrollTop = root.scrollHeight;
+    else { unseen = true; syncJump(); }
   };
   const add = (el) => {
     $("history-empty")?.remove();
     root.append(el);
+    const n = root.querySelectorAll(".turn").length;
+    $("turn-count").hidden = false;
+    $("turn-count").textContent = `${n} mục`;
   };
-  function svBubble(label, cls) {
-    return h("div", `bubble sv ${cls || ""}`, h("span", "who", label));
+
+  const row = (cls, label, body) => {
+    const r = h("div", `row row-${cls}`, h("span", "row-label", label), body);
+    return r;
+  };
+
+  function newGroup(kind, title) {
+    const badges = h("span", "grow");
+    const head = h("div", "turn-head", h("span", "turn-no", title), h("span", "turn-time mono", clock()), badges);
+    const el = h("article", `turn is-new${kind === "live" ? " is-live" : kind === "result" ? " is-result" : ""}`, head);
+    el.addEventListener("animationend", () => el.classList.remove("is-new"), { once: true });
+    return { el, head, badges, kind, thumbs: null, thumbCount: 0, thumbAt: 0, sv: null, svBody: null, user: null, intentRow: null, cmdRow: null, pending: null, ended: false };
+  }
+  function ensureSv(g, label) {
+    if (g.sv) return;
+    g.svBody = h("div", "row-body");
+    g.sv = row("sv", label, g.svBody);
+    // đặt trước ảnh thu nhỏ / lệnh / câu chờ nếu đã có
+    const after = g.cmdRow || g.thumbs || g.pending;
+    after ? g.el.insertBefore(g.sv, after) : g.el.append(g.sv);
+  }
+  function addThumb(g, url, caption) {
+    if (!url) return;
+    if (!g.thumbs) {
+      g.thumbs = h("div", "thumbs");
+      g.pending ? g.el.insertBefore(g.thumbs, g.pending) : g.el.append(g.thumbs);
+    }
+    const img = h("img");
+    img.src = url;
+    img.alt = `Khung hình lúc đó: ${caption}`;
+    img.width = THUMB_W;
+    img.height = THUMB_H;
+    g.thumbs.append(h("figure", "thumb", img, h("figcaption", "", caption)));
+    g.thumbAt = performance.now();
+    if (++g.thumbCount > 3) { g.thumbs.firstElementChild.remove(); g.thumbCount--; }
   }
 
   return {
@@ -324,28 +448,67 @@ const history = (() => {
           pendingGroup.pending.dataset.answered = "1";
           pendingGroup = null;
         }
-        const user = h("div", "bubble user dim", h("span", "who", "Bạn"), h("p", "", "Đang nghe…"));
-        const el = h("article", "turn", user);
-        add(el);
-        groups.set(id, { el, user, sv: null, pending: null, ended: false });
+        const g = newGroup("turn", `Lượt ${++seq}`);
+        g.userBody = h("p", "", "Đang nghe…");
+        g.userBodyWrap = h("div", "row-body dim", g.userBody);
+        g.user = row("user", "Người dùng nói", g.userBodyWrap);
+        g.el.append(g.user);
+        add(g.el);
+        groups.set(id, g);
         liveGroup = null;
       });
     },
-    transcript(id, text) {
-      const g = groups.get(id);
-      if (!g) return;
+    /** Khung `trace`: transcript + ý định/làn + câu đang chờ. */
+    trace(f) {
+      const g = groups.get(f.turn);
+      if (!g || !g.user) return;
       stick(() => {
-        g.user.classList.toggle("dim", !text);
-        g.user.querySelector("p").textContent = text || "(không nhận ra lời nói)";
+        g.userBodyWrap.classList.toggle("dim", !f.transcript);
+        g.userBody.textContent = f.transcript || "(không nhận ra lời nói)";
+        const pills = h("div", "row-body");
+        if (f.intent) pills.append(pill(f.intent, true));
+        if (f.lane) pills.append(pill(`làn ${f.lane}`));
+        if (f.source) pills.append(pill(f.source));
+        if (typeof f.confidence === "number") pills.append(pill(`${fmtNum(f.confidence * 100, 1)}%`));
+        if (!pills.childNodes.length) pills.append(h("span", "quote dim", "Chưa xác định ý định"));
+        const r = row("intent", "Ý định", pills);
+        g.intentRow ? g.intentRow.replaceWith(r) : g.user.after(r);
+        g.intentRow = r;
+        g.intent = f.intent || "";
+        g.lane = f.lane || "";
+        if (f.pending) {
+          g.pending = h("p", "pending", `Đang chờ trả lời: ${f.pending}`);
+          g.el.append(g.pending);
+          pendingGroup = g;
+        }
+        if (g.photo && wantsPhoto(g)) { addThumb(g, g.photo, "Ảnh lúc bấm nút"); g.photo = null; }
       });
     },
-    pending(id, text) {
+    /** Ảnh kính chụp lúc bấm nút: chỉ gắn vào thẻ của lượt cần nhìn (hỏi cảnh, đọc chữ...). */
+    photo(id, url) {
       const g = groups.get(id);
-      if (!g || !text) return;
+      if (!g || !url) return;
+      g.photo = url;
+      if (g.intent !== undefined && wantsPhoto(g)) stick(() => { addThumb(g, url, "Ảnh lúc bấm nút"); g.photo = null; });
+    },
+    latency(id, ms) {
+      const g = groups.get(id);
+      if (!g || g.latChip) return;
+      g.latChip = h("span", "chip lat", icon("i-clock"), `Tiếng đầu ${fmtMs(ms)}`);
+      g.latChip.title = "Từ lúc kính nhả nút tới lúc tiếng trả lời đầu tiên tới (đo ở trang xem)";
+      g.badges.append(g.latChip);
+    },
+    /** Trạng thái lệnh gửi điện thoại của lượt (khung `trace` làn D, `reply_end`, kết quả `result-*`). */
+    cmd(id, t) {
+      const g = groups.get(id);
+      if (!g || !g.user) return;
       stick(() => {
-        g.pending = h("p", "pending", `Đang chờ trả lời: ${text}`);
-        g.el.append(g.pending);
-        pendingGroup = g;
+        const body = h("div", "row-body", stateChip(t.state), h("span", "cmd-text", [t.name, t.args].filter(Boolean).join(" · ")));
+        if (t.result) body.append(h("span", "cmd-text quote", `“${t.result}”`));
+        const r = row("cmd", "Điện thoại", body);
+        if (g.cmdRow) g.cmdRow.replaceWith(r);
+        else (g.sv && g.sv.after(r)) || (g.intentRow || g.user).after(r);
+        g.cmdRow = r;
       });
     },
     /** `reply_end` của lượt: câu nói sau đó mang cùng `turn` là của live (nav/OCR), không phải của lượt này. */
@@ -359,50 +522,111 @@ const history = (() => {
         const base = String(turn || "").replace(/\.\d+$/, "");
         const result = base.startsWith("result-");
         let g = groups.get(base) || groups.get(turn);
-        // Live mang id lượt đã mở nó: sau reply_end phải sang bong bóng riêng, nếu không
-        // nó chui lên bong bóng cũ (sai thứ tự thời gian) và phình mãi.
+        // Live mang id lượt đã mở nó: sau reply_end phải sang thẻ riêng, nếu không
+        // nó chui lên thẻ cũ (sai thứ tự thời gian) và phình mãi.
         if (g && g.ended && !result) g = null;
         if (!g) {
           if (!result && liveGroup && liveGroup.turn === base) g = liveGroup;
           else {
-            const sv = svBubble(result ? "Kết quả từ điện thoại" : "SeeVia · trực tiếp", result ? "is-result" : "is-live");
-            const el = h("article", "turn", sv);
-            add(el);
-            g = { el, user: null, sv, turn: base };
+            g = newGroup(result ? "result" : "live", result ? "Kết quả từ điện thoại" : "Kính nói · trực tiếp");
+            g.turn = base;
+            add(g.el);
             if (result) groups.set(base, g); else liveGroup = g;
           }
         }
-        if (!g.sv) {
-          g.sv = svBubble("SeeVia");
-          g.pending ? g.el.insertBefore(g.sv, g.pending) : g.el.append(g.sv);
-        }
+        ensureSv(g, g.kind === "turn" ? "Kính trả lời" : g.kind === "live" ? "Kính nói" : "Kết quả");
         // Cue lặp liền nhau ("Quay sang trái." mỗi khung) gộp thành một dòng có số lần.
-        const last = g.sv.lastElementChild;
-        if (last && last.tagName === "P" && last.dataset.text === text) {
+        const last = g.svBody.lastElementChild;
+        if (last && last.dataset.text === text) {
           const n = (Number(last.dataset.n) || 1) + 1;
           last.dataset.n = String(n);
           last.textContent = `${text} ×${n}`;
         } else {
           const p = h("p", "", text);
           p.dataset.text = text;
-          g.sv.append(p);
+          g.svBody.append(p);
+          if (g.kind === "live") {
+            const ev = freshEvidence();
+            if (ev && ev.at > g.thumbAt) addThumb(g, ev.url, ev.label);
+          }
         }
-      });
-    },
-    sayMock(text) {
-      stick(() => {
-        const sv = svBubble("SeeVia · mô phỏng", "is-live");
-        sv.append(h("p", "", text));
-        add(h("article", "turn", sv));
+        if (result) tasks.result(text);
       });
     },
   };
 })();
 
+const wantsPhoto = (g) => g.lane === "B" || /ocr|read|describe|find|money|scene|space/i.test(g.intent || "");
+
+// ---------------------------------------------------------------------------
+// Ô "Điện thoại": ảnh thật (adb, tuỳ chọn) hoặc khung vẽ bằng HTML theo lệnh server gửi
+// ---------------------------------------------------------------------------
+
+function taskCard(t) {
+  const card = h("article", "task",
+    h("div", "task-head", icon(t.icon), h("span", "task-name", t.name), stateChip(t.state)));
+  card.dataset.state = t.state;
+  if (t.args) card.append(h("p", "task-arg", t.args));
+  if (t.result) card.append(h("p", "task-res", `“${t.result}”`));
+  if (t.live) card.append(h("p", "ph-live", t.live));
+  const when = new Date(t.at).toLocaleTimeString("vi-VN", { hour12: false });
+  card.append(h("p", "task-meta mono", `${when} · ${CMD_STATE[t.state]?.[1] || ""}`));
+  return card;
+}
+
+function renderPhone() {
+  const box = $("ph-tasks");
+  box.replaceChildren();
+  if (!tasks.list.length) {
+    box.append(h("p", "ph-empty", "Chưa có lệnh nào gửi điện thoại. Thử nói “Dẫn đường”, “Gọi cho mẹ” hoặc “Phát nhạc”."));
+    return;
+  }
+  for (const t of [...tasks.list].reverse()) box.append(taskCard(t));
+}
+setInterval(() => { $("ph-clock").textContent = new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false }); }, 5000);
+$("ph-clock").textContent = new Date().toLocaleTimeString("vi-VN", { hour: "2-digit", minute: "2-digit", hour12: false });
+
+/** Luồng màn hình thật: bật khi serve.py chạy với --phone-mirror và điện thoại nối adb. Lỗi/mất thì về khung vẽ. */
+const phoneMirror = (() => {
+  const img = $("phone-img"), root = $("phone"), tasksBox = $("ph-tasks");
+  let retry = 0, active = false, enabled = false;
+  const place = (real) => {
+    root.dataset.mirror = real ? "on" : "off";
+    $("ph-sub").textContent = real ? "màn hình thật (adb)" : "mô phỏng theo lệnh server gửi";
+    // Có ảnh thật: thẻ tác vụ nằm dưới khung. Không có: nằm trong màn hình vẽ.
+    if (real) $("phone-frame").after(tasksBox); else $("phone-screen").append(tasksBox);
+  };
+  const off = () => {
+    active = false;
+    img.hidden = true;
+    img.removeAttribute("src");
+    place(false);
+  };
+  const schedule = () => { clearTimeout(retry); if (enabled && !document.hidden) retry = setTimeout(probe, 20000); };
+  img.addEventListener("load", () => { if (!active) { active = true; img.hidden = false; place(true); } });
+  img.addEventListener("error", () => { off(); schedule(); });
+  document.addEventListener("visibilitychange", () => {
+    if (!enabled) return;
+    if (document.hidden) { clearTimeout(retry); off(); } else probe(); // tab ẩn: ngắt luồng để điện thoại khỏi quay vô ích
+  });
+  async function probe() {
+    try {
+      const c = await (await fetch("config.json", { cache: "no-store" })).json();
+      enabled = !!c.phone_mirror;
+    } catch { enabled = false; }
+    if (!enabled) return off();
+    img.src = `phone/stream.mjpg?ts=${Date.now()}`;
+    schedule();
+  }
+  return { probe };
+})();
+renderPhone();
+
 // ---------------------------------------------------------------------------
 // Chế độ hiện tại + thống kê khung live
 // ---------------------------------------------------------------------------
 
+let lastModes = null;
 function showMode(f) {
   const on = { obstacle: !!f.obstacle, ocr: !!f.ocr, nav: !!f.navigating, music: !!f.music, call: !!f.call };
   for (const li of document.querySelectorAll("#modes .mode")) {
@@ -411,73 +635,63 @@ function showMode(f) {
     li.querySelector(".sr").textContent = on[k] ? "đang bật" : "đang tắt";
     if (k === "call") $("call-who").textContent = typeof f.call === "string" && f.call ? ` · ${f.call}` : "";
   }
+  const names = [...document.querySelectorAll('#modes .mode[data-on="1"] .mode-name')].map((e) => e.textContent.trim());
+  const sig = names.join("|");
+  if (sig !== lastModes) {
+    lastModes = sig;
+    $("modes-live").textContent = names.length ? `Chế độ đang bật: ${names.join(", ")}` : "Không có chế độ nào đang bật";
+  }
 }
 function resetMode() {
   showMode({});
 }
 
+// ---------------------------------------------------------------------------
+// Thống kê khung live: tốc độ server xử lý + lệnh server đang yêu cầu kính
+// ---------------------------------------------------------------------------
+
 const stats = {
-  recv: [], // thời điểm nhận kết quả det/ocr
-  sent: [], // thời điểm gửi khung 0x04
-  inflight: [], // thời điểm gửi các khung chưa thấy kết quả
-  lags: [],
-  size: "",
-  trim(arr, now) {
-    while (arr.length && now - arr[0] > 3000) arr.shift();
-  },
-  onSent() {
-    const now = performance.now();
-    this.sent.push(now);
-    this.inflight.push(now);
-    if (this.inflight.length > 6) this.inflight.shift(); // server bỏ bớt khung khi bận: đừng để hàng đợi ước lượng lệch mãi
+  recv: [], // thời điểm nhận kết quả det/ocr (mỗi kết quả là một khung server vừa xử lý)
+  cmd: "", // lệnh `cam` server đang yêu cầu kính, vd. "qvga · 8 fps"
+  trim(now) {
+    while (this.recv.length && now - this.recv[0] > 3000) this.recv.shift();
   },
   onResult() {
-    const now = performance.now();
-    this.recv.push(now);
-    // Server xử lý theo thứ tự nên kết quả đến ứng với khung cũ nhất chưa có kết quả.
-    // Chỉ là ước lượng: khung bị server bỏ sẽ làm số này cao hơn thực tế.
-    const t0 = this.inflight.shift();
-    if (t0 != null) { this.lags.push(now - t0); if (this.lags.length > 10) this.lags.shift(); }
+    this.recv.push(performance.now());
   },
   clear() {
-    this.recv = []; this.sent = []; this.inflight = []; this.lags = []; this.size = "";
+    this.recv = [];
+    this.cmd = "";
   },
   render() {
     const now = performance.now();
-    this.trim(this.recv, now); this.trim(this.sent, now);
-    const fps = (arr) => (arr.length > 1 ? (arr.length - 1) / ((arr[arr.length - 1] - arr[0]) / 1000) : 0);
-    const active = this.sent.length > 0 || this.recv.length > 0;
-    const fpsEl = $("stat-fps"), lagEl = $("stat-lag");
-    if (!active) {
-      fpsEl.textContent = "live: tắt";
-      lagEl.textContent = "trễ khung: --";
-      $("stat-size").textContent = "--";
-      fpsEl.dataset.stale = lagEl.dataset.stale = "1";
-      return;
-    }
-    fpsEl.dataset.stale = lagEl.dataset.stale = "0";
-    fpsEl.textContent = `gửi ${fmtNum(fps(this.sent))} · xử lý ${fmtNum(fps(this.recv))} fps`;
-    const sorted = [...this.lags].sort((a, b) => a - b);
-    lagEl.textContent = sorted.length ? `trễ khung ~${Math.round(sorted[Math.floor(sorted.length / 2)])} ms` : "trễ khung: --";
-    $("stat-size").textContent = this.size || "--";
+    this.trim(now);
+    const fpsEl = $("stat-fps");
+    const fps = this.recv.length > 1 ? (this.recv.length - 1) / ((this.recv[this.recv.length - 1] - this.recv[0]) / 1000) : 0;
+    const active = this.cmd !== "" || this.recv.length > 0;
+    fpsEl.dataset.stale = active ? "0" : "1";
+    fpsEl.textContent = !active ? "live: tắt" : `live${this.cmd ? ` ${this.cmd}` : ""} · server xử lý ${fmtNum(fps)} fps`;
+    renderSource();
   },
 };
 setInterval(() => stats.render(), 500);
 
 // ---------------------------------------------------------------------------
-// Lớp phủ POV: box vật cản, box OCR, hướng dẫn, chớp chụp
+// POV: khung kính gửi lên + box server trả về, vẽ chung một canvas
 // ---------------------------------------------------------------------------
 
-const DET_TTL = 1200, OCR_TTL = 1500;
+// `det`/`ocr` đi cùng khung JPEG nó được tính trên nên box gắn với khung chứ không có hạn dùng riêng.
+const pov = { bmp: null, src: "", at: 0, det: null, ocr: null };
 const overlay = $("overlay");
-const ov = { det: null, ocr: null, dpr: 1 };
+let dpr = 1;
+
+const decodeJpeg = (bytes) => createImageBitmap(new Blob([bytes], { type: "image/jpeg" })).catch(() => null);
 
 function sizeOverlay() {
-  const dpr = window.devicePixelRatio || 1;
+  dpr = window.devicePixelRatio || 1;
   const r = overlay.getBoundingClientRect();
   overlay.width = Math.max(1, Math.round(r.width * dpr));
   overlay.height = Math.max(1, Math.round(r.height * dpr));
-  ov.dpr = dpr;
   drawOverlay();
 }
 new ResizeObserver(sizeOverlay).observe($("stage"));
@@ -489,20 +703,31 @@ const LV = {
   2: { color: cssVar("--lv-2"), width: 3, dash: [10, 6], alpha: 1 },
   3: { color: cssVar("--lv-3"), width: 5, dash: [], alpha: 1 },
 };
-const INK = cssVar("--on-warn"), OCR_INK = cssVar("--cyan");
+const INK = cssVar("--on-warn"), OCR_INK = cssVar("--cyan"), STAGE_BG = cssVar("--stage-bg");
 const lvStyle = (level) => (level >= 3 ? LV[3] : level === 2 ? LV[2] : LV.low);
+
+/** Vùng ảnh trong canvas: vừa khung (không cắt) để box khớp từng pixel ảnh kính đã gửi. */
+function fitRect(W, H, iw, ih) {
+  const s = Math.min(W / iw, H / ih);
+  const w = iw * s, h2 = ih * s;
+  return { x: (W - w) / 2, y: (H - h2) / 2, w, h: h2 };
+}
 
 function drawOverlay() {
   const ctx = overlay.getContext("2d");
-  const W = overlay.width, H = overlay.height, d = ov.dpr, now = performance.now();
-  ctx.clearRect(0, 0, W, H);
+  const W = overlay.width, H = overlay.height, d = dpr;
+  ctx.fillStyle = STAGE_BG;
+  ctx.fillRect(0, 0, W, H);
   ctx.lineJoin = "round";
+  if (!pov.bmp) return;
+  const R = fitRect(W, H, pov.bmp.width, pov.bmp.height);
+  ctx.drawImage(pov.bmp, R.x, R.y, R.w, R.h);
 
-  if (ov.det && now - ov.det.at < DET_TTL) {
+  if (pov.det) {
     // Vẽ box mức thấp trước để box cảnh báo nằm trên cùng.
-    const boxes = [...ov.det.boxes].sort((a, b) => (a.level || 0) - (b.level || 0));
+    const boxes = [...pov.det.boxes].sort((a, b) => (a.level || 0) - (b.level || 0));
     for (const b of boxes) {
-      const [x0, y0, x1, y1] = b.box.map((v, i) => v * (i % 2 ? H : W));
+      const [x0, y0, x1, y1] = b.box.map((v, i) => (i % 2 ? R.y + v * R.h : R.x + v * R.w));
       const st = lvStyle(b.level || 0);
       ctx.globalAlpha = st.alpha;
       ctx.setLineDash(st.dash.map((v) => v * d));
@@ -517,7 +742,7 @@ function drawOverlay() {
       const label = `${b.level >= 2 ? `L${b.level} ` : ""}${b.kind} ${fmtNum(b.score, 2)}`;
       ctx.font = `600 ${12 * d}px "JetBrains Mono", monospace`;
       const tw = ctx.measureText(label).width + 12 * d, th = 20 * d;
-      const ly = y0 - th >= 0 ? y0 - th : y0;
+      const ly = y0 - th >= R.y ? y0 - th : y0;
       ctx.fillStyle = st.color;
       ctx.fillRect(x0, ly, tw, th);
       ctx.fillStyle = INK;
@@ -527,9 +752,10 @@ function drawOverlay() {
     ctx.globalAlpha = 1;
   }
 
-  if (ov.ocr && now - ov.ocr.at < OCR_TTL) {
-    for (const [x0p, y0p, x1p, y1p] of ov.ocr.boxes) {
-      const x0 = (x0p / ov.ocr.w) * W, x1 = (x1p / ov.ocr.w) * W, y0 = (y0p / ov.ocr.h) * H, y1 = (y1p / ov.ocr.h) * H;
+  if (pov.ocr) {
+    for (const [x0p, y0p, x1p, y1p] of pov.ocr.boxes) {
+      const x0 = R.x + (x0p / pov.ocr.w) * R.w, x1 = R.x + (x1p / pov.ocr.w) * R.w;
+      const y0 = R.y + (y0p / pov.ocr.h) * R.h, y1 = R.y + (y1p / pov.ocr.h) * R.h;
       ctx.fillStyle = "rgba(9,187,200,.18)";
       ctx.fillRect(x0, y0, x1 - x0, y1 - y0);
       ctx.strokeStyle = "rgba(2,10,59,.7)";
@@ -541,7 +767,40 @@ function drawOverlay() {
     }
   }
 }
-setInterval(() => (ov.det || ov.ocr) && drawOverlay(), 200); // để box hết hạn tự biến mất
+
+/** Đặt khung mới (kèm box của nó nếu có). `src`: "turn" = ảnh lúc bấm nút, "live" = khung server vừa xử lý. */
+function setPov(bmp, src, extra = {}) {
+  if (bmp) {
+    pov.bmp?.close?.();
+    pov.bmp = bmp;
+    pov.src = src;
+    pov.at = performance.now();
+    pov.det = pov.ocr = null;
+    $("stage").dataset.frame = "1";
+    $("stat-size").textContent = `${bmp.width}×${bmp.height}`;
+  }
+  Object.assign(pov, extra);
+  drawOverlay();
+  renderSource();
+}
+
+function renderSource() {
+  const stale = !!pov.bmp && pov.src === "live" && performance.now() - pov.at > STALE_MS;
+  $("stage").dataset.stale = stale ? "1" : "0";
+  $("stat-size").hidden = !pov.bmp;
+  const el = $("stat-src");
+  el.hidden = !pov.bmp;
+  el.textContent = stale ? "Khung cuối, kính đã ngừng gửi" : pov.src === "turn" ? "Ảnh kính gửi lúc bấm nút" : "Khung live server vừa xử lý";
+}
+
+function clearPov() {
+  pov.bmp?.close?.();
+  Object.assign(pov, { bmp: null, src: "", at: 0, det: null, ocr: null });
+  $("stage").dataset.frame = "0";
+  $("stat-size").textContent = "--";
+  drawOverlay();
+  renderSource();
+}
 
 const CUE_VI = {
   look_left: ["Quay trái", "i-arrow-left"],
@@ -556,6 +815,7 @@ const CUE_VI = {
   ocr_nothing_to_reread: ["Chưa có gì để đọc lại", "i-eye"],
   captured: ["Đã chụp ảnh nét", "i-camera"],
 };
+
 const DIR_VI = { left: "bên trái", center: "phía trước", right: "bên phải" };
 const DIR_ICON = { left: "i-arrow-left", center: "i-arrow-up", right: "i-arrow-right" };
 
@@ -582,11 +842,9 @@ function ocrChip(cue) {
   });
 }
 
-function onDet(f) {
-  ov.det = { at: performance.now(), boxes: Array.isArray(f.boxes) ? f.boxes : [] };
+function onDet(f, bmp) {
   stats.onResult();
-  if (f.w && f.h) stats.size = `${f.w}×${f.h}`;
-  drawOverlay();
+  setPov(bmp, "live", { det: { boxes: Array.isArray(f.boxes) ? f.boxes : [] } });
   if (f.sent && f.hazard) {
     const { level, dir, kind } = f.hazard;
     retrigger($("ring"), `go${Math.min(3, Math.max(1, level))}`, 1500);
@@ -598,95 +856,121 @@ function onDet(f) {
       $("hz-text").textContent = `Mức ${level} · ${kind} ${DIR_VI[dir] || ""}`.trim();
     });
     speaker.beep(level, dir);
-    hazardLog(f.hazard);
+    const url = makeThumb(pov.bmp, paintDet(pov.det?.boxes || []));
+    if (url) evidence.hazard = { url, at: performance.now(), label: `Cảnh báo mức ${level} · ${kind} ${DIR_VI[dir] || ""}`.trim() };
+    hazardLog(f.hazard, url);
   }
 }
 
-function hazardLog({ level, dir, kind }) {
+function hazardLog({ level, dir, kind }, thumb) {
   const list = $("hlog");
   list.querySelector(".empty")?.remove();
+  let pic;
+  if (thumb) {
+    pic = h("img", "hthumb");
+    pic.src = thumb;
+    pic.alt = `Khung hình lúc cảnh báo ${kind}`;
+  } else pic = h("span", "hthumb none");
   list.prepend(
-    h("li", "", h("span", "t", clock()), h("span", `lv lv-${level}`, `L${level}`), h("span", "", `${kind} · ${DIR_VI[dir] || dir}`)),
+    h("li", "", pic, h("span", "t", clock()), h("span", `lv lv-${level}`, `L${level}`), h("span", "what", `${kind} · ${DIR_VI[dir] || dir}`)),
   );
   while (list.children.length > 30) list.lastChild.remove();
 }
 
-function onOcr(f) {
-  ov.ocr = { at: performance.now(), w: f.w || 1, h: f.h || 1, boxes: Array.isArray(f.boxes) ? f.boxes : [] };
+function onOcr(f, bmp) {
   stats.onResult();
-  if (f.w && f.h) stats.size = `${f.w}×${f.h}`;
-  drawOverlay();
+  setPov(bmp, "live", { ocr: { w: f.w || 1, h: f.h || 1, boxes: Array.isArray(f.boxes) ? f.boxes : [] } });
   if (f.cue) ocrChip(f.cue);
   if (f.capture) {
+    const url = makeThumb(pov.bmp, pov.ocr ? paintOcr(pov.ocr) : undefined);
+    if (url) evidence.ocr = { url, at: performance.now(), label: "Ảnh chụp để đọc chữ" };
     retrigger($("flash"), "go", 400);
     if (!f.cue) ocrChip("captured");
   }
 }
 
 // ---------------------------------------------------------------------------
-// Khung live gửi lên theo lệnh `cam` / `capture`
+// Trạng thái kết nối + kính
 // ---------------------------------------------------------------------------
 
-const SIZES = { qqvga: 160, qvga: 320, hqvga: 240, vga: 640, svga: 800, xga: 1024, sxga: 1280, uxga: 1600 };
-const sizeW = (name, fallback) => SIZES[String(name).toLowerCase()] || fallback;
+function setConn(state, text) {
+  $("conn-dot").dataset.state = state;
+  $("conn-text").textContent = text;
+  $("banner").hidden = state !== "down";
+  $("banner-text").textContent = state === "down" ? text : "";
+  renderEmpty();
+}
 
-const liveTx = {
-  timer: null, busy: false, w: 320, fps: 5, q: 0.7,
-  start({ size, fps, quality }) {
-    this.stop();
-    this.w = sizeW(size, 320);
-    this.fps = Math.max(1, Math.min(15, Number(fps) || 5));
-    // `quality` của firmware là thang JPEG ESP32 (nhỏ = nét hơn, 10–63); đổi sang 0..1 của canvas.
-    this.q = Math.max(0.4, Math.min(0.9, 1 - (Number(quality) || 12) / 40));
-    this.timer = setInterval(() => this.tick(), 1000 / this.fps);
-  },
-  stop() {
-    clearInterval(this.timer);
-    this.timer = null;
-    stats.clear();
-  },
-  async tick() {
-    if (this.busy || !session.open || session.ws.bufferedAmount > 256 * 1024) return;
-    this.busy = true;
-    try {
-      const img = await grabJpeg(this.w, this.q, FRAME_MAX_BYTES);
-      if (img && this.timer && session.open) {
-        session.sendFrame(0x04, await img.blob.arrayBuffer());
-        stats.onSent();
-        stats.size ||= `${img.w}×${img.h}`;
-      }
-    } finally {
-      this.busy = false;
-    }
-  },
-  /** `capture`: một ảnh lớn (≥ 1000 px rộng nếu camera đủ), nén xuống dưới trần khung. */
-  async capture(size) {
-    const img = await grabJpeg(sizeW(size, 1600), 0.8, FRAME_MAX_BYTES);
-    if (img && session.open) session.sendFrame(0x04, await img.blob.arrayBuffer());
-  },
-};
+const glasses = { online: false, device: "" };
+
+function setGlasses(online, device = "") {
+  glasses.online = online;
+  glasses.device = online ? device : glasses.device;
+  const el = $("glasses");
+  el.dataset.state = online ? "on" : "off";
+  el.querySelector(".dot").dataset.state = online ? "ok" : "off";
+  $("glasses-text").textContent = online ? `Kính đã kết nối${device ? ` · ${device}` : ""}` : "Kính chưa kết nối";
+  renderEmpty();
+}
+
+/** Chữ hướng dẫn khi chưa có hình: nói rõ đang thiếu mắt xích nào (server hay kính). */
+function renderEmpty() {
+  const msg = !session.ready
+    ? "Chưa nối server. Kiểm tra Cài đặt."
+    : !glasses.online
+      ? "Kính chưa kết nối. Bật kính để bắt đầu."
+      : "Kính đã kết nối. Bấm nút trên kính để gửi hình.";
+  $("stage-empty-msg").textContent = msg;
+  const hmsg = $("history-empty-msg");
+  if (hmsg) {
+    hmsg.textContent = !session.ready
+      ? "Chưa nối server nên chưa có hội thoại. Kiểm tra Cài đặt."
+      : !glasses.online
+        ? "Kính chưa kết nối. Khi kính bật và bấm nút, từng lượt hội thoại hiện ở đây."
+        : "Chưa có lượt nào. Bấm nút trên kính và nói.";
+  }
+}
+
+// Trạng thái lượt hiện tại: id do KÍNH sinh (turn_start), trang chỉ quan sát.
+const cur = { id: null, pressAt: 0, releaseAt: 0, firstAudio: false, said: 0, listening: false, tick: 0 };
+
+function listening(on) {
+  cur.listening = on;
+  clearInterval(cur.tick);
+  $("rec-badge").hidden = !on;
+  $("stage").dataset.rec = on ? "1" : "0";
+  if (!on) return;
+  const update = () => {
+    const secs = (performance.now() - cur.pressAt) / 1000;
+    $("rec-time").textContent = `${fmtNum(secs)} s`;
+    timeline.el("listen").querySelector(".ms").textContent = `${fmtNum(secs)} s`;
+  };
+  update();
+  cur.tick = setInterval(update, 100);
+}
+
+function resetGlassesState() {
+  listening(false);
+  stats.clear();
+  resetMode();
+  speaker.stop();
+}
 
 // ---------------------------------------------------------------------------
-// Phiên WebSocket
+// Phiên WebSocket xem
 // ---------------------------------------------------------------------------
 
 function wsUrl() {
   const b = settings.base.trim();
-  const tail = "/v2/session";
+  const tail = "/v2/observe";
   if (/^wss?:\/\//i.test(b)) return b.replace(/\/+$/, "") + tail;
   if (/^https?:\/\//i.test(b)) return b.replace(/^http/i, "ws").replace(/\/+$/, "") + tail;
   const scheme = location.protocol === "https:" ? "wss" : "ws";
   return `${scheme}://${location.host}${b.startsWith("/") ? b : `/${b}`}${tail}`;
 }
 
-function setConn(state, text) {
-  $("conn-dot").dataset.state = state;
-  $("conn-text").textContent = text;
-}
-
-// Trạng thái lượt hiện tại — gắn với id do trình duyệt tự sinh, như kính.
-const cur = { id: null, pressAt: 0, releaseAt: 0, firstAudio: false, said: 0 };
-let turnSeq = 0;
+let pendingFrame = null; // JPEG 0x04 đang giải mã: JSON det/ocr ngay sau nó là của khung này
+let frameChain = Promise.resolve(); // det/ocr xử lý lần lượt theo đúng thứ tự tới
 
 const session = {
   ws: null, ready: false, retry: 0, retryTimer: null, pingTimer: null, stopped: false,
@@ -696,7 +980,6 @@ const session = {
     clearTimeout(this.retryTimer);
     this.stopped = false;
     this.ready = false;
-    if (isMock()) return setConn("ok", "Mô phỏng: không gọi server");
     setConn("wait", "Đang kết nối…");
     let ws;
     try {
@@ -707,11 +990,10 @@ const session = {
     ws.binaryType = "arraybuffer";
     this.ws = ws;
     ws.onopen = () => {
-      ws.send(JSON.stringify({
-        t: "hello", device: "demo-web", token: settings.token, debug: true,
-        // Trang không có clip cục bộ: khai 0 để server đọc cue thành lời (và cue OCR đến qua khung `ocr`).
-        cue_version: 0, fw: "demo-web/2", accept: "ima_adpcm",
-      }));
+      const hello = { t: "hello", token: settings.token }; // token rỗng: proxy gắn token cấu hình sẵn
+      const device = settings.device || serverDevice;
+      if (device) hello.device = device;
+      ws.send(JSON.stringify(hello));
     };
     ws.onmessage = (e) => (typeof e.data === "string" ? this.onText(e.data) : this.onBinary(new Uint8Array(e.data)));
     ws.onclose = (e) => {
@@ -734,14 +1016,12 @@ const session = {
     clearInterval(this.pingTimer);
     this.ready = false;
     this.ws = null;
-    liveTx.stop();
-    rec.abort();
-    resetMode();
+    setGlasses(false);
+    resetGlassesState();
     if (this.stopped) return;
     if (code === 4401) return setConn("down", "Token sai hoặc thiếu. Mở Cài đặt để nhập token");
     if (code === 4400) return setConn("down", "Server từ chối khung hello (lỗi giao thức)");
-    if (code === 4000) return setConn("down", "Một trình duyệt khác đã thay phiên này");
-    // Lùi dần 0,5 -> 8 s, nhiễu ±20% như firmware.
+    // Lùi dần 0,5 -> 8 s, nhiễu ±20%.
     const wait = Math.min(8000, 500 * 2 ** this.retry++) * (0.8 + Math.random() * 0.4);
     setConn("down", `Mất kết nối. Thử lại sau ${fmtNum(wait / 1000)} s`);
     this.retryTimer = setTimeout(() => this.connect(), wait);
@@ -750,26 +1030,35 @@ const session = {
   sendJson(obj) {
     if (this.open) this.ws.send(JSON.stringify(obj));
   },
-  /** Khung nhị phân = 1 byte loại + dữ liệu. */
-  sendFrame(kind, payload) {
-    if (!this.open) return;
-    const body = payload instanceof Uint8Array ? payload : new Uint8Array(payload);
-    const out = new Uint8Array(1 + body.length);
-    out[0] = kind;
-    out.set(body, 1);
-    this.ws.send(out);
-  },
 
   onBinary(buf) {
-    if (buf[0] !== 0x02 || buf.length < 2) return;
-    if (!cur.firstAudio && cur.releaseAt) {
-      cur.firstAudio = true;
-      const ms = performance.now() - cur.releaseAt;
-      const d = timeline.el("reply").querySelector(".step-detail");
-      d.append(pill(`tiếng đầu sau ${fmtMs(ms)} (đo ở trình duyệt)`, true));
+    if (buf.length < 2) return;
+    switch (buf[0]) {
+      case 0x01: // ảnh kính gửi lúc bấm nút
+        decodeJpeg(buf.subarray(1)).then((bmp) => {
+          if (!bmp) return;
+          setPov(bmp, "turn");
+          history.photo(cur.id, makeThumb(bmp));
+        });
+        break;
+      case 0x04: // khung live server vừa xử lý; JSON det/ocr của nó đến ngay sau
+        pendingFrame = decodeJpeg(buf.subarray(1));
+        break;
+      case 0x02: // tiếng server trả về kính
+        if (!cur.firstAudio && cur.releaseAt) {
+          cur.firstAudio = true;
+          const d = timeline.el("reply").querySelector(".step-detail");
+          const ttfa = performance.now() - cur.releaseAt;
+          const tp = pill(`tiếng đầu sau ${fmtMs(ttfa)}`, true);
+          tp.title = "Đo ở trang xem, từ lúc kính nhả nút";
+          d.append(tp);
+          history.latency(cur.id, ttfa);
+        }
+        speaker.push(buf.subarray(1));
+        if (settings.sound && media.ctx?.state === "suspended") setNote("Chạm vào trang một lần để bật âm thanh.");
+        break;
+      default: break;
     }
-    speaker.push(buf.subarray(1));
-    if (media.ctx?.state === "suspended") setNote("Chạm vào trang một lần để bật âm thanh.");
   },
 
   onText(raw) {
@@ -779,14 +1068,34 @@ const session = {
       case "hello_ok":
         this.ready = true;
         this.retry = 0;
-        setConn("ok", `Đã kết nối · phiên ${f.session || ""}`.trim());
-        $("debug-tag").hidden = !!f.debug;
+        setConn("ok", "Đã nối server · đang xem");
+        setGlasses(!!f.glasses);
         clearInterval(this.pingTimer);
         this.pingTimer = setInterval(() => this.sendJson({ t: "ping" }), PING_MS);
         break;
+      case "glasses":
+        setGlasses(!!f.online, f.device);
+        if (!f.online) { resetGlassesState(); renderSource(); }
+        break;
+      case "turn_start": { // kính vừa bấm nút
+        speaker.stop();
+        Object.assign(cur, { id: f.turn, pressAt: performance.now(), releaseAt: 0, firstAudio: false, said: 0 });
+        timeline.reset();
+        timeline.set("listen", "active", "Kính đang nghe người dùng…");
+        history.startTurn(f.turn);
+        listening(true);
+        break;
+      }
+      case "turn_end":
+        if (f.turn !== cur.id) break;
+        listening(false);
+        cur.releaseAt = performance.now();
+        timeline.set("listen", "done", `Đã nghe ${fmtNum((cur.releaseAt - cur.pressAt) / 1000)} s`, "");
+        timeline.set("stt", "active", "Server đang nhận dạng…");
+        break;
       case "trace":
-        history.transcript(f.turn, f.transcript);
-        history.pending(f.turn, f.pending);
+        history.trace(f);
+        tasks.trace(f);
         if (f.turn === cur.id) showTrace(f);
         break;
       case "say":
@@ -806,18 +1115,24 @@ const session = {
         break;
       case "reply_end":
         history.endTurn(f.turn);
-        if (f.turn === cur.id) {
-          const el = timeline.el("reply");
-          el.dataset.state = "done";
-        }
+        tasks.replyEnd(f.turn);
+        if (f.turn === cur.id) timeline.el("reply").dataset.state = "done";
         break;
-      case "det": onDet(f); break;
-      case "ocr": onOcr(f); break;
+      case "det":
+      case "ocr": {
+        const frame = pendingFrame;
+        pendingFrame = null;
+        frameChain = frameChain.then(async () => {
+          const bmp = frame ? await frame : null;
+          if (f.t === "det") onDet(f, bmp); else onOcr(f, bmp);
+        });
+        break;
+      }
       case "mode": showMode(f); break;
-      case "cam": liveTx.start(f); break;
-      case "capture": liveTx.capture(f.size); break;
-      case "end": liveTx.stop(); break;
-      case "hazard": break; // đã thể hiện qua khung `det` có `sent`
+      case "cam": stats.cmd = `${f.size || "?"} · ${f.fps || "?"} fps`; stats.render(); break;
+      case "end": stats.cmd = ""; stats.render(); break;
+      case "call_state": tasks.callState(f); break;
+      case "capture": case "hazard": case "reply": case "cue": case "pong": break; // đã thể hiện qua det/ocr/say
       case "error": setNote(`Server báo lỗi: ${f.code}`); setTimeout(() => setNote(""), 4000); break;
       default: break;
     }
@@ -825,234 +1140,50 @@ const session = {
 };
 
 // ---------------------------------------------------------------------------
-// Giữ nút để nói
-// ---------------------------------------------------------------------------
-
-const rec = {
-  active: false, ds: null, header: true, out: [], outLen: 0, t0: 0, level: 0, raf: 0, timeout: 0,
-  onSamples(f32) {
-    this.level = rms(f32);
-    const pcm = this.ds.push(f32);
-    if (!pcm.length) return;
-    this.out.push(pcm);
-    this.outLen += pcm.length;
-    if (this.outLen >= TARGET_RATE / 10) this.flush(); // ~100 ms mỗi khung
-  },
-  flush() {
-    if (!this.outLen) return;
-    const pcm = new Uint8Array(this.outLen * 2);
-    let o = 0;
-    for (const c of this.out) { pcm.set(new Uint8Array(c.buffer, c.byteOffset, c.byteLength), o); o += c.byteLength; }
-    this.out = [];
-    this.outLen = 0;
-    let payload = pcm;
-    if (this.header) { // header WAV đi cùng khối PCM đầu, trong cùng khung 0x03
-      const hd = streamingWavHeader(TARGET_RATE);
-      payload = new Uint8Array(hd.length + pcm.length);
-      payload.set(hd);
-      payload.set(pcm, hd.length);
-      this.header = false;
-    }
-    session.sendFrame(0x03, payload);
-  },
-  abort() {
-    if (!this.active) return;
-    this.active = false;
-    clearTimeout(this.timeout);
-    cancelAnimationFrame(this.raf);
-    uiRecording(false);
-  },
-};
-
-function uiRecording(on) {
-  const b = $("ptt");
-  b.setAttribute("aria-pressed", String(on));
-  $("ptt-text").textContent = on ? "Đang nghe, thả để gửi" : "Giữ để nói";
-  $("stage").dataset.rec = on ? "1" : "0";
-  $("rec-badge").hidden = !on;
-  if (!on) b.style.setProperty("--lvl", "0");
-}
-
-function tickRecording() {
-  if (!rec.active && !mock.recording) return;
-  const secs = (performance.now() - rec.t0) / 1000;
-  $("rec-time").textContent = `${fmtNum(secs)} s`;
-  $("ptt").style.setProperty("--lvl", String(Math.min(1, rec.level * 6)));
-  if (rec.active) timeline.el("listen").querySelector(".ms").textContent = fmtNum(secs) + " s";
-  rec.raf = requestAnimationFrame(tickRecording);
-}
-
-// Người dùng có thể nhả nút trong lúc `pressStart` còn đang chờ camera/micro:
-// `held` cho biết nút còn giữ hay không để khỏi bắt đầu ghi một lượt không bao giờ kết thúc.
-let held = false;
-
-async function pressStart() {
-  if (held || rec.active || mock.recording) return;
-  held = true;
-  setNote("");
-  audioCtx().resume().catch(() => {});
-  if (isMock()) return mock.start();
-  if (!session.ready) return setNote("Chưa kết nối server. Kiểm tra Cài đặt."), (held = false);
-  if (!media.stream && !(await initMedia())) return (held = false);
-  if (!media.graphReady) return setNote("Chưa khởi tạo được micro. Tải lại trang rồi thử lại."), (held = false);
-  await audioCtx().resume().catch(() => {});
-  if (!held) return; // đã nhả nút trong lúc chờ
-
-  speaker.stop(); // bấm = dừng mọi thứ đang phát
-  const id = `w${Date.now().toString(36)}${(turnSeq++).toString(36)}`;
-  Object.assign(cur, { id, pressAt: performance.now(), releaseAt: 0, firstAudio: false, said: 0 });
-  session.sendJson({ t: "turn_start", turn: id, t_press_ms: Math.round(performance.now()) });
-
-  rec.ds = new StreamDownsampler(media.rate, TARGET_RATE);
-  rec.header = true;
-  rec.out = [];
-  rec.outLen = 0;
-  rec.level = 0;
-  rec.t0 = performance.now();
-  rec.active = true;
-  rec.timeout = setTimeout(pressEnd, MAX_HOLD_MS);
-  uiRecording(true);
-  tickRecording();
-  timeline.reset();
-  timeline.set("listen", "active", "Đang nghe bạn…");
-  history.startTurn(id);
-
-  // Ảnh lượt chụp ngay lúc bấm, như nút chụp trên kính; gửi song song với audio.
-  grabJpeg(IMAGE_MAX_W, 0.85).then(async (img) => {
-    if (img && cur.id === id && session.open) session.sendFrame(0x01, await img.blob.arrayBuffer());
-  });
-}
-
-function pressEnd() {
-  held = false;
-  if (mock.recording) return mock.end();
-  if (!rec.active) return;
-  rec.active = false;
-  clearTimeout(rec.timeout);
-  cancelAnimationFrame(rec.raf);
-  rec.out.push(rec.ds.push(null, true));
-  rec.outLen = rec.out.reduce((n, c) => n + c.length, 0);
-  rec.flush();
-  if (rec.header) { // chưa gửi byte nào (nhả quá sớm): vẫn phải mở luồng bằng header rỗng
-    session.sendFrame(0x03, streamingWavHeader(TARGET_RATE));
-    rec.header = false;
-  }
-  cur.releaseAt = performance.now();
-  session.sendJson({ t: "turn_end", turn: cur.id, t_release_ms: Math.round(cur.releaseAt) });
-  uiRecording(false);
-  const heard = (cur.releaseAt - rec.t0) / 1000;
-  timeline.set("listen", "done", `Đã nghe ${fmtNum(heard)} s`, "");
-  timeline.set("stt", "active", "Server đang nhận dạng…");
-}
-
-// ---------------------------------------------------------------------------
-// Chế độ mô phỏng (không server): chỉ tập dượt luồng giữ nút -> nghe -> trả lời
-// ---------------------------------------------------------------------------
-
-const mock = {
-  recording: false, index: 0,
-  start() {
-    this.recording = true;
-    rec.t0 = performance.now();
-    rec.level = 0;
-    uiRecording(true);
-    tickRecording();
-  },
-  async end() {
-    this.recording = false;
-    cancelAnimationFrame(rec.raf);
-    uiRecording(false);
-    $("ptt").disabled = true;
-    $("ptt-text").textContent = "Đang xử lý…";
-    await sleep(900);
-    const text = SAMPLES[this.index++ % SAMPLES.length].answer;
-    history.sayMock(text);
-    $("ptt-text").textContent = "Đang đọc câu trả lời";
-    await this.speak(text);
-    $("ptt").disabled = false;
-    $("ptt-text").textContent = "Giữ để nói";
-  },
-  speak(text) {
-    return new Promise((resolve) => {
-      if (!("speechSynthesis" in window)) return setTimeout(resolve, 2500);
-      const u = new SpeechSynthesisUtterance(text);
-      u.lang = "vi-VN";
-      u.onend = u.onerror = () => resolve();
-      speechSynthesis.cancel();
-      speechSynthesis.speak(u);
-      setTimeout(resolve, 20000); // không có giọng tiếng Việt thì onend có thể không bao giờ tới
-    });
-  },
-};
-
-function applyMode() {
-  $("mock-tag").hidden = !isMock();
-  if (isMock()) {
-    for (const n of Object.keys(STEP_HINT)) timeline.set(n, "wait", n === "listen" ? "Mô phỏng: không có dữ liệu server" : "");
-  } else {
-    timeline.reset();
-  }
-}
-
-// ---------------------------------------------------------------------------
 // Gắn sự kiện
 // ---------------------------------------------------------------------------
 
-const ptt = $("ptt");
-ptt.addEventListener("pointerdown", (e) => {
-  if (e.button > 0 || ptt.disabled) return;
-  e.preventDefault();
-  try { ptt.setPointerCapture(e.pointerId); } catch { /* một số trình duyệt không cho */ }
-  pressStart();
-});
-for (const ev of ["pointerup", "pointercancel", "lostpointercapture"]) ptt.addEventListener(ev, pressEnd);
-ptt.addEventListener("contextmenu", (e) => e.preventDefault());
-window.addEventListener("blur", pressEnd);
-
-// Space = giữ để nói (bất kỳ đâu trừ ô nhập); Enter cũng dùng được khi nút đang focus.
-const typing = (t) => t.closest?.("input, select, textarea, a, dialog[open], button:not(#ptt)");
-document.addEventListener("keydown", (e) => {
-  const hold = e.code === "Space" || (e.code === "Enter" && e.target === ptt);
-  if (!hold || typing(e.target)) return;
-  e.preventDefault();
-  if (!e.repeat) pressStart();
-});
-document.addEventListener("keyup", (e) => {
-  if (e.code === "Space" || (e.code === "Enter" && e.target === ptt)) pressEnd();
-});
 // Chạm lần đầu mở khoá âm thanh (trình duyệt chặn phát tự động trước cử chỉ).
 document.addEventListener("pointerdown", () => {
+  if (!settings.sound) return;
   audioCtx().resume().then(() => $("note").textContent.startsWith("Chạm vào trang") && setNote("")).catch(() => {});
 }, { passive: true });
 
-$("btn-enable-media").addEventListener("click", initMedia);
+$("btn-sound").addEventListener("click", () => {
+  settings.sound = !settings.sound;
+  saveSettings();
+  if (!settings.sound) speaker.stop();
+  renderSound();
+});
 
 const dlg = $("dlg-settings");
 document.querySelectorAll("[data-close]").forEach((b) => b.addEventListener("click", () => b.closest("dialog").close()));
 $("btn-settings").addEventListener("click", () => {
-  dlg.querySelector(`input[name="mode"][value="${settings.mode}"]`).checked = true;
   $("set-base").value = settings.base;
   $("set-token").value = settings.token;
-  $("set-facing").value = settings.facing;
+  $("set-device").value = settings.device;
+  $("set-device").placeholder = serverDevice ? `để trống = ${serverDevice}` : "để trống = xem kính đang nối";
   dlg.showModal();
 });
 $("set-save").addEventListener("click", () => {
-  const facingChanged = $("set-facing").value !== settings.facing;
-  settings.mode = dlg.querySelector('input[name="mode"]:checked').value;
   settings.base = $("set-base").value.trim().replace(/\/+$/, "") || DEFAULTS.base;
-  settings.facing = $("set-facing").value;
   settings.token = $("set-token").value.trim();
+  settings.device = $("set-device").value.trim();
   saveSettings();
-  applyMode();
   session.close();
+  clearPov();
   session.connect();
-  if (facingChanged && media.stream) initMedia();
 });
 
 // ---------------------------------------------------------------------------
 // Khởi động
 // ---------------------------------------------------------------------------
 
-applyMode();
-session.connect();
-initMedia();
+renderSound();
+renderSource();
+renderEmpty();
+fetch("config.json", { cache: "no-store" })
+  .then((r) => (r.ok ? r.json() : {}))
+  .then((c) => { serverDevice = typeof c.device === "string" ? c.device : ""; })
+  .catch(() => {}) // mở bằng file:// hoặc server cũ: dùng giá trị nhập ở Cài đặt
+  .finally(() => { session.connect(); phoneMirror.probe(); });

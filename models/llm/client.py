@@ -121,9 +121,14 @@ _RETRYABLE = (httpx.ConnectError, httpx.ConnectTimeout, httpx.ReadError, httpx.R
 
 
 async def stream_chat(
-    messages: list[dict], max_tokens: int | None = None, **extra,
+    messages: list[dict], max_tokens: int | None = None, on_logprobs=None, **extra,
 ) -> AsyncIterator[str]:
-    """Sinh text theo mảnh (SSE). Chuyển đường chỉ khi CHƯA nhận được mảnh nào."""
+    """Sinh text theo mảnh (SSE). Chuyển đường chỉ khi CHƯA nhận được mảnh nào.
+
+    `on_logprobs(items)`: nhận `logprobs.content` của từng mảnh (bật logprobs trong request) — dùng
+    để biết model chắc đến đâu ở các chữ số vừa đọc (lanes/ocr_live.py)."""
+    if on_logprobs is not None:
+        extra = {**extra, "logprobs": True, "top_logprobs": 1}
     body = _body(messages, max_tokens or config.LLM_MAX_TOKENS, True, **extra)
     last_exc: Exception | None = None
     for base in list(_order):
@@ -143,9 +148,12 @@ async def stream_chat(
                     if data == "[DONE]":
                         break
                     try:
-                        delta = json.loads(data)["choices"][0].get("delta", {}).get("content")
+                        choice = json.loads(data)["choices"][0]
+                        delta = choice.get("delta", {}).get("content")
                     except (ValueError, KeyError, IndexError):
                         continue
+                    if on_logprobs is not None and (choice.get("logprobs") or {}).get("content"):
+                        on_logprobs(choice["logprobs"]["content"])
                     if delta:
                         if not produced:
                             logger.info("Gemma token đầu %.2fs (%s)", time.monotonic() - started, base)

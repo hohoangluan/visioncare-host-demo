@@ -11,6 +11,7 @@ from collections.abc import AsyncIterator, Callable
 
 import config
 from handlers import phone as phone_handlers
+from handlers import read_money
 from lanes import general, ocr_live, phone
 from live import call_bridge
 from live.session import sessions
@@ -76,6 +77,8 @@ class TurnContext:
         self.loop = loop
         # `/process` (firmware cũ): một lần HTTP, không WS -> làn B/C không mở live.
         self.single_shot = False
+        # Trạng thái kính lúc bắt đầu lượt (music_playing, navigating, ride_quote_pending...).
+        self.device_state: dict = {}
         self.gen: int | None = None  # thế hệ lượt (pending_action.begin_turn)
         self.spec_answer: Speculation | None = None
         # (intent, text) -> task trích tham số chạy song song với Clef.
@@ -99,7 +102,10 @@ FILLER_SEARCHING = "Để tôi tra cứu."
 # Chỉ gặp ở `/process` (firmware cũ, không có WS): bật cảnh báo vật cản liên tục
 # cần kênh realtime nên nói thẳng là chưa làm được, thay vì nói "đã bật" rồi im.
 NO_LIVE_MESSAGE = "Kính bản này chưa hỗ trợ cảnh báo liên tục."
-STATIC_SPEECH: tuple[str, ...] = (NO_LIVE_MESSAGE,)
+# "Đúng"/"Không" đứng một mình khi không có câu hỏi nào đang chờ: không chạy lệnh nào.
+NO_QUESTION_MESSAGE = "Mình chưa hỏi gì cả. Bạn cần mình giúp gì?"
+CANCELLED_MESSAGE = "Đã huỷ."
+STATIC_SPEECH: tuple[str, ...] = (NO_LIVE_MESSAGE, NO_QUESTION_MESSAGE, CANCELLED_MESSAGE, *read_money.STATIC_SPEECH)
 
 
 def _sync(ctx: TurnContext, agen: AsyncIterator[str]):
@@ -168,6 +174,8 @@ async def _lane_b(ctx: TurnContext, d: Decision, text: str) -> Reply:
     if entry is None:
         return Reply(cues=["no_image"], intent=d.intent, lane="B")
     if d.intent == "money":
+        if config.MONEY_RETRY and config.MONEY_MODE == "choice":
+            return await _money(ctx, entry.jpeg)
         # Tờ tiền ít chữ, bộ dò chữ không căn khung tốt -> đọc luôn ảnh buffer UXGA.
         return Reply(speech=_sync(ctx, ocr_live.spoken(entry.jpeg, "money", ctx.device)),
                      intent="money", lane="B")
@@ -185,6 +193,22 @@ async def _lane_b(ctx: TurnContext, d: Decision, text: str) -> Reply:
                          intent="ocr", lane="B")
     session = ctx.prewarmer.session("ocr", {"mode": mode, "fallback_jpeg": entry.jpeg})
     return Reply(cues=["ocr_start"], live="ocr", live_token=session.token, intent="ocr", lane="B")
+
+
+async def _money(ctx: TurnContext, jpeg: bytes) -> Reply:
+    """Đọc tiền v2: đọc chặt 1 khung (ảnh buffer UXGA, τ MONEY_MIN_PROB). Chắc -> nói mệnh giá, trễ như cũ. Không chắc ->
+    nói MỘT câu hướng dẫn (read_money.hint) và, có WS, mở phiên live `money_retry` đọc lại đúng một lần từ khung mới
+    (lanes/ocr_live._money_retry). Phiên mang mode "ocr" để nav live được tạm nhường chỗ rồi dựng lại như mọi OCR live.
+    "Không có tiền" và lỗi mạng giữ câu cũ, không đọc lại."""
+    sentence, top = await ocr_live.read_money_frame(jpeg, config.MONEY_MIN_PROB)
+    if sentence != read_money.UNSURE or top is None:
+        return Reply(speech=[sentence], intent="money", lane="B")
+    line = read_money.hint(top, await asyncio.to_thread(read_money.blur_score, jpeg))
+    logger.info("làn B tiền: chưa chắc (top=%s) -> %r%s", top, line, "" if not ctx.single_shot else " (không WS, không đọc lại)")
+    if ctx.single_shot:  # /process: không có WS để lấy khung mới; người dùng tự bấm lại
+        return Reply(speech=[line], intent="money", lane="B")
+    session = ctx.prewarmer.session("ocr", {"mode": "money_retry"})
+    return Reply(speech=[line], live="ocr", live_token=session.token, intent="money", lane="B")
 
 
 async def _params(ctx: TurnContext, intent: str, text: str) -> dict:
@@ -268,6 +292,11 @@ async def _lane_c(ctx: TurnContext, d: Decision, text: str, params: dict | None 
         return Reply(speech=[NO_LIVE_MESSAGE], intent=d.intent, lane="C")
     if d.intent == "alert_off":
         sessions.close_device(ctx.device, "nav")
+        from live import device_session  # nhập muộn: device_session nhập pipeline
+
+        held = device_session.session_for(ctx.device)
+        if held is not None:
+            held.drop_suspended_nav()  # nav đang bị OCR/cuộc gọi tạm dừng: người dùng đã tắt, đừng bật lại
         return Reply(cues=["nav_alert_off"], intent=d.intent, lane="C")
     # Làn C chỉ còn cảnh báo vật cản; dẫn đường (nav_start/nav_stop) là hành động điện thoại ở làn D.
     session = ctx.prewarmer.session("nav")  # alert_on
@@ -322,6 +351,16 @@ async def _lane_d(ctx: TurnContext, d: Decision, text: str, params: dict | None 
 async def route(ctx: TurnContext, d: Decision, text: str) -> Reply:
     if d.source == "no_speech":
         return Reply(cues=["no_speech"])
+
+    # Lời đáp có/không đứng một mình mà KHÔNG có câu hỏi nào đang chờ: bộ phân loại hay đoán bừa ra nav_stop /
+    # ride_confirm. Không chạy lệnh nào. (Chuyến xe đang chờ xác nhận là một câu hỏi đang chờ.)
+    if (phone.is_bare_reply(text) and not phone.has_pending(ctx.device)
+            and not ctx.device_state.get("ride_quote_pending")):
+        ctx.cancel_speculation()
+        if pending_action.take_recent_cancel(ctx.device) and phone.is_no(text):
+            return Reply(speech=[CANCELLED_MESSAGE], intent="chat", lane="A")
+        logger.info("lời đáp có/không không có câu hỏi chờ: '%s' -> không chạy lệnh", text)
+        return Reply(speech=[NO_QUESTION_MESSAGE], intent="chat", lane="A")
 
     # Lượt trước hỏi "... phải không?": câu này là có/không.
     confirm = phone.take_pending_confirm(ctx.device)
