@@ -12,6 +12,8 @@ quay đầu, nhoè, dt) — logic luôn dùng giá trị danh nghĩa nên sai l�
 """
 
 import math
+import os
+import zlib
 from dataclasses import dataclass, field
 
 import numpy as np
@@ -214,6 +216,15 @@ SPLIT_SEED = {"legacy": 0, "dev": 1000, "test": 2000}
 # nhiễu đo shift_x (tỉ lệ bề rộng ảnh) của ego_motion, mỗi cặp khung. Đo trên 400 ảnh thật Obstacle-Dataset (JPEG q15, đi tới + nhún + quay): σ 0,0010–0,0013.
 # dev = 3× mức đo (thị sai 3D, vật chuyển động, rolling shutter chưa có trong phép đo), test = 2× dev. Bản cũ 0,01/0,02 là giả định chưa đo.
 SIGMA_MEAS = {"dev": 0.004, "test": 0.008}
+# Nhiễu detector đo trên YOLOv8 + ByteTrack thật của HEADS-UP (Haghighi et al., arXiv:2409.20324; bench/heads_up_eval.py, 8 fps,
+# phần dư so với trung bình trượt 5 khung): tâm ngang σ_bền 11,3 % bề rộng hộp, chiều cao 2,3 %, bề rộng 4,4 % (đuôi dày -> Student-t 3);
+# 8,7 % khung mất giữa track, chuỗi mất dài 1/2/3/4/≥5 khung = 51/23/12/9/41 lần. Áp cho MỌI kịch bản dev/test (legacy giữ nguyên).
+# C1B_DET_NOISE=0 tắt (tái lập số vòng 2).
+DET_NOISE = os.environ.get("C1B_DET_NOISE", "1") == "1"
+DET_CX_SIG, DET_H_SIG, DET_W_SIG = 0.113, 0.023, 0.044
+_T3_ROBUST = 1.134                                 # σ_bền (1,4826·MAD) của Student-t bậc 3
+DET_GAP_LEN = (np.arange(1, 13), np.array([51, 23, 12, 9] + [41 / 8] * 8) / 136.0)
+DET_GAP_P = 0.026                                  # p·E[độ dài] = m/(1−m), m = 8,7 %, E[độ dài] ≈ 3,65
 SHARP_BLUR, MOTION_BLUR = (80.0, 200.0), (10.0, 25.0)
 GAIT_HZ, YAW_HZ, BLUR_P = 2.0, 0.3, 0.25      # BLUR_P = xác suất một đỉnh nhún gây chuỗi nhoè
 DROP_P = 0.05
@@ -457,6 +468,23 @@ def _generate_ext(type_name: str, seed_idx: int, split: str, cam: Camera | None)
     raise RuntimeError(f"nhãn mẫu của {type_name} không khớp sau 50 lần")
 
 
+def _det_noise(box, j: int, gap_left: dict, drng):
+    """Hộp như detector thật: rung tâm/kích thước (Student-t 3) và chuỗi khung mất (Markov). None = khung này không thấy vật j."""
+    if gap_left.get(j, 0) > 0:
+        gap_left[j] -= 1
+        return None
+    if drng.random() < DET_GAP_P:
+        gap_left[j] = int(drng.choice(DET_GAP_LEN[0], p=DET_GAP_LEN[1])) - 1
+        return None
+    bw, bh = box[2] - box[0], box[3] - box[1]
+    cx, cy = (box[0] + box[2]) / 2, (box[1] + box[3]) / 2
+    t = drng.standard_t(3, 3) / _T3_ROBUST
+    cx += DET_CX_SIG * t[0] * bw
+    bw *= math.exp(DET_W_SIG * t[1])
+    bh *= math.exp(DET_H_SIG * t[2])
+    return tuple(min(max(v, 0.0), 1.0) for v in (cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2))
+
+
 def _render_world(type_name, base, noise, seed, split, P, rng, cam, person_h, dy_pitch, params) -> Scenario:
     """Dựng thế giới + lấy mẫu mốc khung + chiếu hộp (có nhiễu chuyển động) cho một lần thử."""
     objs, end = _build(base, rng)
@@ -467,6 +495,8 @@ def _render_world(type_name, base, noise, seed, split, P, rng, cam, person_h, dy
     legacy_noise = noise if noise in ("shake", "flicker") else ""
     frames, ego, Zp, Xp, td, tv = [], [], [], [], None, None
     blur_left, prev_peak = 0, 0
+    drng = np.random.default_rng([zlib.crc32(type_name.encode()), seed, 11, len(ts)])   # nhiễu detector: rng riêng
+    gap_left = {}
     sx_prev = None                                            # EgoMeter trả trượt GIỮA HAI KHUNG, không phải lệch tuyệt đối
     for k, t in enumerate(ts):
         gi = min(int(t / GRID), len(_TG) - 1)
@@ -514,6 +544,8 @@ def _render_world(type_name, base, noise, seed, split, P, rng, cam, person_h, dy
                     cx += rng.uniform(-SHAKE_POS, SHAKE_POS) * bw; cy += rng.uniform(-SHAKE_POS, SHAKE_POS) * bh
                 bw *= scale; bh *= scale
                 box = tuple(min(max(v, 0.0), 1.0) for v in (cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2))
+            if box is not None and DET_NOISE and split in ("dev", "test"):
+                box = _det_noise(box, j, gap_left, drng)
             if box is None:
                 continue
             dets.append(hazard.Detection(kind, _GROUP.get(kind, "static"), float(rng.uniform(*SCORE_RANGE)), tuple(box)))

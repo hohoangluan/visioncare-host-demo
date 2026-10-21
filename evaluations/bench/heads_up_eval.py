@@ -132,7 +132,7 @@ def build(seq: str) -> dict:
     d = load(seq)
     bf = body_frames(d)
     fs = sample_frames(sorted(bf))
-    frames, truth, yaw, times = [], [], [], []
+    frames, truth, yaw, times, fids = [], [], [], [], []
     for f in fs:
         o, fwd, lat, down, spd, yw = bf[f]
         dets, gt = [], []
@@ -145,10 +145,11 @@ def build(seq: str) -> dict:
             if box is not None:
                 dets.append(hazard.Detection("person", "person", 0.9, box))
         frames.append(dets)
+        fids.append(f)
         truth.append(gt)
         yaw.append(yw)
         times.append(f / SRC_FPS)
-    return {"seq": seq, "frames": frames, "truth": truth, "yaw": yaw, "times": times}
+    return {"seq": seq, "frames": frames, "truth": truth, "yaw": yaw, "times": times, "fids": fids}
 
 
 def events(s: dict) -> list[dict]:
@@ -173,7 +174,22 @@ def ego_stream(s: dict, mode: str):
         y = np.unwrap(np.array(s["yaw"]))
         d = np.concatenate([[0.0], np.diff(y)])
         return [(float(a * F_PX / CROP_W), SHARP) for a in d]
-    raise SystemExit(f"--ego {mode}: cần ảnh RGB (đợt 2), chưa nối")
+    # image: EgoMeter thật trên ảnh như kính gửi (bench.heads_up_frames: cắt 66° 4:3 -> 320×240 JPEG q15)
+    import cv2  # noqa: PLC0415
+    from live import ego_motion  # noqa: PLC0415
+    d = os.path.join(DATA, f"qvga_{s['seq']}")
+    meter, out, miss = ego_motion.EgoMeter(), [], 0
+    for f in s["fids"]:
+        img = cv2.imread(os.path.join(d, f"{f:08d}.jpg"))
+        if img is None:  # thiếu ảnh: coi như không đo được, đo lại từ khung sau
+            meter, miss = ego_motion.EgoMeter(), miss + 1
+            out.append(None)
+            continue
+        e = meter.measure(img)
+        out.append((e.shift_x, e.blur))
+    if miss:
+        print(f"  {s['seq']}: thiếu {miss}/{len(s['fids'])} ảnh", flush=True)
+    return out
 
 
 def run(s: dict, make, ego) -> list[tuple[float, int]]:
@@ -227,6 +243,7 @@ def main(argv=None) -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--ego", default="pose", choices=["none", "pose", "image"])
     ap.add_argument("--out", default="results/heads_up")
+    ap.add_argument("--seqs", default=",".join(SEQS), help="--ego image chỉ chạy được bộ đã trích ảnh (unconstrained)")
     a = ap.parse_args(argv)
     from live import hazard_predict  # noqa: PLC0415
     rng = np.random.default_rng(0)
@@ -237,7 +254,7 @@ def main(argv=None) -> None:
     res = {"meta": {"source": "HEADS-UP (Haghighi et al., arXiv:2409.20324, 2024)", "ego": a.ego, "crop_px": [CROP_W, CROP_H],
                     "f_px": F_PX, "fps": 1.0 / hs.DT, "candidates": CANDIDATES}, "by_seq": {}, "total": {}}
     tot = {m: {"timely_vec": [], "fa": 0, "fa_excl_near": 0, "minutes": 0.0, "n_beeps": 0, "rand": []} for m in makers}
-    for seq in SEQS:
+    for seq in a.seqs.split(","):
         t0 = time.time()
         s = build(seq)
         ev = events(s)
