@@ -1,3 +1,5 @@
+> **Chưa đủ dữ liệu thật để chứng minh:** mọi số dưới đây là kịch bản tổng hợp tự viết, detector lý tưởng. Trên dữ liệu thật người đi bộ (HEADS-UP, `THONG_SO_CHOT.md` mục 3.3) báo oan của predict cao hơn `area` 2–2,5 lần, ngược với bàn đo này; nhóm xe máy Việt Nam chưa có dữ liệu.
+
 **KHÔNG CHỌN ĐƯỢC** cấu hình nào thoả ràng buộc trên dev (selected=null) — xem đường đánh đổi bên dưới để quyết.
 
 # Vật cản: dự đoán quỹ đạo (HAZARD_LOGIC=predict) — C1b

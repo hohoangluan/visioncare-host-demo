@@ -125,7 +125,32 @@ Lưới vòng 2 (648 cấu hình = 6 biến thể × 108): `results/chot/hazard/
 **Đánh đổi:** V2 cắt báo oan bằng cách không tin vận tốc của track mới, nhưng vật **xuất hiện đột ngột** (nhóm người dùng lo nhất) cũng là track mới
 -> V2 báo muộn. V1 bắt tốt nhóm đột ngột nhưng báo oan với người đi ngang/cùng chiều. Vòng 3 (mục 5) nhắm tách hai trường hợp.
 
+### 3.3 C1d — dữ liệu thật HEADS-UP [1] (chỉ người đi bộ)
+
+Camera ZED Mini gắn mũ, người đeo đi bộ thật (easy: ít quay đầu; hard: quay đầu mạnh; unconstrained: đông người). Hộp người YOLOv8 + ByteTrack
+của bộ dữ liệu (detector thật). Đáp án: depth stereo + tư thế VIO (logic không đọc). Mô phỏng kính: cắt 66° HFOV 4:3, 8 fps.
+Định nghĩa: vào lối = 0 < Z < 2 m, |X| < 0,6 m theo hướng đi; kịp thời = bíp trong [t − 5 s, t − 1,5 s]; báo oan = bíp không ai vào lối trong 5 s.
+Cấu hình V1/V2 chọn trên bàn đo tổng hợp, **không tinh chỉnh trên HEADS-UP**. `bench/heads_up_eval.py`, `results/heads_up/`.
+
+| Logic | Kịp thời [CI 95 %] | Bíp ngẫu nhiên cùng số lần | Báo oan/phút | Báo oan, bỏ ca suýt (\|X\| < 1 m) |
+|---|---:|---:|---:|---:|
+| `area` (chốt) | 19,2 % [4–35] | 12,3 % | **0,95** | 0,52 |
+| V1, ego lý tưởng (từ VIO) | **73,1 %** [54–88] | 22,8 % | 2,42 | 1,68 |
+| V2, ego lý tưởng | 61,5 % [42–81] | 21,3 % | 2,16 | 1,34 |
+| V1, không bù quay đầu | 65,4 % [46–85] | 28,2 % | 3,32 | 2,24 |
+| V2, không bù quay đầu | 61,5 % [42–81] | 19,4 % | 1,98 | 0,95 |
+
+23,2 phút, 39 ca vào lối, 26 ca lộ diện trước ≥ 1,5 s. Ego "lý tưởng" lấy từ tư thế VIO (kính không có): cận trên; bản kính thật dùng
+`EgoMeter` trên ảnh (video RGB HEADS-UP đang tải, chưa đo). Kiểm dấu ego: hồi quy Δu hộp theo shift hệ số +1,07.
+Đọc: predict có tín hiệu thật (vượt xa bíp ngẫu nhiên), nhưng báo oan vượt `area` -> chưa đạt luật "không tăng báo oan" -> giữ `area`.
+
 ## 4. Giới hạn
+
+> **CHƯA ĐỦ DỮ LIỆU THẬT ĐỂ CHỨNG MINH logic cảnh báo vật cản cho mọi tình huống.** Số C1b (mục 3.2) là kịch bản tổng hợp tự viết,
+> detector lý tưởng. Đã kiểm trên dữ liệu thật **chỉ cho người đi bộ** (HEADS-UP [1], mục 3.3; n = 26 ca, CI rộng): predict kịp thời hơn
+> `area` 3–4 lần nhưng báo oan cao hơn 2–2,5 lần — **ngược** với bàn đo tổng hợp (V2 báo oan thấp hơn 10 lần) -> bàn đo tổng hợp quá lạc quan
+> về báo oan. **Nhóm xe máy / giao thông Việt Nam chưa có dữ liệu thật nào.** Muốn bật `HAZARD_LOGIC=predict` mặc định thì phải thắng `area`
+> trên cả hai: dữ liệu thật người đi bộ VÀ clip Việt Nam có xe máy.
 
 - C1b là dữ liệu tổng hợp (bộ sinh tự viết), detector lý tưởng; con số không chuyển thẳng sang đường phố. σ ego đo trên ảnh tĩnh biến đổi affine
   (không có thị sai 3D, vật chuyển động, rolling shutter) nên nhiễu thật cao hơn 0,0013 — bàn đo dùng 3×/6×.
@@ -137,5 +162,19 @@ Lưới vòng 2 (648 cấu hình = 6 biến thể × 108): `results/chot/hazard/
 
 1. **Vật cản vòng 3** (không IMU): `v_conf` theo khoảng cách (gần thì phản ứng ngay), cờ "xuất hiện từ chỗ khuất" (track sinh muộn + gần = khẩn),
    bù nhún bước bằng trượt dọc `dy` của `EgoMeter`. Sau đó vòng 4: logistic regression trên đặc trưng đã sạch, chỉ thay mức 2, đối chứng nhãn xáo.
-2. Chạy lại C1b trên clip thật trước khi bật `predict` mặc định.
+2. Chạy lại C1b trên clip thật trước khi bật `predict` mặc định (tự quay bằng camera kính, hoặc HEADS-UP [1] cho nhóm người đi bộ).
 3. `app-giao-tiep` cục bộ trong `visioncare-host-demo` còn 6 commit bản cũ (trước khi đổi author) — đồng bộ với remote khi checkout sạch.
+
+## Tài liệu tham khảo
+
+[1] Y. Haghighi, C. Demonsant, P. Chalimourdas, M. T. Naeini, J. K. Munoz, B. Bacca, S. Suter, M. Gani, A. Alahi.
+"HEADS-UP: Head-Mounted Egocentric Dataset for Trajectory Prediction in Blind Assistance Systems". arXiv:2409.20324, 2024.
+
+```bibtex
+@article{haghighi2024heads,
+  title={HEADS-UP: Head-Mounted Egocentric Dataset for Trajectory Prediction in Blind Assistance Systems},
+  author={Haghighi, Yasaman and Demonsant, Celine and Chalimourdas, Panagiotis and Naeini, Maryam Tavasoli and Munoz, Jhon Kevin and Bacca, Bladimir and Suter, Silvan and Gani, Matthieu and Alahi, Alexandre},
+  journal={arXiv preprint arXiv:2409.20324},
+  year={2024}
+}
+```
